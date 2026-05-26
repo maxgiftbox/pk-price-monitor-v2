@@ -111,11 +111,33 @@ def crawl_priceoye_page(browser_context: Any, product_url: str) -> Dict[str, str
         page.wait_for_timeout(5000)
 
         body_text = page.locator("body").inner_text()
+        body_text_lower = body_text.lower()
         print(f"[DEBUG][PriceOye] Crawling URL: {product_url}")
         print(f"[DEBUG][PriceOye] Body text (first 3000 chars):\n{body_text[:3000]}")
 
         html = page.content()
         parsed_data = extract_price_data(html)
+
+        stock_status = "unknown"
+        matched_keyword = ""
+        out_of_stock_keywords = ["out of stock", "sold out", "unavailable"]
+        active_keywords = ["add to cart", "buy now", "available", "in stock"]
+
+        for keyword in out_of_stock_keywords:
+            if keyword in body_text_lower:
+                stock_status = "out_of_stock"
+                matched_keyword = keyword
+                break
+
+        if stock_status == "unknown":
+            for keyword in active_keywords:
+                if keyword in body_text_lower:
+                    stock_status = "active"
+                    matched_keyword = keyword
+                    break
+
+        parsed_data["stock_status"] = stock_status
+        print(f"[DEBUG][PriceOye] Stock status matched keyword: {matched_keyword or 'none'}")
 
         regex_matches = re.findall(r"Rs\.?\s?([\d,]+)", body_text)
         normalized_matches = [f"Rs {m}" for m in regex_matches]
@@ -144,14 +166,14 @@ def crawl_priceoye_page(browser_context: Any, product_url: str) -> Dict[str, str
         return {
             "product_price": "",
             "original_price": "",
-            "stock_status": "",
+            "stock_status": "unknown",
             "error_message": "Timeout while loading page",
         }
     except Exception as exc:  # noqa: BLE001
         return {
             "product_price": "",
             "original_price": "",
-            "stock_status": "",
+            "stock_status": "unknown",
             "error_message": f"Crawl failed: {exc}",
         }
     finally:
@@ -219,14 +241,14 @@ def main() -> None:
                 crawl_result = {
                     "product_price": "",
                     "original_price": "",
-                    "stock_status": "",
+                    "stock_status": "unknown",
                     "error_message": "Missing product_url",
                 }
             elif platform != "priceoye":
                 crawl_result = {
                     "product_price": "",
                     "original_price": "",
-                    "stock_status": "",
+                    "stock_status": "unknown",
                     "error_message": f"Unsupported platform: {platform}",
                 }
             else:
