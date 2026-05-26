@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -106,10 +107,39 @@ def extract_price_data(page_html: str) -> Dict[str, str]:
 def crawl_priceoye_page(browser_context: Any, product_url: str) -> Dict[str, str]:
     page = browser_context.new_page()
     try:
-        page.goto(product_url, wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(2500)
+        page.goto(product_url, wait_until="networkidle", timeout=60000)
+        page.wait_for_timeout(5000)
+
+        body_text = page.locator("body").inner_text()
+        print(f"[DEBUG][PriceOye] Crawling URL: {product_url}")
+        print(f"[DEBUG][PriceOye] Body text (first 3000 chars):\n{body_text[:3000]}")
+
         html = page.content()
-        return extract_price_data(html)
+        parsed_data = extract_price_data(html)
+
+        regex_matches = re.findall(r"Rs\.?\s?([\d,]+)", body_text)
+        normalized_matches = [f"Rs {m}" for m in regex_matches]
+        print(f"[DEBUG][PriceOye] Regex matched prices: {normalized_matches}")
+
+        if normalized_matches and not parsed_data.get("product_price"):
+            parsed_data["product_price"] = normalized_matches[0]
+        if len(normalized_matches) > 1 and not parsed_data.get("original_price"):
+            parsed_data["original_price"] = normalized_matches[1]
+
+        print(f"[DEBUG][PriceOye] Final parsed product_price: {parsed_data.get('product_price', '')}")
+        print(f"[DEBUG][PriceOye] Final parsed original_price: {parsed_data.get('original_price', '')}")
+        print(f"[DEBUG][PriceOye] Final stock_status: {parsed_data.get('stock_status', '')}")
+
+        if (
+            not parsed_data.get("product_price")
+            and not parsed_data.get("original_price")
+            and not parsed_data.get("stock_status")
+        ):
+            with open("debug_output.txt", "w", encoding="utf-8") as debug_file:
+                debug_file.write(body_text)
+            print("[DEBUG][PriceOye] Parsing failed. Saved full body text to debug_output.txt")
+
+        return parsed_data
     except PlaywrightTimeoutError:
         return {
             "product_price": "",
