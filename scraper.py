@@ -238,7 +238,9 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                     "error_message": f"Memory variant not found: {memory}",
                 }
 
-            memory_regex = re.compile(rf"\b{re.escape(matched_memory).replace('/', r'\s*/\s*')}\b", re.I)
+            escaped_memory = re.escape(matched_memory)
+            memory_pattern = escaped_memory.replace('/', r'\s*/\s*')
+            memory_regex = re.compile(rf"\b{memory_pattern}\b", re.I)
             clickable_selectors = ["button", "[role='button']", "label", "li", "a", "span", "div"]
             clicked = False
             for selector in clickable_selectors:
