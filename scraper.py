@@ -106,11 +106,70 @@ def extract_price_data(page_html: str) -> Dict[str, str]:
 
 def normalize_memory(text: str) -> str:
     value = (text or "").lower()
+    value = value.replace("＋", "+")
     numbers = re.findall(r"\d+", value)
     if len(numbers) >= 2:
         return f"{numbers[0]}/{numbers[1]}"
     compact = re.sub(r"\s+", "", value)
     return compact
+
+
+def collect_memory_click_candidates(page: Any) -> List[Dict[str, Any]]:
+    script = """
+    () => {
+        const selectors = [
+            'button',
+            '[role="button"]',
+            'label',
+            'li',
+            'a',
+            'span',
+            'div'
+        ];
+        const nodes = Array.from(document.querySelectorAll(selectors.join(',')));
+        const isVisible = (el) => {
+            const style = window.getComputedStyle(el);
+            if (!style) return false;
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        };
+        const clickableNodeNames = new Set(['A', 'BUTTON', 'LABEL', 'INPUT', 'OPTION']);
+        const output = [];
+        for (const el of nodes) {
+            if (!isVisible(el)) continue;
+            const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+            if (!text) continue;
+            const role = (el.getAttribute('role') || '').toLowerCase();
+            const tabIndex = Number(el.getAttribute('tabindex') || '');
+            const isClickable = clickableNodeNames.has(el.tagName) || role === 'button' || role === 'option' || !Number.isNaN(tabIndex);
+            if (!isClickable) continue;
+            output.push({
+                tag: el.tagName.toLowerCase(),
+                text,
+                class_name: el.className || '',
+                aria_label: el.getAttribute('aria-label') || ''
+            });
+        }
+        return output;
+    }
+    """
+    data = page.evaluate(script)
+    if not isinstance(data, list):
+        return []
+    cleaned: List[Dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        cleaned.append(
+            {
+                "tag": clean_price(str(item.get("tag", ""))),
+                "text": clean_price(str(item.get("text", ""))),
+                "class_name": clean_price(str(item.get("class_name", ""))),
+                "aria_label": clean_price(str(item.get("aria_label", ""))),
+            }
+        )
+    return cleaned
 
 
 def extract_prices_near_memory(text: str, memory: str) -> Dict[str, str]:
@@ -294,45 +353,92 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                 f"#{idx} [{item.get('match', '')}] (~300 chars): {item.get('snippet', '')}"
             )
 
-        variant_map: Dict[str, Dict[str, str]] = {}
-        for source_blob in [scripts_text, html, body_text]:
-            extracted = extract_variant_map_from_scripts(source_blob)
-            for key, value in extracted.items():
-                if key not in variant_map:
-                    variant_map[key] = value
-                else:
-                    for field in ("product_price", "original_price", "url"):
-                        if not variant_map[key].get(field) and value.get(field):
-                            variant_map[key][field] = value.get(field, "")
-
         print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
-        print(f"[DEBUG][PriceOye] detected variant map: {variant_map}")
+        print(f"[DEBUG][PriceOye] normalized requested memory: {normalized_requested_memory or '(blank)'}")
 
-        matched_variant_price: Dict[str, str] = {}
+        parsed_data = extract_price_data(html)
+        base_product_price = parsed_data.get("product_price", "")
+        base_original_price = parsed_data.get("original_price", "")
         fallback_used = False
         error_message = ""
 
         if normalized_requested_memory:
-            matched_variant_price = variant_map.get(normalized_requested_memory, {})
-            if not matched_variant_price or not matched_variant_price.get("product_price"):
-                for source_blob in [scripts_text, html, body_text]:
-                    nearby = extract_prices_near_memory(source_blob, memory)
-                    if nearby.get("product_price"):
-                        matched_variant_price = nearby
-                        break
-
-            if not matched_variant_price or not matched_variant_price.get("product_price"):
-                fallback_used = True
-                error_message = (
-                    f"Variant price not found for {memory}; fallback default price used"
+            candidates = collect_memory_click_candidates(page)
+            print(f"[DEBUG][PriceOye] Candidate clickable memory elements ({len(candidates)}):")
+            for idx, candidate in enumerate(candidates, start=1):
+                print(
+                    "[DEBUG][PriceOye] candidate "
+                    f"#{idx} tag={candidate.get('tag', '')} "
+                    f"text={candidate.get('text', '')} "
+                    f"class={candidate.get('class_name', '')} "
+                    f"aria-label={candidate.get('aria_label', '')}"
                 )
 
-        parsed_data = extract_price_data(html)
+            matched_candidate: Optional[Dict[str, Any]] = None
+            for candidate in candidates:
+                if normalize_memory(candidate.get("text", "")) == normalized_requested_memory:
+                    matched_candidate = candidate
+                    break
 
-        if matched_variant_price.get("product_price"):
-            parsed_data["product_price"] = matched_variant_price.get("product_price", "")
-        if matched_variant_price.get("original_price"):
-            parsed_data["original_price"] = matched_variant_price.get("original_price", "")
+            if matched_candidate:
+                clicked_text = matched_candidate.get("text", "")
+                selector = (
+                    f"{matched_candidate.get('tag', '')}"
+                    f"{'.' + '.'.join([c for c in matched_candidate.get('class_name', '').split() if c]) if matched_candidate.get('class_name', '') else ''}"
+                )
+                clicked = False
+
+                if selector:
+                    locator = page.locator(selector).filter(has_text=clicked_text).first
+                    if locator.count() > 0:
+                        locator.click(timeout=5000)
+                        clicked = True
+
+                if not clicked:
+                    locator = page.locator("*").filter(has_text=clicked_text).first
+                    if locator.count() > 0:
+                        locator.click(timeout=5000)
+                        clicked = True
+
+                page.wait_for_timeout(3000)
+                refreshed_html = page.content()
+                refreshed_data = extract_price_data(refreshed_html)
+                price_after_click = refreshed_data.get("product_price", "")
+                original_after_click = refreshed_data.get("original_price", "")
+
+                if (
+                    price_after_click == base_product_price
+                    and original_after_click == base_original_price
+                    and clicked
+                ):
+                    if selector:
+                        js_locator = page.locator(selector).filter(has_text=clicked_text).first
+                    else:
+                        js_locator = page.locator("*").filter(has_text=clicked_text).first
+                    if js_locator.count() > 0:
+                        js_locator.evaluate("el => el.click()")
+                        page.wait_for_timeout(3000)
+                        refreshed_html = page.content()
+                        refreshed_data = extract_price_data(refreshed_html)
+                        price_after_click = refreshed_data.get("product_price", "")
+                        original_after_click = refreshed_data.get("original_price", "")
+
+                print(
+                    "[DEBUG][PriceOye] Click result: "
+                    f"requested memory={memory}, "
+                    f"clicked element text={clicked_text}, "
+                    f"price before click={base_product_price}, "
+                    f"price after click={price_after_click}"
+                )
+
+                parsed_data["product_price"] = price_after_click or base_product_price
+                parsed_data["original_price"] = original_after_click or base_original_price
+
+                if price_after_click == base_product_price and original_after_click == base_original_price:
+                    error_message = f"Matched memory {memory} but price did not change"
+            else:
+                fallback_used = True
+                error_message = f"Memory clickable element not found for {memory}; fallback default price used"
 
         stock_status = "unknown"
         matched_keyword = ""
@@ -367,7 +473,6 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         if error_message:
             parsed_data["error_message"] = error_message
 
-        print(f"[DEBUG][PriceOye] matched variant price: {matched_variant_price}")
         print(f"[DEBUG][PriceOye] fallback_used: {'yes' if fallback_used else 'no'}")
         print(f"[DEBUG][PriceOye] final product_price: {parsed_data.get('product_price', '')}")
         print(f"[DEBUG][PriceOye] final original_price: {parsed_data.get('original_price', '')}")
