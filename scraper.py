@@ -114,6 +114,31 @@ def normalize_memory(text: str) -> str:
     return compact
 
 
+def sanitize_filename(value: str, fallback: str) -> str:
+    cleaned = re.sub(r"[\\/]+", "_", (value or "").strip())
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "", cleaned)
+    cleaned = cleaned.strip("._-")
+    return cleaned or fallback
+
+
+def save_debug_artifacts(page: Any, screenshot_path: Optional[str] = None, html_path: Optional[str] = None) -> None:
+    try:
+        if screenshot_path:
+            page.screenshot(path=screenshot_path, full_page=True)
+            print(f"[DEBUG][PriceOye] Saved screenshot: {screenshot_path}")
+    except Exception as exc:
+        print(f"[DEBUG][PriceOye] Failed to save screenshot {screenshot_path}: {exc}")
+
+    try:
+        if html_path:
+            with open(html_path, "w", encoding="utf-8") as handle:
+                handle.write(page.content())
+            print(f"[DEBUG][PriceOye] Saved HTML: {html_path}")
+    except Exception as exc:
+        print(f"[DEBUG][PriceOye] Failed to save HTML {html_path}: {exc}")
+
+
 def collect_memory_click_candidates(page: Any) -> List[Dict[str, Any]]:
     script = """
     () => {
@@ -319,6 +344,7 @@ def parse_memory_variants(page: Any) -> List[Tuple[str, str]]:
 def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = "") -> Dict[str, str]:
     page = browser_context.new_page()
     try:
+        os.makedirs("debug_screenshots", exist_ok=True)
         page.goto(product_url, wait_until="networkidle", timeout=60000)
         page.wait_for_timeout(5000)
 
@@ -361,6 +387,9 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         base_original_price = parsed_data.get("original_price", "")
         fallback_used = False
         error_message = ""
+        safe_model = sanitize_filename(product_url.rstrip("/").split("/")[-1], "unknown_model")
+        safe_memory = sanitize_filename(memory or "default", "default_memory")
+        debug_prefix = os.path.join("debug_screenshots", f"{safe_model}_{safe_memory}")
 
         if normalized_requested_memory:
             candidates = collect_memory_click_candidates(page)
@@ -387,6 +416,7 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                     f"{'.' + '.'.join([c for c in matched_candidate.get('class_name', '').split() if c]) if matched_candidate.get('class_name', '') else ''}"
                 )
                 clicked = False
+                save_debug_artifacts(page, screenshot_path=f"{debug_prefix}_before.png")
 
                 if selector:
                     locator = page.locator(selector).filter(has_text=clicked_text).first
@@ -401,6 +431,11 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                         clicked = True
 
                 page.wait_for_timeout(3000)
+                save_debug_artifacts(
+                    page,
+                    screenshot_path=f"{debug_prefix}_after.png",
+                    html_path=f"{debug_prefix}.html",
+                )
                 refreshed_html = page.content()
                 refreshed_data = extract_price_data(refreshed_html)
                 price_after_click = refreshed_data.get("product_price", "")
