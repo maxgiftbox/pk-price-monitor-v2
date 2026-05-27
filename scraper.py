@@ -2,7 +2,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import gspread
 import pandas as pd
@@ -104,7 +104,44 @@ def extract_price_data(page_html: str) -> Dict[str, str]:
     }
 
 
-def crawl_priceoye_page(browser_context: Any, product_url: str) -> Dict[str, str]:
+def normalize_memory(value: str) -> str:
+    return re.sub(r"\s+", "", value or "").lower()
+
+
+def parse_memory_variants(page: Any) -> List[Tuple[str, str]]:
+    """Returns [(memory_text, linked_price_text), ...] found on the page."""
+    variants: List[Tuple[str, str]] = []
+    memory_pattern = re.compile(r"\b\d+\s*/\s*\d+\b")
+    # Gather from likely interactive controls and text containers.
+    candidate_selectors = [
+        "button",
+        "[role='button']",
+        "label",
+        "li",
+        "a",
+        "span",
+        "div",
+    ]
+
+    for selector in candidate_selectors:
+        locator = page.locator(selector)
+        count = min(locator.count(), 250)
+        for i in range(count):
+            text = clean_price(locator.nth(i).inner_text())
+            memory_match = memory_pattern.search(text)
+            if not memory_match:
+                continue
+            memory = clean_price(memory_match.group(0))
+            price_match = re.search(r"Rs\.?\s?[\d,]+", text)
+            linked_price = clean_price(price_match.group(0)) if price_match else ""
+            pair = (memory, linked_price)
+            if pair not in variants:
+                variants.append(pair)
+
+    return variants
+
+
+def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = "") -> Dict[str, str]:
     page = browser_context.new_page()
     try:
         page.goto(product_url, wait_until="networkidle", timeout=60000)
@@ -114,6 +151,52 @@ def crawl_priceoye_page(browser_context: Any, product_url: str) -> Dict[str, str
         body_text_lower = body_text.lower()
         print(f"[DEBUG][PriceOye] Crawling URL: {product_url}")
         print(f"[DEBUG][PriceOye] Body text (first 3000 chars):\n{body_text[:3000]}")
+
+        normalized_requested_memory = normalize_memory(memory)
+        print(f"[DEBUG][PriceOye] Requested memory: {memory or '(blank)'}")
+        detected_variants = parse_memory_variants(page)
+        detected_memory_logs = [
+            f"{mem} ({price if price else 'no linked price'})" for mem, price in detected_variants
+        ]
+        print(f"[DEBUG][PriceOye] Detected memory options: {detected_memory_logs}")
+        matched_memory = ""
+
+        if normalized_requested_memory:
+            for mem, _ in detected_variants:
+                if normalize_memory(mem) == normalized_requested_memory:
+                    matched_memory = mem
+                    break
+
+            print(f"[DEBUG][PriceOye] Matched memory: {matched_memory or 'none'}")
+
+            if not matched_memory:
+                return {
+                    "product_price": "",
+                    "original_price": "",
+                    "stock_status": "unknown",
+                    "error_message": f"Memory variant not found: {memory}",
+                }
+
+            memory_regex = re.compile(rf"\b{re.escape(matched_memory).replace('/', r'\s*/\s*')}\b", re.I)
+            clickable_selectors = ["button", "[role='button']", "label", "li", "a", "span", "div"]
+            clicked = False
+            for selector in clickable_selectors:
+                nodes = page.locator(selector)
+                count = min(nodes.count(), 250)
+                for i in range(count):
+                    node = nodes.nth(i)
+                    node_text = clean_price(node.inner_text())
+                    if not memory_regex.search(node_text):
+                        continue
+                    try:
+                        node.click(timeout=1500)
+                        page.wait_for_timeout(2500)
+                        clicked = True
+                        break
+                    except Exception:  # noqa: BLE001
+                        continue
+                if clicked:
+                    break
 
         html = page.content()
         parsed_data = extract_price_data(html)
@@ -148,8 +231,8 @@ def crawl_priceoye_page(browser_context: Any, product_url: str) -> Dict[str, str
         if len(normalized_matches) > 1 and not parsed_data.get("original_price"):
             parsed_data["original_price"] = normalized_matches[1]
 
-        print(f"[DEBUG][PriceOye] Final parsed product_price: {parsed_data.get('product_price', '')}")
-        print(f"[DEBUG][PriceOye] Final parsed original_price: {parsed_data.get('original_price', '')}")
+        print(f"[DEBUG][PriceOye] Parsed product_price: {parsed_data.get('product_price', '')}")
+        print(f"[DEBUG][PriceOye] Parsed original_price: {parsed_data.get('original_price', '')}")
         print(f"[DEBUG][PriceOye] Final stock_status: {parsed_data.get('stock_status', '')}")
 
         if (
@@ -252,7 +335,8 @@ def main() -> None:
                     "error_message": f"Unsupported platform: {platform}",
                 }
             else:
-                crawl_result = crawl_priceoye_page(context, product_url)
+                memory = str(row.get("memory", "")).strip()
+                crawl_result = crawl_priceoye_page(context, product_url, memory=memory)
                 if (
                     not crawl_result.get("product_price")
                     and not crawl_result.get("original_price")
