@@ -104,8 +104,81 @@ def extract_price_data(page_html: str) -> Dict[str, str]:
     }
 
 
-def normalize_memory(value: str) -> str:
-    return re.sub(r"\s+", "", value or "").lower()
+def normalize_memory(text: str) -> str:
+    value = (text or "").lower()
+    numbers = re.findall(r"\d+", value)
+    if len(numbers) >= 2:
+        return f"{numbers[0]}/{numbers[1]}"
+    compact = re.sub(r"\s+", "", value)
+    return compact
+
+
+def extract_prices_near_memory(text: str, memory: str) -> Dict[str, str]:
+    if not text or not memory:
+        return {}
+
+    normalized_memory = normalize_memory(memory)
+    if not normalized_memory or "/" not in normalized_memory:
+        return {}
+
+    ram, rom = normalized_memory.split("/", 1)
+    memory_patterns = [
+        rf"\b{ram}\s*/\s*{rom}\b",
+        rf"\b{ram}\s*gb\s*\+\s*{rom}\s*gb\b",
+        rf"\b{ram}\s*gb\s*ram\s*{rom}\s*gb\s*rom\b",
+        rf"\b{ram}\s*gb\s*/\s*{rom}\s*gb\b",
+    ]
+
+    price_pattern = re.compile(r"Rs\.?\s*[\d,]+", re.I)
+    compiled_patterns = [re.compile(p, re.I) for p in memory_patterns]
+
+    best: Dict[str, str] = {}
+    for pattern in compiled_patterns:
+        for match in pattern.finditer(text):
+            window_start = max(0, match.start() - 220)
+            window_end = min(len(text), match.end() + 220)
+            snippet = text[window_start:window_end]
+            prices = [clean_price(p) for p in price_pattern.findall(snippet)]
+            if not prices:
+                continue
+            best = {
+                "product_price": prices[0],
+                "original_price": prices[1] if len(prices) > 1 else "",
+            }
+            return best
+    return best
+
+
+def extract_variant_map_from_scripts(html_or_scripts: str) -> Dict[str, Dict[str, str]]:
+    variant_map: Dict[str, Dict[str, str]] = {}
+    if not html_or_scripts:
+        return variant_map
+
+    soup = BeautifulSoup(html_or_scripts, "html.parser")
+    script_texts = [s.get_text(" ", strip=False) for s in soup.find_all("script")]
+    if not script_texts:
+        script_texts = [html_or_scripts]
+    source_text = "\n".join(script_texts + [html_or_scripts])
+
+    memory_token = r"(4\s*/\s*64|4\s*/\s*128|6\s*/\s*128|8\s*/\s*128|8\s*/\s*256|12\s*/\s*256|12\s*/\s*512|16\s*/\s*512|\d+\s*gb\s*\+\s*\d+\s*gb|\d+\s*gb\s*ram\s*\d+\s*gb\s*rom|\d+\s*gb\s*/\s*\d+\s*gb)"
+    pair_pattern = re.compile(
+        rf"(?P<memory>{memory_token}).{{0,220}}?(?P<price>Rs\.?\s*[\d,]+)(?:.{{0,120}}?(?P<orig>Rs\.?\s*[\d,]+))?(?:.{{0,220}}?(?P<url>https?://[^\s\"'<>]+))?",
+        re.I | re.S,
+    )
+
+    for match in pair_pattern.finditer(source_text):
+        mem = normalize_memory(match.group("memory"))
+        if not mem:
+            continue
+        if mem in variant_map and variant_map[mem].get("product_price"):
+            continue
+        variant_map[mem] = {
+            "product_price": clean_price(match.group("price") or ""),
+            "original_price": clean_price(match.group("orig") or ""),
+            "url": clean_price(match.group("url") or ""),
+        }
+
+    return variant_map
 
 
 def get_visible_texts_for_selector(page: Any, selector: str) -> List[str]:
@@ -191,6 +264,12 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         page.wait_for_timeout(5000)
 
         body_text = page.locator("body").inner_text()
+        html = page.content()
+        scripts_text = page.evaluate(
+            """() => Array.from(document.querySelectorAll('script'))
+                .map((s) => s.textContent || '')
+                .join('\\n')"""
+        )
         body_text_lower = body_text.lower()
 
         normalized_requested_memory = normalize_memory(memory)
@@ -215,63 +294,45 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                 f"#{idx} [{item.get('match', '')}] (~300 chars): {item.get('snippet', '')}"
             )
 
-        detected_variants = parse_memory_variants(page)
-        detected_memory_logs = [
-            f"{mem} ({price if price else 'no linked price'})" for mem, price in detected_variants
-        ]
-        print(f"[DEBUG][PriceOye] Detected memory options: {detected_memory_logs}")
-        matched_memory = ""
-        matched_memory_found = False
+        variant_map: Dict[str, Dict[str, str]] = {}
+        for source_blob in [scripts_text, html, body_text]:
+            extracted = extract_variant_map_from_scripts(source_blob)
+            for key, value in extracted.items():
+                if key not in variant_map:
+                    variant_map[key] = value
+                else:
+                    for field in ("product_price", "original_price", "url"):
+                        if not variant_map[key].get(field) and value.get(field):
+                            variant_map[key][field] = value.get(field, "")
+
+        print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
+        print(f"[DEBUG][PriceOye] detected variant map: {variant_map}")
+
+        matched_variant_price: Dict[str, str] = {}
         fallback_used = False
         error_message = ""
 
         if normalized_requested_memory:
-            for mem, _ in detected_variants:
-                if normalize_memory(mem) == normalized_requested_memory:
-                    matched_memory = mem
-                    break
-
-            print(f"[DEBUG][PriceOye] Matched memory: {matched_memory or 'none'}")
-
-            if matched_memory:
-                escaped_memory = re.escape(matched_memory)
-                memory_pattern = escaped_memory.replace('/', r'\s*/\s*')
-                memory_regex = re.compile(rf"\b{memory_pattern}\b", re.I)
-                clickable_selectors = ["button", "[role='button']", "label", "li", "a", "span", "div"]
-                clicked = False
-                for selector in clickable_selectors:
-                    nodes = page.locator(selector)
-                    count = min(nodes.count(), 250)
-                    for i in range(count):
-                        node = nodes.nth(i)
-                        node_text = clean_price(node.inner_text())
-                        if not memory_regex.search(node_text):
-                            continue
-                        try:
-                            node.click(timeout=1500)
-                            page.wait_for_timeout(2500)
-                            clicked = True
-                            break
-                        except Exception:  # noqa: BLE001
-                            continue
-                    if clicked:
+            matched_variant_price = variant_map.get(normalized_requested_memory, {})
+            if not matched_variant_price or not matched_variant_price.get("product_price"):
+                for source_blob in [scripts_text, html, body_text]:
+                    nearby = extract_prices_near_memory(source_blob, memory)
+                    if nearby.get("product_price"):
+                        matched_variant_price = nearby
                         break
-                matched_memory_found = clicked
-                if not clicked:
-                    fallback_used = True
-                    error_message = (
-                        f"Memory variant not found: {memory}; fallback default price used"
-                    )
-            else:
+
+            if not matched_variant_price or not matched_variant_price.get("product_price"):
                 fallback_used = True
                 error_message = (
-                    f"Memory variant not found: {memory}; fallback default price used"
+                    f"Variant price not found for {memory}; fallback default price used"
                 )
-        else:
-            matched_memory_found = False
 
-        html = page.content()
         parsed_data = extract_price_data(html)
+
+        if matched_variant_price.get("product_price"):
+            parsed_data["product_price"] = matched_variant_price.get("product_price", "")
+        if matched_variant_price.get("original_price"):
+            parsed_data["original_price"] = matched_variant_price.get("original_price", "")
 
         stock_status = "unknown"
         matched_keyword = ""
@@ -306,8 +367,7 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         if error_message:
             parsed_data["error_message"] = error_message
 
-        print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
-        print(f"[DEBUG][PriceOye] matched_memory: {'yes' if matched_memory_found else 'no'}")
+        print(f"[DEBUG][PriceOye] matched variant price: {matched_variant_price}")
         print(f"[DEBUG][PriceOye] fallback_used: {'yes' if fallback_used else 'no'}")
         print(f"[DEBUG][PriceOye] final product_price: {parsed_data.get('product_price', '')}")
         print(f"[DEBUG][PriceOye] final original_price: {parsed_data.get('original_price', '')}")
