@@ -221,6 +221,9 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         ]
         print(f"[DEBUG][PriceOye] Detected memory options: {detected_memory_logs}")
         matched_memory = ""
+        matched_memory_found = False
+        fallback_used = False
+        error_message = ""
 
         if normalized_requested_memory:
             for mem, _ in detected_variants:
@@ -230,36 +233,42 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
 
             print(f"[DEBUG][PriceOye] Matched memory: {matched_memory or 'none'}")
 
-            if not matched_memory:
-                return {
-                    "product_price": "",
-                    "original_price": "",
-                    "stock_status": "unknown",
-                    "error_message": f"Memory variant not found: {memory}",
-                }
-
-            escaped_memory = re.escape(matched_memory)
-            memory_pattern = escaped_memory.replace('/', r'\s*/\s*')
-            memory_regex = re.compile(rf"\b{memory_pattern}\b", re.I)
-            clickable_selectors = ["button", "[role='button']", "label", "li", "a", "span", "div"]
-            clicked = False
-            for selector in clickable_selectors:
-                nodes = page.locator(selector)
-                count = min(nodes.count(), 250)
-                for i in range(count):
-                    node = nodes.nth(i)
-                    node_text = clean_price(node.inner_text())
-                    if not memory_regex.search(node_text):
-                        continue
-                    try:
-                        node.click(timeout=1500)
-                        page.wait_for_timeout(2500)
-                        clicked = True
+            if matched_memory:
+                escaped_memory = re.escape(matched_memory)
+                memory_pattern = escaped_memory.replace('/', r'\s*/\s*')
+                memory_regex = re.compile(rf"\b{memory_pattern}\b", re.I)
+                clickable_selectors = ["button", "[role='button']", "label", "li", "a", "span", "div"]
+                clicked = False
+                for selector in clickable_selectors:
+                    nodes = page.locator(selector)
+                    count = min(nodes.count(), 250)
+                    for i in range(count):
+                        node = nodes.nth(i)
+                        node_text = clean_price(node.inner_text())
+                        if not memory_regex.search(node_text):
+                            continue
+                        try:
+                            node.click(timeout=1500)
+                            page.wait_for_timeout(2500)
+                            clicked = True
+                            break
+                        except Exception:  # noqa: BLE001
+                            continue
+                    if clicked:
                         break
-                    except Exception:  # noqa: BLE001
-                        continue
-                if clicked:
-                    break
+                matched_memory_found = clicked
+                if not clicked:
+                    fallback_used = True
+                    error_message = (
+                        f"Memory variant not found: {memory}; fallback default price used"
+                    )
+            else:
+                fallback_used = True
+                error_message = (
+                    f"Memory variant not found: {memory}; fallback default price used"
+                )
+        else:
+            matched_memory_found = False
 
         html = page.content()
         parsed_data = extract_price_data(html)
@@ -294,8 +303,15 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         if len(normalized_matches) > 1 and not parsed_data.get("original_price"):
             parsed_data["original_price"] = normalized_matches[1]
 
-        print(f"[DEBUG][PriceOye] Parsed product_price: {parsed_data.get('product_price', '')}")
-        print(f"[DEBUG][PriceOye] Parsed original_price: {parsed_data.get('original_price', '')}")
+        if error_message:
+            parsed_data["error_message"] = error_message
+
+        print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
+        print(f"[DEBUG][PriceOye] matched_memory: {'yes' if matched_memory_found else 'no'}")
+        print(f"[DEBUG][PriceOye] fallback_used: {'yes' if fallback_used else 'no'}")
+        print(f"[DEBUG][PriceOye] final product_price: {parsed_data.get('product_price', '')}")
+        print(f"[DEBUG][PriceOye] final original_price: {parsed_data.get('original_price', '')}")
+        print(f"[DEBUG][PriceOye] final stock_status: {parsed_data.get('stock_status', '')}")
         print(
             "[DEBUG][PriceOye] Parsed prices summary: "
             f"product_price={parsed_data.get('product_price', '')}, "
