@@ -108,6 +108,49 @@ def normalize_memory(value: str) -> str:
     return re.sub(r"\s+", "", value or "").lower()
 
 
+def get_visible_texts_for_selector(page: Any, selector: str) -> List[str]:
+    script = """
+    (selector) => {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        const isVisible = (el) => {
+            const style = window.getComputedStyle(el);
+            if (!style) return false;
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        };
+
+        const output = [];
+        for (const el of nodes) {
+            if (!isVisible(el)) continue;
+            const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+            if (text) output.push(text);
+        }
+        return output;
+    }
+    """
+    values = page.evaluate(script, selector)
+    if not isinstance(values, list):
+        return []
+    return [clean_price(str(v)) for v in values if clean_price(str(v))]
+
+
+def get_memory_debug_matches(text: str) -> List[Dict[str, str]]:
+    pattern = re.compile(r"(4\s*/\s*64|4\s*/\s*128|6\s*/\s*128|8\s*/\s*128|8\s*/\s*256|12\s*/\s*256|12\s*/\s*512)", re.I)
+    matches: List[Dict[str, str]] = []
+    for match in pattern.finditer(text):
+        start = max(0, match.start() - 150)
+        end = min(len(text), match.end() + 150)
+        snippet = clean_price(text[start:end])
+        matches.append(
+            {
+                "match": clean_price(match.group(0)),
+                "snippet": snippet,
+            }
+        )
+    return matches
+
+
 def parse_memory_variants(page: Any) -> List[Tuple[str, str]]:
     """Returns [(memory_text, linked_price_text), ...] found on the page."""
     variants: List[Tuple[str, str]] = []
@@ -149,11 +192,29 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
 
         body_text = page.locator("body").inner_text()
         body_text_lower = body_text.lower()
-        print(f"[DEBUG][PriceOye] Crawling URL: {product_url}")
-        print(f"[DEBUG][PriceOye] Body text (first 3000 chars):\n{body_text[:3000]}")
 
         normalized_requested_memory = normalize_memory(memory)
-        print(f"[DEBUG][PriceOye] Requested memory: {memory or '(blank)'}")
+        current_url = page.url
+        visible_button_texts = get_visible_texts_for_selector(page, "button, [role='button']")
+        visible_link_texts = get_visible_texts_for_selector(page, "a")
+        memory_debug_matches = get_memory_debug_matches(body_text)
+
+        print(f"[DEBUG][PriceOye] Crawling URL (input): {product_url}")
+        print(f"[DEBUG][PriceOye] Current page URL: {current_url}")
+        print(f"[DEBUG][PriceOye] Requested memory from sku_master: {memory or '(blank)'}")
+        print(f"[DEBUG][PriceOye] Visible body text (first 5000 chars):\n{body_text[:5000]}")
+        print(f"[DEBUG][PriceOye] All visible button texts ({len(visible_button_texts)}): {visible_button_texts}")
+        print(f"[DEBUG][PriceOye] All visible link texts ({len(visible_link_texts)}): {visible_link_texts}")
+        print(
+            "[DEBUG][PriceOye] Memory-pattern visible snippets: "
+            f"{[m.get('match', '') for m in memory_debug_matches]}"
+        )
+        for idx, item in enumerate(memory_debug_matches, start=1):
+            print(
+                "[DEBUG][PriceOye] Memory match context "
+                f"#{idx} [{item.get('match', '')}] (~300 chars): {item.get('snippet', '')}"
+            )
+
         detected_variants = parse_memory_variants(page)
         detected_memory_logs = [
             f"{mem} ({price if price else 'no linked price'})" for mem, price in detected_variants
@@ -233,6 +294,11 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
 
         print(f"[DEBUG][PriceOye] Parsed product_price: {parsed_data.get('product_price', '')}")
         print(f"[DEBUG][PriceOye] Parsed original_price: {parsed_data.get('original_price', '')}")
+        print(
+            "[DEBUG][PriceOye] Parsed prices summary: "
+            f"product_price={parsed_data.get('product_price', '')}, "
+            f"original_price={parsed_data.get('original_price', '')}"
+        )
         print(f"[DEBUG][PriceOye] Final stock_status: {parsed_data.get('stock_status', '')}")
 
         if (
