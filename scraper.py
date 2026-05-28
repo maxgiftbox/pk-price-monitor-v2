@@ -341,7 +341,12 @@ def parse_memory_variants(page: Any) -> List[Tuple[str, str]]:
     return variants
 
 
-def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = "") -> Dict[str, str]:
+def crawl_priceoye_page(
+    browser_context: Any,
+    product_url: str,
+    memory: str = "",
+    force_debug_artifacts: bool = False,
+) -> Dict[str, str]:
     page = browser_context.new_page()
     try:
         os.makedirs("debug_screenshots", exist_ok=True)
@@ -391,6 +396,9 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
         safe_memory = sanitize_filename(memory or "default", "default_memory")
         debug_prefix = os.path.join("debug_screenshots", f"{safe_model}_{safe_memory}")
 
+        if force_debug_artifacts:
+            save_debug_artifacts(page, screenshot_path=f"{debug_prefix}_before.png")
+
         if normalized_requested_memory:
             candidates = collect_memory_click_candidates(page)
             print(f"[DEBUG][PriceOye] Candidate clickable memory elements ({len(candidates)}):")
@@ -416,7 +424,6 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                     f"{'.' + '.'.join([c for c in matched_candidate.get('class_name', '').split() if c]) if matched_candidate.get('class_name', '') else ''}"
                 )
                 clicked = False
-                save_debug_artifacts(page, screenshot_path=f"{debug_prefix}_before.png")
 
                 if selector:
                     locator = page.locator(selector).filter(has_text=clicked_text).first
@@ -431,11 +438,12 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
                         clicked = True
 
                 page.wait_for_timeout(3000)
-                save_debug_artifacts(
-                    page,
-                    screenshot_path=f"{debug_prefix}_after.png",
-                    html_path=f"{debug_prefix}.html",
-                )
+                if force_debug_artifacts:
+                    save_debug_artifacts(
+                        page,
+                        screenshot_path=f"{debug_prefix}_after.png",
+                        html_path=f"{debug_prefix}.html",
+                    )
                 refreshed_html = page.content()
                 refreshed_data = extract_price_data(refreshed_html)
                 price_after_click = refreshed_data.get("product_price", "")
@@ -544,6 +552,15 @@ def crawl_priceoye_page(browser_context: Any, product_url: str, memory: str = ""
             "error_message": f"Crawl failed: {exc}",
         }
     finally:
+        if force_debug_artifacts:
+            safe_model = sanitize_filename(product_url.rstrip("/").split("/")[-1], "unknown_model")
+            safe_memory = sanitize_filename(memory or "default", "default_memory")
+            debug_prefix = os.path.join("debug_screenshots", f"{safe_model}_{safe_memory}")
+            save_debug_artifacts(
+                page,
+                screenshot_path=f"{debug_prefix}_after.png",
+                html_path=f"{debug_prefix}.html",
+            )
         page.close()
 
 
@@ -572,6 +589,9 @@ def ensure_price_daily_header(worksheet: gspread.Worksheet) -> None:
 
 
 def main() -> None:
+    os.makedirs("debug_screenshots", exist_ok=True)
+    print(f"[DEBUG][PriceOye] Debug directory ready: {os.path.abspath('debug_screenshots')}")
+
     client = get_gspread_client()
     sheet = client.open(SHEET_NAME)
 
@@ -598,6 +618,7 @@ def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
+        crawled_sku_count = 0
 
         for row in active_rows:
             product_url = str(row.get("product_url", "")).strip()
@@ -620,7 +641,14 @@ def main() -> None:
                 }
             else:
                 memory = str(row.get("memory", "")).strip()
-                crawl_result = crawl_priceoye_page(context, product_url, memory=memory)
+                crawled_sku_count += 1
+                force_debug_artifacts = crawled_sku_count <= 5
+                crawl_result = crawl_priceoye_page(
+                    context,
+                    product_url,
+                    memory=memory,
+                    force_debug_artifacts=force_debug_artifacts,
+                )
                 if (
                     not crawl_result.get("product_price")
                     and not crawl_result.get("original_price")
