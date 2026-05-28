@@ -53,6 +53,32 @@ def clean_price(value: Optional[str]) -> str:
     return " ".join(value.replace("\xa0", " ").split())
 
 
+
+
+def parse_price_to_int(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return value
+
+    cleaned = str(value).replace(" ", " ")
+    cleaned = re.sub(r"(?i)rs\.?", "", cleaned)
+    cleaned = cleaned.replace(",", "")
+    cleaned = re.sub(r"\s+", "", cleaned)
+
+    if not cleaned:
+        return ""
+
+    if not cleaned.isdigit():
+        return ""
+
+    try:
+        return int(cleaned)
+    except ValueError:
+        return ""
+
 def extract_price_data(page_html: str) -> Dict[str, str]:
     soup = BeautifulSoup(page_html, "html.parser")
 
@@ -664,7 +690,7 @@ def crawl_priceoye_page(
         page.close()
 
 
-def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, str]) -> Dict[str, str]:
+def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) -> Dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     row = {
         "crawl_date": now_utc.date().isoformat(),
@@ -672,8 +698,8 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, str]) ->
         "brand": str(base.get("brand", "")).strip(),
         "model": str(base.get("model", "")).strip(),
         "memory": str(base.get("memory", "")).strip(),
-        "original_price": crawl_result.get("original_price", ""),
-        "product_price": crawl_result.get("product_price", ""),
+        "original_price": parse_price_to_int(crawl_result.get("original_price", "")),
+        "product_price": parse_price_to_int(crawl_result.get("product_price", "")),
         "stock_status": crawl_result.get("stock_status", ""),
         "product_url": str(base.get("product_url", "")).strip(),
         "crawl_time": now_utc.isoformat(timespec="seconds"),
