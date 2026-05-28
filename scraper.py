@@ -105,13 +105,40 @@ def extract_price_data(page_html: str) -> Dict[str, str]:
 
 
 def normalize_memory(text: str) -> str:
+    ram, storage = parse_memory_to_ram_storage(text)
+    if ram and storage:
+        return f"{ram}/{storage}"
     value = (text or "").lower()
-    value = value.replace("＋", "+")
-    numbers = re.findall(r"\d+", value)
-    if len(numbers) >= 2:
-        return f"{numbers[0]}/{numbers[1]}"
     compact = re.sub(r"\s+", "", value)
     return compact
+
+
+
+
+def parse_memory_to_ram_storage(text: str) -> Tuple[Optional[str], Optional[str]]:
+    value = (text or "").lower().replace("＋", "+")
+    value = re.sub(r"\s+", " ", value).strip()
+    if not value:
+        return (None, None)
+
+    nums = [int(n) for n in re.findall(r"\d+", value)]
+    if len(nums) < 2:
+        return (None, None)
+
+    # PriceOye-like format: "256GB - 8GB RAM" => storage first then RAM.
+    if "ram" in value and "-" in value:
+        left_part, right_part = value.split("-", 1)
+        left_nums = [int(n) for n in re.findall(r"\d+", left_part)]
+        right_nums = [int(n) for n in re.findall(r"\d+", right_part)]
+        if left_nums and right_nums:
+            storage = str(left_nums[0])
+            ram = str(right_nums[0])
+            return (ram, storage)
+
+    # sku_master format and related variants: "8/256", "8GB/256GB", "8GB + 256GB" => RAM first then storage.
+    ram = str(nums[0])
+    storage = str(nums[1])
+    return (ram, storage)
 
 
 def sanitize_filename(value: str, fallback: str) -> str:
@@ -385,8 +412,13 @@ def crawl_priceoye_page(
                 f"#{idx} [{item.get('match', '')}] (~300 chars): {item.get('snippet', '')}"
             )
 
+        requested_ram, requested_storage = parse_memory_to_ram_storage(memory)
         print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
         print(f"[DEBUG][PriceOye] normalized requested memory: {normalized_requested_memory or '(blank)'}")
+        print(
+            "[DEBUG][PriceOye] requested memory parsed as "
+            f"RAM={requested_ram or 'unknown'}, storage={requested_storage or 'unknown'}"
+        )
 
         parsed_data = extract_price_data(html)
         base_product_price = parsed_data.get("product_price", "")
@@ -418,12 +450,29 @@ def crawl_priceoye_page(
 
             matched_candidate: Optional[Dict[str, Any]] = None
             for candidate in candidates:
-                if normalize_memory(candidate.get("text", "")) == normalized_requested_memory:
+                candidate_text = candidate.get("text", "")
+                candidate_ram, candidate_storage = parse_memory_to_ram_storage(candidate_text)
+                print(
+                    "[DEBUG][PriceOye] candidate button text: "
+                    f"{candidate_text}"
+                )
+                print(
+                    "[DEBUG][PriceOye] candidate parsed RAM/storage: "
+                    f"RAM={candidate_ram or 'unknown'}, storage={candidate_storage or 'unknown'}"
+                )
+                if (
+                    requested_ram
+                    and requested_storage
+                    and candidate_ram == requested_ram
+                    and candidate_storage == requested_storage
+                ):
                     matched_candidate = candidate
                     break
 
             if matched_candidate:
                 clicked_text = matched_candidate.get("text", "")
+                print(f"[DEBUG][PriceOye] matched button text: {clicked_text}")
+                print(f"[DEBUG][PriceOye] price before click: {base_product_price}")
                 selector = (
                     f"{matched_candidate.get('tag', '')}"
                     f"{'.' + '.'.join([c for c in matched_candidate.get('class_name', '').split() if c]) if matched_candidate.get('class_name', '') else ''}"
@@ -471,6 +520,7 @@ def crawl_priceoye_page(
                         price_after_click = refreshed_data.get("product_price", "")
                         original_after_click = refreshed_data.get("original_price", "")
 
+                print(f"[DEBUG][PriceOye] price after click: {price_after_click}")
                 print(
                     "[DEBUG][PriceOye] Click result: "
                     f"requested memory={memory}, "
