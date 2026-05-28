@@ -260,6 +260,37 @@ def extract_prices_near_memory(text: str, memory: str) -> Dict[str, str]:
     return best
 
 
+
+
+def extract_prices_from_body_text_top(body_text: str) -> Tuple[str, str, List[str]]:
+    if not body_text:
+        return "", "", []
+
+    # Prefer the top product section first.
+    top_window = body_text[:4500]
+    price_pattern = re.compile(r"Rs\.?\s*[\d,]+", re.I)
+    matches = [clean_price(m) for m in price_pattern.findall(top_window)]
+
+    if len(matches) < 2:
+        full_matches = [clean_price(m) for m in price_pattern.findall(body_text)]
+        if len(full_matches) > len(matches):
+            matches = full_matches
+
+    product_price = matches[0] if matches else ""
+    original_price = ""
+    if len(matches) > 1:
+        unique_prices = []
+        for item in matches:
+            if item not in unique_prices:
+                unique_prices.append(item)
+        if len(unique_prices) > 1:
+            original_price = unique_prices[1]
+        else:
+            original_price = matches[1]
+
+    return product_price, original_price, matches
+
+
 def extract_variant_map_from_scripts(html_or_scripts: str) -> Dict[str, Dict[str, str]]:
     variant_map: Dict[str, Dict[str, str]] = {}
     if not html_or_scripts:
@@ -423,6 +454,9 @@ def crawl_priceoye_page(
         parsed_data = extract_price_data(html)
         base_product_price = parsed_data.get("product_price", "")
         base_original_price = parsed_data.get("original_price", "")
+        _, _, before_matches = extract_prices_from_body_text_top(body_text)
+        print(f"[DEBUG][PriceOye] body_text sample before click: {body_text[:500]}")
+        print(f"[DEBUG][PriceOye] matched prices before click: {before_matches[:10]}")
         fallback_used = False
         error_message = ""
         safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
@@ -498,10 +532,14 @@ def crawl_priceoye_page(
                         screenshot_path=f"{debug_prefix}_after.png",
                         html_path=f"{debug_prefix}.html",
                     )
+                refreshed_body_text = page.locator("body").inner_text()
                 refreshed_html = page.content()
                 refreshed_data = extract_price_data(refreshed_html)
-                price_after_click = refreshed_data.get("product_price", "")
-                original_after_click = refreshed_data.get("original_price", "")
+                body_product_price, body_original_price, after_matches = extract_prices_from_body_text_top(refreshed_body_text)
+                print(f"[DEBUG][PriceOye] body_text sample after click: {refreshed_body_text[:500]}")
+                print(f"[DEBUG][PriceOye] matched prices after click: {after_matches[:10]}")
+                price_after_click = body_product_price or refreshed_data.get("product_price", "")
+                original_after_click = body_original_price or refreshed_data.get("original_price", "")
 
                 if (
                     price_after_click == base_product_price
@@ -515,10 +553,14 @@ def crawl_priceoye_page(
                     if js_locator.count() > 0:
                         js_locator.evaluate("el => el.click()")
                         page.wait_for_timeout(3000)
+                        refreshed_body_text = page.locator("body").inner_text()
                         refreshed_html = page.content()
                         refreshed_data = extract_price_data(refreshed_html)
-                        price_after_click = refreshed_data.get("product_price", "")
-                        original_after_click = refreshed_data.get("original_price", "")
+                        body_product_price, body_original_price, after_matches = extract_prices_from_body_text_top(refreshed_body_text)
+                        print(f"[DEBUG][PriceOye] body_text sample after click (js): {refreshed_body_text[:500]}")
+                        print(f"[DEBUG][PriceOye] matched prices after click (js): {after_matches[:10]}")
+                        price_after_click = body_product_price or refreshed_data.get("product_price", "")
+                        original_after_click = body_original_price or refreshed_data.get("original_price", "")
 
                 print(f"[DEBUG][PriceOye] price after click: {price_after_click}")
                 print(
@@ -559,14 +601,13 @@ def crawl_priceoye_page(
         parsed_data["stock_status"] = stock_status
         print(f"[DEBUG][PriceOye] Stock status matched keyword: {matched_keyword or 'none'}")
 
-        regex_matches = re.findall(r"Rs\.?\s?([\d,]+)", body_text)
-        normalized_matches = [f"Rs {m}" for m in regex_matches]
+        fallback_product_from_body, fallback_original_from_body, normalized_matches = extract_prices_from_body_text_top(body_text)
         print(f"[DEBUG][PriceOye] Regex matched prices: {normalized_matches}")
 
-        if normalized_matches and not parsed_data.get("product_price"):
-            parsed_data["product_price"] = normalized_matches[0]
-        if len(normalized_matches) > 1 and not parsed_data.get("original_price"):
-            parsed_data["original_price"] = normalized_matches[1]
+        if fallback_product_from_body and not parsed_data.get("product_price"):
+            parsed_data["product_price"] = fallback_product_from_body
+        if fallback_original_from_body and not parsed_data.get("original_price"):
+            parsed_data["original_price"] = fallback_original_from_body
 
         if error_message:
             parsed_data["error_message"] = error_message
