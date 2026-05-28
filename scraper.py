@@ -66,8 +66,9 @@ def parse_price_to_int(value: Any) -> Any:
     if isinstance(value, int):
         return value
 
-    cleaned = str(value).replace(" ", " ")
-    cleaned = re.sub(r"(?i)rs\.?", "", cleaned)
+    cleaned = str(value).replace(" ", " ").replace("\xa0", " ")
+    cleaned = re.sub(r"(?i)(rs|tk|bdt)\.?", "", cleaned)
+    cleaned = cleaned.replace("৳", "")
     cleaned = cleaned.replace(",", "")
     cleaned = re.sub(r"\s+", "", cleaned)
 
@@ -102,6 +103,123 @@ def parse_tk_bdt_price_to_int(value: Any) -> Any:
         return int(text)
     except ValueError:
         return ""
+
+PICKABOO_PRICE_PATTERN = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)|\b(\d{1,3}(?:,\d{3})+)\b")
+PICKABOO_OFFER_CONTEXT_PATTERN = re.compile(
+    r"(?i)(available offer|checkout discount|voucher|coupon|promo|cashback|save|discount)"
+)
+
+
+def first_tk_bdt_price_to_int(text: str) -> Any:
+    for match in PICKABOO_PRICE_PATTERN.finditer(text or ""):
+        parsed = parse_tk_bdt_price_to_int(match.group(1) or match.group(2))
+        if isinstance(parsed, int) and parsed > 0:
+            return parsed
+    return ""
+
+
+def extract_pickaboo_product_price(page: Any, body_text: str) -> Any:
+    candidate_texts = page.evaluate(
+        r"""
+        () => {
+            const selectors = [
+                '.product-price',
+                '.product_price',
+                '.special-price',
+                '.final-price',
+                '.price-box .price',
+                '.product-info-main .price',
+                '.product-details .price',
+                '.pdp-price',
+                '[class*=\"product\"][class*=\"price\"]',
+                '[class*=\"price\"]'
+            ];
+            const nodes = Array.from(document.querySelectorAll(selectors.join(',')));
+            const isVisible = (el) => {
+                const style = window.getComputedStyle(el);
+                if (!style) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+            return nodes
+                .filter(isVisible)
+                .map((el) => {
+                    const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    const context = (el.closest('section, article, div')?.innerText || text)
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    return { text, context };
+                })
+                .filter((item) => item.text);
+        }
+        """
+    )
+    if isinstance(candidate_texts, list):
+        for item in candidate_texts:
+            if not isinstance(item, dict):
+                continue
+            text = clean_price(str(item.get("text", "")))
+            context = clean_price(str(item.get("context", "")))
+            if not text:
+                continue
+            if PICKABOO_OFFER_CONTEXT_PATTERN.search(context) and not re.search(
+                r"(?i)(regular price|special price|sale price|current price)", context
+            ):
+                continue
+            parsed = first_tk_bdt_price_to_int(text)
+            if isinstance(parsed, int):
+                return parsed
+
+    for line in [clean_price(line) for line in (body_text or "").splitlines()]:
+        if not line or PICKABOO_OFFER_CONTEXT_PATTERN.search(line):
+            continue
+        parsed = first_tk_bdt_price_to_int(line)
+        if isinstance(parsed, int):
+            return parsed
+
+    return ""
+
+
+def extract_pickaboo_original_price(page: Any, product_price: Any) -> Any:
+    original_texts = page.evaluate(
+        r"""
+        () => Array.from(document.querySelectorAll('del, s, .old-price, .regular-price'))
+            .filter((el) => {
+                const style = window.getComputedStyle(el);
+                if (!style) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            })
+            .map((el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+        """
+    )
+    if isinstance(original_texts, list):
+        for text in original_texts:
+            parsed = first_tk_bdt_price_to_int(str(text))
+            if isinstance(parsed, int) and parsed > 0:
+                return parsed
+    return product_price if isinstance(product_price, int) else ""
+
+
+def extract_pickaboo_voucher_amount(text: str) -> int:
+    if not re.search(r"(?i)(available offer|checkout discount)", text or ""):
+        return 0
+
+    patterns = [
+        re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)\s*(?:checkout discount|discount)"),
+        re.compile(r"(?i)(?:checkout discount|discount)\D{0,40}(?:৳|tk|bdt)?\s*([\d,]+)"),
+    ]
+    for pattern in patterns:
+        match = pattern.search(text or "")
+        if not match:
+            continue
+        parsed = parse_tk_bdt_price_to_int(match.group(1))
+        if isinstance(parsed, int) and parsed > 0:
+            return parsed
+    return 0
 
 def extract_price_data(page_html: str) -> Dict[str, str]:
     soup = BeautifulSoup(page_html, "html.parser")
@@ -636,23 +754,24 @@ def crawl_priceoye_page(
                 parsed_data["product_price"] = price_after_click or base_product_price
                 parsed_data["original_price"] = original_after_click or base_original_price
                 if requested_ram and requested_storage:
-                    selected_ram, selected_storage = parse_memory_to_ram_storage(selected_button_text_after_click or clicked_text)
-                    if selected_ram != requested_ram or selected_storage != requested_storage:
-                        parsed_data["product_price"] = ""
-                        parsed_data["original_price"] = ""
-                        error_message = "Variant click failed: selected memory mismatch"
-                        fallback_used = False
+                    selected_ram, selected_storage = parse_memory_to_ram_storage(selected_button_text_after_click)
+                    if (
+                        selected_button_text_after_click
+                        and (selected_ram != requested_ram or selected_storage != requested_storage)
+                    ):
+                        error_message = "Selected memory validation uncertain"
+                    elif not selected_button_text_after_click:
+                        error_message = "Selected memory validation uncertain"
 
-                if price_after_click == base_product_price and original_after_click == base_original_price:
+                if (
+                    price_after_click == base_product_price
+                    and original_after_click == base_original_price
+                    and not error_message
+                ):
                     error_message = f"Matched memory {memory} but price did not change"
             else:
                 fallback_used = True
-                if is_variant_sku:
-                    parsed_data["product_price"] = ""
-                    parsed_data["original_price"] = ""
-                    error_message = "Variant click failed: selected memory mismatch"
-                else:
-                    error_message = f"Memory clickable element not found for {memory}; fallback default price used"
+                error_message = f"Memory clickable element not found for {memory}; fallback default price used"
 
         stock_status = "unknown"
         matched_keyword = ""
@@ -678,9 +797,9 @@ def crawl_priceoye_page(
         fallback_product_from_body, fallback_original_from_body, normalized_matches = extract_prices_from_body_text_top(body_text)
         print(f"[DEBUG][PriceOye] Regex matched prices: {normalized_matches}")
 
-        if fallback_product_from_body and not parsed_data.get("product_price") and not is_variant_sku:
+        if fallback_product_from_body and not parsed_data.get("product_price"):
             parsed_data["product_price"] = fallback_product_from_body
-        if fallback_original_from_body and not parsed_data.get("original_price") and not is_variant_sku:
+        if fallback_original_from_body and not parsed_data.get("original_price"):
             parsed_data["original_price"] = fallback_original_from_body
 
         if error_message:
@@ -747,8 +866,8 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
         page.goto(product_url, wait_until="networkidle", timeout=60000)
         page.wait_for_timeout(3000)
 
-        body_text = clean_price(page.locator("body").inner_text())
-        body_lower = body_text.lower()
+        raw_body_text = page.locator("body").inner_text()
+        body_text = clean_price(raw_body_text)
 
         attr_values = page.evaluate(
             """() => Array.from(document.querySelectorAll('img'))
@@ -759,23 +878,8 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
         attr_text = clean_price(" ".join([str(v) for v in attr_values])) if isinstance(attr_values, list) else ""
         combined_text = clean_price(f"{body_text} {attr_text}")
 
-        price_pattern = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)|\b(\d{1,3}(?:,\d{3})+)\b")
-        voucher_pattern = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)\s*checkout discount")
-        product_price_int: Any = ""
-        for match in price_pattern.finditer(body_text):
-            parsed = parse_tk_bdt_price_to_int(match.group(1) or match.group(2))
-            if isinstance(parsed, int) and parsed > 0:
-                product_price_int = parsed
-                break
-        product_price = f"BDT {product_price_int}" if isinstance(product_price_int, int) else ""
-
-        original_price = ""
-
-        voucher_amount: Any = 0
-        if re.search(r"(?i)(available offer|checkout discount)", combined_text):
-            voucher_match = voucher_pattern.search(combined_text)
-            if voucher_match:
-                voucher_amount = parse_tk_bdt_price_to_int(voucher_match.group(1))
+        product_price = extract_pickaboo_product_price(page, raw_body_text)
+        voucher_amount = extract_pickaboo_voucher_amount(combined_text)
 
         stock_status = "unknown"
         if re.search(r"(?i)(out of stock|sold out)", body_text):
@@ -783,10 +887,7 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
         elif re.search(r"(?i)(add to cart|buy now)", body_text):
             stock_status = "active"
 
-        effective_price: Any = ""
-        if isinstance(product_price_int, int) and product_price_int > 0 and isinstance(voucher_amount, int):
-            effective_price = product_price_int - voucher_amount
-        if not isinstance(product_price_int, int):
+        if not isinstance(product_price, int):
             return {
                 "product_price": "",
                 "original_price": "",
@@ -795,6 +896,12 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
                 "effective_price": "",
                 "error_message": "Product price not parsed",
             }
+
+        original_price = extract_pickaboo_original_price(page, product_price)
+        if not isinstance(original_price, int):
+            original_price = product_price
+
+        effective_price = max(product_price - voucher_amount, 0)
 
         # TODO: Add OCR-based PDP banner parsing for voucher extraction from embedded images.
         return {
@@ -825,7 +932,6 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
     finally:
         page.close()
 
-
 def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) -> Dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     platform = str(base.get("platform", "")).strip().lower()
@@ -850,15 +956,18 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) ->
 
     effective_price: Any = ""
     if product_price_valid:
-        effective_price = product_price - voucher_amount
+        effective_price = max(product_price - voucher_amount, 0)
     error_message = str(crawl_result.get("error_message", "")).strip()
     if not product_price_valid and not error_message:
         error_message = "Product price not parsed"
 
     print(
-        f"[DEBUG][{platform or 'unknown'}] original_price: {original_price} | "
-        f"product_price: {product_price} | voucher_amount: {voucher_amount} | "
-        f"effective_price: {effective_price}"
+        f"[DEBUG][{platform or 'unknown'}] platform: {str(base.get('platform', '')).strip()} | "
+        f"model: {str(base.get('model', '')).strip()} | "
+        f"memory: {str(base.get('memory', '')).strip()} | "
+        f"product_price: {product_price} | original_price: {original_price} | "
+        f"voucher_amount: {voucher_amount} | effective_price: {effective_price} | "
+        f"error_message: {error_message}"
     )
 
     row = {
