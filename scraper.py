@@ -21,12 +21,15 @@ SCOPES = [
 PRICE_DAILY_COLUMNS = [
     "crawl_date",
     "platform",
+    "country",
     "brand",
     "model",
     "memory",
     "original_price",
     "product_price",
     "stock_status",
+    "voucher_amount",
+    "effective_price",
     "product_url",
     "crawl_time",
     "error_message",
@@ -76,6 +79,27 @@ def parse_price_to_int(value: Any) -> Any:
 
     try:
         return int(cleaned)
+    except ValueError:
+        return ""
+
+
+def parse_tk_bdt_price_to_int(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return value
+
+    text = str(value).replace("\xa0", " ")
+    text = re.sub(r"(?i)(tk|bdt)\.?\s*", "", text)
+    text = text.replace("৳", "")
+    text = text.replace(",", "")
+    text = re.sub(r"\s+", "", text)
+    if not text or not text.isdigit():
+        return ""
+    try:
+        return int(text)
     except ValueError:
         return ""
 
@@ -690,17 +714,93 @@ def crawl_priceoye_page(
         page.close()
 
 
+def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any]:
+    page = browser_context.new_page()
+    try:
+        page.goto(product_url, wait_until="networkidle", timeout=60000)
+        page.wait_for_timeout(3000)
+
+        body_text = clean_price(page.locator("body").inner_text())
+        body_lower = body_text.lower()
+
+        attr_values = page.evaluate(
+            """() => Array.from(document.querySelectorAll('img'))
+                .flatMap((img) => [img.getAttribute('alt') || '', img.getAttribute('title') || ''])
+                .filter(Boolean)
+            """
+        )
+        attr_text = clean_price(" ".join([str(v) for v in attr_values])) if isinstance(attr_values, list) else ""
+        combined_text = clean_price(f"{body_text} {attr_text}")
+
+        price_pattern = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)")
+        voucher_pattern = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)\s*checkout discount")
+
+        product_price_match = price_pattern.search(body_text)
+        product_price = f"BDT {product_price_match.group(1)}" if product_price_match else ""
+
+        original_price = ""
+
+        voucher_amount: Any = ""
+        if re.search(r"(?i)(available offer|checkout discount)", combined_text):
+            voucher_match = voucher_pattern.search(combined_text)
+            if voucher_match:
+                voucher_amount = parse_tk_bdt_price_to_int(voucher_match.group(1))
+
+        stock_status = "unknown"
+        if re.search(r"(?i)(out of stock|sold out)", body_text):
+            stock_status = "out_of_stock"
+        elif re.search(r"(?i)(add to cart|buy now)", body_text):
+            stock_status = "active"
+
+        product_price_int = parse_tk_bdt_price_to_int(product_price)
+        effective_price: Any = ""
+        if isinstance(product_price_int, int) and isinstance(voucher_amount, int):
+            effective_price = product_price_int - voucher_amount
+
+        # TODO: Add OCR-based PDP banner parsing for voucher extraction from embedded images.
+        return {
+            "product_price": product_price,
+            "original_price": original_price,
+            "stock_status": stock_status,
+            "voucher_amount": voucher_amount,
+            "effective_price": effective_price,
+        }
+    except PlaywrightTimeoutError:
+        return {
+            "product_price": "",
+            "original_price": "",
+            "stock_status": "unknown",
+            "voucher_amount": "",
+            "effective_price": "",
+            "error_message": "Timeout while loading page",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "product_price": "",
+            "original_price": "",
+            "stock_status": "unknown",
+            "voucher_amount": "",
+            "effective_price": "",
+            "error_message": f"Crawl failed: {exc}",
+        }
+    finally:
+        page.close()
+
+
 def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) -> Dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     row = {
         "crawl_date": now_utc.date().isoformat(),
         "platform": str(base.get("platform", "")).strip(),
+        "country": str(base.get("country", "")).strip(),
         "brand": str(base.get("brand", "")).strip(),
         "model": str(base.get("model", "")).strip(),
         "memory": str(base.get("memory", "")).strip(),
         "original_price": parse_price_to_int(crawl_result.get("original_price", "")),
         "product_price": parse_price_to_int(crawl_result.get("product_price", "")),
         "stock_status": crawl_result.get("stock_status", ""),
+        "voucher_amount": parse_price_to_int(crawl_result.get("voucher_amount", "")),
+        "effective_price": parse_price_to_int(crawl_result.get("effective_price", "")),
         "product_url": str(base.get("product_url", "")).strip(),
         "crawl_time": now_utc.isoformat(timespec="seconds"),
         "error_message": crawl_result.get("error_message", ""),
@@ -711,7 +811,7 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) ->
 def ensure_price_daily_header(worksheet: gspread.Worksheet) -> None:
     existing_header = worksheet.row_values(1)
     if existing_header != PRICE_DAILY_COLUMNS:
-        worksheet.update("A1:K1", [PRICE_DAILY_COLUMNS])
+        worksheet.update("A1:N1", [PRICE_DAILY_COLUMNS])
 
 
 def main() -> None:
@@ -778,16 +878,11 @@ def main() -> None:
                     "product_price": "",
                     "original_price": "",
                     "stock_status": "unknown",
+                    "voucher_amount": "",
+                    "effective_price": "",
                     "error_message": "Missing product_url",
                 }
-            elif platform != "priceoye":
-                crawl_result = {
-                    "product_price": "",
-                    "original_price": "",
-                    "stock_status": "unknown",
-                    "error_message": f"Unsupported platform: {platform}",
-                }
-            else:
+            elif platform == "priceoye":
                 memory = str(row.get("memory", "")).strip()
                 force_debug_artifacts = product_url in variant_debug_urls
                 crawl_result = crawl_priceoye_page(
@@ -800,13 +895,31 @@ def main() -> None:
                         "model": str(row.get("model", "")).strip(),
                     },
                 )
-                if (
-                    not crawl_result.get("product_price")
-                    and not crawl_result.get("original_price")
-                    and not crawl_result.get("stock_status")
-                    and not crawl_result.get("error_message")
-                ):
-                    crawl_result["error_message"] = "Price parsing failed"
+            elif platform == "pickaboo":
+                crawl_result = crawl_pickaboo_page(context, product_url)
+                print(f"[DEBUG][Pickaboo] platform: {platform}")
+                print(f"[DEBUG][Pickaboo] product_url: {product_url}")
+                print(f"[DEBUG][Pickaboo] product_price: {crawl_result.get('product_price', '')}")
+                print(f"[DEBUG][Pickaboo] voucher_amount: {crawl_result.get('voucher_amount', '')}")
+                print(f"[DEBUG][Pickaboo] effective_price: {crawl_result.get('effective_price', '')}")
+                print(f"[DEBUG][Pickaboo] stock_status: {crawl_result.get('stock_status', '')}")
+            else:
+                crawl_result = {
+                    "product_price": "",
+                    "original_price": "",
+                    "stock_status": "unknown",
+                    "voucher_amount": "",
+                    "effective_price": "",
+                    "error_message": f"Unsupported platform: {platform}",
+                }
+
+            if (
+                not crawl_result.get("product_price")
+                and not crawl_result.get("original_price")
+                and not crawl_result.get("stock_status")
+                and not crawl_result.get("error_message")
+            ):
+                crawl_result["error_message"] = "Price parsing failed"
 
             output_rows.append(build_price_daily_row(row, crawl_result))
 
