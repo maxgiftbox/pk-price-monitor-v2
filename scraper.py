@@ -346,6 +346,7 @@ def crawl_priceoye_page(
     product_url: str,
     memory: str = "",
     force_debug_artifacts: bool = False,
+    debug_identity: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     page = browser_context.new_page()
     try:
@@ -392,9 +393,13 @@ def crawl_priceoye_page(
         base_original_price = parsed_data.get("original_price", "")
         fallback_used = False
         error_message = ""
-        safe_model = sanitize_filename(product_url.rstrip("/").split("/")[-1], "unknown_model")
+        safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
+        safe_model = sanitize_filename(
+            (debug_identity or {}).get("model", "") or product_url.rstrip("/").split("/")[-1],
+            "unknown_model",
+        )
         safe_memory = sanitize_filename(memory or "default", "default_memory")
-        debug_prefix = os.path.join("debug_screenshots", f"{safe_model}_{safe_memory}")
+        debug_prefix = os.path.join("debug_screenshots", f"{safe_brand}_{safe_model}_{safe_memory}")
 
         if force_debug_artifacts:
             save_debug_artifacts(page, screenshot_path=f"{debug_prefix}_before.png")
@@ -553,9 +558,13 @@ def crawl_priceoye_page(
         }
     finally:
         if force_debug_artifacts:
-            safe_model = sanitize_filename(product_url.rstrip("/").split("/")[-1], "unknown_model")
+            safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
+            safe_model = sanitize_filename(
+                (debug_identity or {}).get("model", "") or product_url.rstrip("/").split("/")[-1],
+                "unknown_model",
+            )
             safe_memory = sanitize_filename(memory or "default", "default_memory")
-            debug_prefix = os.path.join("debug_screenshots", f"{safe_model}_{safe_memory}")
+            debug_prefix = os.path.join("debug_screenshots", f"{safe_brand}_{safe_model}_{safe_memory}")
             save_debug_artifacts(
                 page,
                 screenshot_path=f"{debug_prefix}_after.png",
@@ -614,12 +623,34 @@ def main() -> None:
         return
 
     output_rows = []
+    total_sku_rows = len(sku_records)
+    print(f"[DEBUG][PriceOye] total sku_master rows: {total_sku_rows}")
+
+    rows_by_url: Dict[str, List[Dict[str, Any]]] = {}
+    for row in active_rows:
+        key = str(row.get("product_url", "")).strip()
+        if not key:
+            continue
+        rows_by_url.setdefault(key, []).append(row)
+
+    variant_debug_urls: Dict[str, List[Dict[str, Any]]] = {}
+    for product_url, rows in rows_by_url.items():
+        if len(rows) < 2:
+            continue
+        memories = {normalize_memory(str(r.get("memory", "")).strip()) for r in rows if str(r.get("memory", "")).strip()}
+        memories = {m for m in memories if m}
+        if len(memories) > 1:
+            variant_debug_urls[product_url] = rows
+
+    print(f"[DEBUG][PriceOye] number of variant product_url groups: {len(variant_debug_urls)}")
+    for product_url, rows in variant_debug_urls.items():
+        memory_values = [str(r.get('memory', '')).strip() or "(blank)" for r in rows]
+        print(f"[DEBUG][PriceOye] product_url selected for screenshot debugging: {product_url}")
+        print(f"[DEBUG][PriceOye] memory values under variant URL: {memory_values}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
-        crawled_sku_count = 0
-
         for row in active_rows:
             product_url = str(row.get("product_url", "")).strip()
             platform = str(row.get("platform", "")).strip().lower()
@@ -641,13 +672,16 @@ def main() -> None:
                 }
             else:
                 memory = str(row.get("memory", "")).strip()
-                crawled_sku_count += 1
-                force_debug_artifacts = crawled_sku_count <= 5
+                force_debug_artifacts = product_url in variant_debug_urls
                 crawl_result = crawl_priceoye_page(
                     context,
                     product_url,
                     memory=memory,
                     force_debug_artifacts=force_debug_artifacts,
+                    debug_identity={
+                        "brand": str(row.get("brand", "")).strip(),
+                        "model": str(row.get("model", "")).strip(),
+                    },
                 )
                 if (
                     not crawl_result.get("product_price")
