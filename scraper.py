@@ -789,6 +789,31 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
 
 def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) -> Dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
+    platform = str(base.get("platform", "")).strip().lower()
+
+    product_price = parse_price_to_int(crawl_result.get("product_price", ""))
+    if not isinstance(product_price, int):
+        product_price = 0
+
+    original_price = parse_price_to_int(crawl_result.get("original_price", ""))
+    if not isinstance(original_price, int):
+        original_price = product_price
+
+    voucher_amount = parse_price_to_int(crawl_result.get("voucher_amount", ""))
+    if not isinstance(voucher_amount, int):
+        voucher_amount = 0
+
+    if platform == "priceoye":
+        voucher_amount = 0
+
+    effective_price = product_price - voucher_amount
+
+    print(
+        f"[DEBUG][{platform or 'unknown'}] original_price: {original_price} | "
+        f"product_price: {product_price} | voucher_amount: {voucher_amount} | "
+        f"effective_price: {effective_price}"
+    )
+
     row = {
         "crawl_date": now_utc.date().isoformat(),
         "platform": str(base.get("platform", "")).strip(),
@@ -796,11 +821,11 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) ->
         "brand": str(base.get("brand", "")).strip(),
         "model": str(base.get("model", "")).strip(),
         "memory": str(base.get("memory", "")).strip(),
-        "original_price": parse_price_to_int(crawl_result.get("original_price", "")),
-        "product_price": parse_price_to_int(crawl_result.get("product_price", "")),
+        "original_price": original_price,
+        "product_price": product_price,
         "stock_status": crawl_result.get("stock_status", ""),
-        "voucher_amount": parse_price_to_int(crawl_result.get("voucher_amount", "")),
-        "effective_price": parse_price_to_int(crawl_result.get("effective_price", "")),
+        "voucher_amount": voucher_amount,
+        "effective_price": effective_price,
         "product_url": str(base.get("product_url", "")).strip(),
         "crawl_time": now_utc.isoformat(timespec="seconds"),
         "error_message": crawl_result.get("error_message", ""),
