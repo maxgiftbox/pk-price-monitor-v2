@@ -68,7 +68,7 @@ def parse_price_to_int(value: Any) -> Any:
         return value
 
     cleaned = str(value).replace(" ", " ").replace("\xa0", " ")
-    cleaned = re.sub(r"(?i)(rs|tk|bdt)\.?", "", cleaned)
+    cleaned = re.sub(r"(?i)(rs|pkr|tk|bdt)\.?", "", cleaned)
     cleaned = cleaned.replace("৳", "")
     cleaned = cleaned.replace(",", "")
     cleaned = re.sub(r"\s+", "", cleaned)
@@ -104,6 +104,105 @@ def parse_tk_bdt_price_to_int(value: Any) -> Any:
         return int(text)
     except ValueError:
         return ""
+
+
+DARAZ_NAVIGATION_TIMEOUT_MS = 15000
+DARAZ_POST_GOTO_WAIT_MS = 3000
+DARAZ_PRICE_PATTERN = re.compile(
+    r"(?i)(?:৳|rs\.?|pkr|tk|bdt)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)"
+)
+
+
+def extract_daraz_prices_from_body_text(body_text: str) -> Tuple[Any, Any, List[int]]:
+    if not body_text:
+        return "", "", []
+
+    top_window = body_text[:4500]
+    prices = [
+        parsed
+        for match in DARAZ_PRICE_PATTERN.finditer(top_window)
+        if isinstance(parsed := parse_price_to_int(match.group(0)), int) and parsed > 0
+    ]
+    if not prices:
+        prices = [
+            parsed
+            for match in DARAZ_PRICE_PATTERN.finditer(body_text)
+            if isinstance(parsed := parse_price_to_int(match.group(0)), int) and parsed > 0
+        ]
+
+    product_price = prices[0] if prices else ""
+    original_price: Any = ""
+    if isinstance(product_price, int):
+        for price in prices[1:]:
+            if price != product_price:
+                original_price = price
+                break
+        if not isinstance(original_price, int):
+            original_price = product_price
+
+    return product_price, original_price, prices
+
+
+def parse_daraz_stock_status(body_text: str) -> str:
+    body_text_lower = (body_text or "").lower()
+    if re.search(r"(?i)(out of stock|sold out|this item is no longer available)", body_text_lower):
+        return "out_of_stock"
+    if re.search(r"(?i)(buy now|add to cart|almost sold out)", body_text_lower):
+        return "active"
+    return "unknown"
+
+
+def crawl_daraz_page(browser_context: Any, product_url: str) -> Dict[str, Any]:
+    page = browser_context.new_page()
+    try:
+        page.goto(product_url, wait_until="domcontentloaded", timeout=DARAZ_NAVIGATION_TIMEOUT_MS)
+        page.wait_for_timeout(DARAZ_POST_GOTO_WAIT_MS)
+
+        body_text = page.locator("body").inner_text()
+        product_price, original_price, _price_matches = extract_daraz_prices_from_body_text(body_text)
+        stock_status = parse_daraz_stock_status(body_text)
+
+        if not isinstance(product_price, int):
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": stock_status,
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": "Product price not parsed",
+            }
+
+        if not isinstance(original_price, int):
+            original_price = product_price
+
+        return {
+            "product_price": product_price,
+            "original_price": original_price,
+            "stock_status": stock_status,
+            "voucher_amount": 0,
+            "effective_price": product_price,
+            "error_message": "",
+        }
+    except PlaywrightTimeoutError:
+        return {
+            "product_price": "",
+            "original_price": "",
+            "stock_status": "unknown",
+            "voucher_amount": 0,
+            "effective_price": "",
+            "error_message": "Timeout while loading page",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "product_price": "",
+            "original_price": "",
+            "stock_status": "unknown",
+            "voucher_amount": 0,
+            "effective_price": "",
+            "error_message": f"Crawl failed: {exc}",
+        }
+    finally:
+        page.close()
 
 PICKABOO_MAX_PROCESSING_SECONDS = 20
 PICKABOO_NAVIGATION_TIMEOUT_MS = 15000
@@ -966,12 +1065,15 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) ->
     if not isinstance(voucher_amount, int):
         voucher_amount = 0
 
-    if platform == "priceoye":
+    if platform in {"priceoye", "daraz"}:
         voucher_amount = 0
 
     effective_price: Any = ""
     if product_price_valid:
-        effective_price = max(product_price - voucher_amount, 0)
+        if platform == "daraz":
+            effective_price = product_price
+        else:
+            effective_price = max(product_price - voucher_amount, 0)
     error_message = str(crawl_result.get("error_message", "")).strip()
     if not product_price_valid and not error_message:
         error_message = "Product price not parsed"
@@ -1098,6 +1200,8 @@ def main() -> None:
                 )
             elif platform == "pickaboo":
                 crawl_result = crawl_pickaboo_page(context, product_url)
+            elif platform == "daraz":
+                crawl_result = crawl_daraz_page(context, product_url)
             else:
                 crawl_result = {
                     "product_price": "",
@@ -1117,6 +1221,14 @@ def main() -> None:
                 crawl_result["error_message"] = "Price parsing failed"
 
             output_row = build_price_daily_row(row, crawl_result)
+            if platform == "daraz":
+                print(
+                    f"[DEBUG][Daraz] platform={output_row.get('platform','')} | country={output_row.get('country','')} | "
+                    f"brand={output_row.get('brand','')} | model={output_row.get('model','')} | memory={output_row.get('memory','')} | "
+                    f"product_price={output_row.get('product_price','')} | original_price={output_row.get('original_price','')} | "
+                    f"voucher_amount={output_row.get('voucher_amount','')} | effective_price={output_row.get('effective_price','')} | "
+                    f"stock_status={output_row.get('stock_status','')} | error_message={output_row.get('error_message','')}"
+                )
             print(
                 f"[DEBUG][SKU] platform={output_row.get('platform','')} | country={output_row.get('country','')} | "
                 f"brand={output_row.get('brand','')} | model={output_row.get('model','')} | memory={output_row.get('memory','')} | "
