@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -103,6 +104,11 @@ def parse_tk_bdt_price_to_int(value: Any) -> Any:
         return int(text)
     except ValueError:
         return ""
+
+PICKABOO_MAX_PROCESSING_SECONDS = 20
+PICKABOO_NAVIGATION_TIMEOUT_MS = 15000
+PICKABOO_POST_GOTO_WAIT_MS = 3000
+PICKABOO_PARSE_TIMEOUT_MS = 2000
 
 PICKABOO_PRICE_PATTERN = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)|\b(\d{1,3}(?:,\d{3})+)\b")
 PICKABOO_OFFER_CONTEXT_PATTERN = re.compile(
@@ -861,10 +867,19 @@ def crawl_priceoye_page(
 
 
 def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any]:
+    started_at = time.monotonic()
     page = browser_context.new_page()
     try:
-        page.goto(product_url, wait_until="networkidle", timeout=60000)
-        page.wait_for_timeout(3000)
+        page.set_default_navigation_timeout(PICKABOO_NAVIGATION_TIMEOUT_MS)
+        page.set_default_timeout(PICKABOO_PARSE_TIMEOUT_MS)
+        page.goto(product_url, wait_until="domcontentloaded", timeout=PICKABOO_NAVIGATION_TIMEOUT_MS)
+        page.wait_for_timeout(PICKABOO_POST_GOTO_WAIT_MS)
+
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        if elapsed_ms >= PICKABOO_MAX_PROCESSING_SECONDS * 1000:
+            raise PlaywrightTimeoutError("Pickaboo SKU processing exceeded max time")
+        remaining_ms = max(1, (PICKABOO_MAX_PROCESSING_SECONDS * 1000) - elapsed_ms)
+        page.set_default_timeout(min(PICKABOO_PARSE_TIMEOUT_MS, remaining_ms))
 
         raw_body_text = page.locator("body").inner_text()
         body_text = clean_price(raw_body_text)
@@ -1083,12 +1098,6 @@ def main() -> None:
                 )
             elif platform == "pickaboo":
                 crawl_result = crawl_pickaboo_page(context, product_url)
-                print(f"[DEBUG][Pickaboo] platform: {platform}")
-                print(f"[DEBUG][Pickaboo] product_url: {product_url}")
-                print(f"[DEBUG][Pickaboo] product_price: {crawl_result.get('product_price', '')}")
-                print(f"[DEBUG][Pickaboo] voucher_amount: {crawl_result.get('voucher_amount', '')}")
-                print(f"[DEBUG][Pickaboo] effective_price: {crawl_result.get('effective_price', '')}")
-                print(f"[DEBUG][Pickaboo] stock_status: {crawl_result.get('stock_status', '')}")
             else:
                 crawl_result = {
                     "product_price": "",
