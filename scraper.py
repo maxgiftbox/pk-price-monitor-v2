@@ -309,30 +309,6 @@ def parse_memory_to_ram_storage(text: str) -> Tuple[Optional[str], Optional[str]
     return (ram, storage)
 
 
-def sanitize_filename(value: str, fallback: str) -> str:
-    cleaned = re.sub(r"[\\/]+", "_", (value or "").strip())
-    cleaned = re.sub(r"\s+", "_", cleaned)
-    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "", cleaned)
-    cleaned = cleaned.strip("._-")
-    return cleaned or fallback
-
-
-def save_debug_artifacts(page: Any, screenshot_path: Optional[str] = None, html_path: Optional[str] = None) -> None:
-    try:
-        if screenshot_path:
-            page.screenshot(path=screenshot_path, full_page=True)
-            print(f"[DEBUG][PriceOye] Saved screenshot: {screenshot_path}")
-    except Exception as exc:
-        print(f"[DEBUG][PriceOye] Failed to save screenshot {screenshot_path}: {exc}")
-
-    try:
-        if html_path:
-            with open(html_path, "w", encoding="utf-8") as handle:
-                handle.write(page.content())
-            print(f"[DEBUG][PriceOye] Saved HTML: {html_path}")
-    except Exception as exc:
-        print(f"[DEBUG][PriceOye] Failed to save HTML {html_path}: {exc}")
-
 
 def collect_memory_click_candidates(page: Any) -> List[Dict[str, Any]]:
     script = """
@@ -491,48 +467,6 @@ def extract_variant_map_from_scripts(html_or_scripts: str) -> Dict[str, Dict[str
     return variant_map
 
 
-def get_visible_texts_for_selector(page: Any, selector: str) -> List[str]:
-    script = """
-    (selector) => {
-        const nodes = Array.from(document.querySelectorAll(selector));
-        const isVisible = (el) => {
-            const style = window.getComputedStyle(el);
-            if (!style) return false;
-            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-            const rect = el.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-        };
-
-        const output = [];
-        for (const el of nodes) {
-            if (!isVisible(el)) continue;
-            const text = (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
-            if (text) output.push(text);
-        }
-        return output;
-    }
-    """
-    values = page.evaluate(script, selector)
-    if not isinstance(values, list):
-        return []
-    return [clean_price(str(v)) for v in values if clean_price(str(v))]
-
-
-def get_memory_debug_matches(text: str) -> List[Dict[str, str]]:
-    pattern = re.compile(r"(4\s*/\s*64|4\s*/\s*128|6\s*/\s*128|8\s*/\s*128|8\s*/\s*256|12\s*/\s*256|12\s*/\s*512)", re.I)
-    matches: List[Dict[str, str]] = []
-    for match in pattern.finditer(text):
-        start = max(0, match.start() - 150)
-        end = min(len(text), match.end() + 150)
-        snippet = clean_price(text[start:end])
-        matches.append(
-            {
-                "match": clean_price(match.group(0)),
-                "snippet": snippet,
-            }
-        )
-    return matches
-
 
 def parse_memory_variants(page: Any) -> List[Tuple[str, str]]:
     """Returns [(memory_text, linked_price_text), ...] found on the page."""
@@ -571,13 +505,9 @@ def crawl_priceoye_page(
     browser_context: Any,
     product_url: str,
     memory: str = "",
-    is_variant_sku: bool = False,
-    force_debug_artifacts: bool = False,
-    debug_identity: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     page = browser_context.new_page()
     try:
-        os.makedirs("debug_screenshots", exist_ok=True)
         page.goto(product_url, wait_until="networkidle", timeout=60000)
         page.wait_for_timeout(5000)
 
@@ -591,80 +521,21 @@ def crawl_priceoye_page(
         body_text_lower = body_text.lower()
 
         normalized_requested_memory = normalize_memory(memory)
-        current_url = page.url
-        visible_button_texts = get_visible_texts_for_selector(page, "button, [role='button']")
-        visible_link_texts = get_visible_texts_for_selector(page, "a")
-        memory_debug_matches = get_memory_debug_matches(body_text)
-
-        print(f"[DEBUG][PriceOye] Crawling URL (input): {product_url}")
-        print(f"[DEBUG][PriceOye] Current page URL: {current_url}")
-        print(f"[DEBUG][PriceOye] Requested memory from sku_master: {memory or '(blank)'}")
-        print(f"[DEBUG][PriceOye] Visible body text (first 5000 chars):\n{body_text[:5000]}")
-        print(f"[DEBUG][PriceOye] All visible button texts ({len(visible_button_texts)}): {visible_button_texts}")
-        print(f"[DEBUG][PriceOye] All visible link texts ({len(visible_link_texts)}): {visible_link_texts}")
-        print(
-            "[DEBUG][PriceOye] Memory-pattern visible snippets: "
-            f"{[m.get('match', '') for m in memory_debug_matches]}"
-        )
-        for idx, item in enumerate(memory_debug_matches, start=1):
-            print(
-                "[DEBUG][PriceOye] Memory match context "
-                f"#{idx} [{item.get('match', '')}] (~300 chars): {item.get('snippet', '')}"
-            )
-
         requested_ram, requested_storage = parse_memory_to_ram_storage(memory)
-        print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
-        print(f"[DEBUG][PriceOye] normalized requested memory: {normalized_requested_memory or '(blank)'}")
-        print(
-            "[DEBUG][PriceOye] requested memory parsed as "
-            f"RAM={requested_ram or 'unknown'}, storage={requested_storage or 'unknown'}"
-        )
 
         parsed_data = extract_price_data(html)
         base_product_price = parsed_data.get("product_price", "")
         base_original_price = parsed_data.get("original_price", "")
-        _, _, before_matches = extract_prices_from_body_text_top(body_text)
-        print(f"[DEBUG][PriceOye] body_text sample before click: {body_text[:500]}")
-        print(f"[DEBUG][PriceOye] matched prices before click: {before_matches[:10]}")
-        fallback_used = False
         error_message = ""
         selected_button_text_after_click = ""
-        matched_button_text = ""
-        safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
-        safe_model = sanitize_filename(
-            (debug_identity or {}).get("model", "") or product_url.rstrip("/").split("/")[-1],
-            "unknown_model",
-        )
-        safe_memory = sanitize_filename(memory or "default", "default_memory")
-        debug_prefix = os.path.join("debug_screenshots", f"{safe_brand}_{safe_model}_{safe_memory}")
-
-        if force_debug_artifacts:
-            save_debug_artifacts(page, screenshot_path=f"{debug_prefix}_before.png")
 
         if normalized_requested_memory:
             candidates = collect_memory_click_candidates(page)
-            print(f"[DEBUG][PriceOye] Candidate clickable memory elements ({len(candidates)}):")
-            for idx, candidate in enumerate(candidates, start=1):
-                print(
-                    "[DEBUG][PriceOye] candidate "
-                    f"#{idx} tag={candidate.get('tag', '')} "
-                    f"text={candidate.get('text', '')} "
-                    f"class={candidate.get('class_name', '')} "
-                    f"aria-label={candidate.get('aria_label', '')}"
-                )
 
             matched_candidate: Optional[Dict[str, Any]] = None
             for candidate in candidates:
                 candidate_text = candidate.get("text", "")
                 candidate_ram, candidate_storage = parse_memory_to_ram_storage(candidate_text)
-                print(
-                    "[DEBUG][PriceOye] candidate button text: "
-                    f"{candidate_text}"
-                )
-                print(
-                    "[DEBUG][PriceOye] candidate parsed RAM/storage: "
-                    f"RAM={candidate_ram or 'unknown'}, storage={candidate_storage or 'unknown'}"
-                )
                 if (
                     requested_ram
                     and requested_storage
@@ -672,13 +543,10 @@ def crawl_priceoye_page(
                     and candidate_storage == requested_storage
                 ):
                     matched_candidate = candidate
-                    matched_button_text = candidate_text
                     break
 
             if matched_candidate:
                 clicked_text = matched_candidate.get("text", "")
-                print(f"[DEBUG][PriceOye] matched button text: {clicked_text}")
-                print(f"[DEBUG][PriceOye] price before click: {base_product_price}")
                 selector = (
                     f"{matched_candidate.get('tag', '')}"
                     f"{'.' + '.'.join([c for c in matched_candidate.get('class_name', '').split() if c]) if matched_candidate.get('class_name', '') else ''}"
@@ -698,12 +566,6 @@ def crawl_priceoye_page(
                         clicked = True
 
                 page.wait_for_timeout(3000)
-                if force_debug_artifacts:
-                    save_debug_artifacts(
-                        page,
-                        screenshot_path=f"{debug_prefix}_after.png",
-                        html_path=f"{debug_prefix}.html",
-                    )
                 refreshed_body_text = page.locator("body").inner_text()
                 selected_button_texts = collect_memory_click_candidates(page)
                 selected_button_text_after_click = ""
@@ -714,9 +576,7 @@ def crawl_priceoye_page(
                         break
                 refreshed_html = page.content()
                 refreshed_data = extract_price_data(refreshed_html)
-                body_product_price, body_original_price, after_matches = extract_prices_from_body_text_top(refreshed_body_text)
-                print(f"[DEBUG][PriceOye] body_text sample after click: {refreshed_body_text[:500]}")
-                print(f"[DEBUG][PriceOye] matched prices after click: {after_matches[:10]}")
+                body_product_price, body_original_price, _ = extract_prices_from_body_text_top(refreshed_body_text)
                 price_after_click = body_product_price or refreshed_data.get("product_price", "")
                 original_after_click = body_original_price or refreshed_data.get("original_price", "")
 
@@ -735,21 +595,10 @@ def crawl_priceoye_page(
                         refreshed_body_text = page.locator("body").inner_text()
                         refreshed_html = page.content()
                         refreshed_data = extract_price_data(refreshed_html)
-                        body_product_price, body_original_price, after_matches = extract_prices_from_body_text_top(refreshed_body_text)
-                        print(f"[DEBUG][PriceOye] body_text sample after click (js): {refreshed_body_text[:500]}")
-                        print(f"[DEBUG][PriceOye] matched prices after click (js): {after_matches[:10]}")
+                        body_product_price, body_original_price, _ = extract_prices_from_body_text_top(refreshed_body_text)
                         price_after_click = body_product_price or refreshed_data.get("product_price", "")
                         original_after_click = body_original_price or refreshed_data.get("original_price", "")
 
-                print(f"[DEBUG][PriceOye] price after click: {price_after_click}")
-                print(f"[DEBUG][PriceOye] selected button text after click: {selected_button_text_after_click or '(unknown)'}")
-                print(
-                    "[DEBUG][PriceOye] Click result: "
-                    f"requested memory={memory}, "
-                    f"clicked element text={clicked_text}, "
-                    f"price before click={base_product_price}, "
-                    f"price after click={price_after_click}"
-                )
 
                 parsed_data["product_price"] = price_after_click or base_product_price
                 parsed_data["original_price"] = original_after_click or base_original_price
@@ -770,32 +619,26 @@ def crawl_priceoye_page(
                 ):
                     error_message = f"Matched memory {memory} but price did not change"
             else:
-                fallback_used = True
                 error_message = f"Memory clickable element not found for {memory}; fallback default price used"
 
         stock_status = "unknown"
-        matched_keyword = ""
         out_of_stock_keywords = ["out of stock", "sold out", "unavailable"]
         active_keywords = ["add to cart", "buy now", "available", "in stock"]
 
         for keyword in out_of_stock_keywords:
             if keyword in body_text_lower:
                 stock_status = "out_of_stock"
-                matched_keyword = keyword
                 break
 
         if stock_status == "unknown":
             for keyword in active_keywords:
                 if keyword in body_text_lower:
                     stock_status = "active"
-                    matched_keyword = keyword
                     break
 
         parsed_data["stock_status"] = stock_status
-        print(f"[DEBUG][PriceOye] Stock status matched keyword: {matched_keyword or 'none'}")
 
-        fallback_product_from_body, fallback_original_from_body, normalized_matches = extract_prices_from_body_text_top(body_text)
-        print(f"[DEBUG][PriceOye] Regex matched prices: {normalized_matches}")
+        fallback_product_from_body, fallback_original_from_body, _ = extract_prices_from_body_text_top(body_text)
 
         if fallback_product_from_body and not parsed_data.get("product_price"):
             parsed_data["product_price"] = fallback_product_from_body
@@ -804,29 +647,6 @@ def crawl_priceoye_page(
 
         if error_message:
             parsed_data["error_message"] = error_message
-
-        print(f"[DEBUG][PriceOye] fallback_used: {'yes' if fallback_used else 'no'}")
-        print(f"[DEBUG][PriceOye] requested memory: {memory or '(blank)'}")
-        print(f"[DEBUG][PriceOye] matched button text: {matched_button_text if normalized_requested_memory else '(n/a)'}")
-        print(f"[DEBUG][PriceOye] selected button text after click: {selected_button_text_after_click or '(n/a)'}")
-        print(f"[DEBUG][PriceOye] final product_price: {parsed_data.get('product_price', '')}")
-        print(f"[DEBUG][PriceOye] final original_price: {parsed_data.get('original_price', '')}")
-        print(f"[DEBUG][PriceOye] final stock_status: {parsed_data.get('stock_status', '')}")
-        print(
-            "[DEBUG][PriceOye] Parsed prices summary: "
-            f"product_price={parsed_data.get('product_price', '')}, "
-            f"original_price={parsed_data.get('original_price', '')}"
-        )
-        print(f"[DEBUG][PriceOye] Final stock_status: {parsed_data.get('stock_status', '')}")
-
-        if (
-            not parsed_data.get("product_price")
-            and not parsed_data.get("original_price")
-            and not parsed_data.get("stock_status")
-        ):
-            with open("debug_output.txt", "w", encoding="utf-8") as debug_file:
-                debug_file.write(body_text)
-            print("[DEBUG][PriceOye] Parsing failed. Saved full body text to debug_output.txt")
 
         return parsed_data
     except PlaywrightTimeoutError:
@@ -844,19 +664,6 @@ def crawl_priceoye_page(
             "error_message": f"Crawl failed: {exc}",
         }
     finally:
-        if force_debug_artifacts:
-            safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
-            safe_model = sanitize_filename(
-                (debug_identity or {}).get("model", "") or product_url.rstrip("/").split("/")[-1],
-                "unknown_model",
-            )
-            safe_memory = sanitize_filename(memory or "default", "default_memory")
-            debug_prefix = os.path.join("debug_screenshots", f"{safe_brand}_{safe_model}_{safe_memory}")
-            save_debug_artifacts(
-                page,
-                screenshot_path=f"{debug_prefix}_after.png",
-                html_path=f"{debug_prefix}.html",
-            )
         page.close()
 
 
@@ -961,14 +768,6 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) ->
     if not product_price_valid and not error_message:
         error_message = "Product price not parsed"
 
-    print(
-        f"[DEBUG][{platform or 'unknown'}] platform: {str(base.get('platform', '')).strip()} | "
-        f"model: {str(base.get('model', '')).strip()} | "
-        f"memory: {str(base.get('memory', '')).strip()} | "
-        f"product_price: {product_price} | original_price: {original_price} | "
-        f"voucher_amount: {voucher_amount} | effective_price: {effective_price} | "
-        f"error_message: {error_message}"
-    )
 
     row = {
         "crawl_date": now_utc.date().isoformat(),
@@ -996,9 +795,6 @@ def ensure_price_daily_header(worksheet: gspread.Worksheet) -> None:
 
 
 def main() -> None:
-    os.makedirs("debug_screenshots", exist_ok=True)
-    print(f"[DEBUG][PriceOye] Debug directory ready: {os.path.abspath('debug_screenshots')}")
-
     client = get_gspread_client()
     sheet = client.open(SHEET_NAME)
 
@@ -1021,34 +817,6 @@ def main() -> None:
         return
 
     output_rows = []
-    total_sku_rows = len(sku_records)
-    print(f"[DEBUG][PriceOye] total sku_master rows: {total_sku_rows}")
-
-    rows_by_url: Dict[str, List[Dict[str, Any]]] = {}
-    for row in active_rows:
-        key = str(row.get("product_url", "")).strip()
-        if not key:
-            continue
-        rows_by_url.setdefault(key, []).append(row)
-
-    variant_debug_urls: Dict[str, List[Dict[str, Any]]] = {}
-    priceoye_variant_urls: set[str] = set()
-    for product_url, rows in rows_by_url.items():
-        if len(rows) < 2:
-            continue
-        memories = {normalize_memory(str(r.get("memory", "")).strip()) for r in rows if str(r.get("memory", "")).strip()}
-        memories = {m for m in memories if m}
-        if len(memories) > 1:
-            variant_debug_urls[product_url] = rows
-            platforms = {str(r.get("platform", "")).strip().lower() for r in rows}
-            if "priceoye" in platforms:
-                priceoye_variant_urls.add(product_url)
-
-    print(f"[DEBUG][PriceOye] number of variant product_url groups: {len(variant_debug_urls)}")
-    for product_url, rows in variant_debug_urls.items():
-        memory_values = [str(r.get('memory', '')).strip() or "(blank)" for r in rows]
-        print(f"[DEBUG][PriceOye] product_url selected for screenshot debugging: {product_url}")
-        print(f"[DEBUG][PriceOye] memory values under variant URL: {memory_values}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -1069,26 +837,13 @@ def main() -> None:
                 }
             elif platform == "priceoye":
                 memory = str(row.get("memory", "")).strip()
-                force_debug_artifacts = product_url in variant_debug_urls
                 crawl_result = crawl_priceoye_page(
                     context,
                     product_url,
                     memory=memory,
-                    is_variant_sku=product_url in priceoye_variant_urls,
-                    force_debug_artifacts=force_debug_artifacts,
-                    debug_identity={
-                        "brand": str(row.get("brand", "")).strip(),
-                        "model": str(row.get("model", "")).strip(),
-                    },
                 )
             elif platform == "pickaboo":
                 crawl_result = crawl_pickaboo_page(context, product_url)
-                print(f"[DEBUG][Pickaboo] platform: {platform}")
-                print(f"[DEBUG][Pickaboo] product_url: {product_url}")
-                print(f"[DEBUG][Pickaboo] product_price: {crawl_result.get('product_price', '')}")
-                print(f"[DEBUG][Pickaboo] voucher_amount: {crawl_result.get('voucher_amount', '')}")
-                print(f"[DEBUG][Pickaboo] effective_price: {crawl_result.get('effective_price', '')}")
-                print(f"[DEBUG][Pickaboo] stock_status: {crawl_result.get('stock_status', '')}")
             else:
                 crawl_result = {
                     "product_price": "",
@@ -1109,12 +864,14 @@ def main() -> None:
 
             output_row = build_price_daily_row(row, crawl_result)
             print(
-                f"[DEBUG][SKU] platform={output_row.get('platform','')} | country={output_row.get('country','')} | "
-                f"brand={output_row.get('brand','')} | model={output_row.get('model','')} | memory={output_row.get('memory','')} | "
-                f"product_url={output_row.get('product_url','')} | original_price={output_row.get('original_price','')} | "
-                f"product_price={output_row.get('product_price','')} | voucher_amount={output_row.get('voucher_amount','')} | "
-                f"effective_price={output_row.get('effective_price','')} | stock_status={output_row.get('stock_status','')} | "
-                f"error_message={output_row.get('error_message','')}"
+                f"[SKU] platform={output_row.get('platform', '')} | country={output_row.get('country', '')} | "
+                f"brand={output_row.get('brand', '')} | model={output_row.get('model', '')} | "
+                f"memory={output_row.get('memory', '')} | product_price={output_row.get('product_price', '')} | "
+                f"original_price={output_row.get('original_price', '')} | "
+                f"voucher_amount={output_row.get('voucher_amount', '')} | "
+                f"effective_price={output_row.get('effective_price', '')} | "
+                f"stock_status={output_row.get('stock_status', '')} | "
+                f"error_message={output_row.get('error_message', '')}"
             )
             output_rows.append(output_row)
 
