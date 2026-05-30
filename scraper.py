@@ -866,6 +866,189 @@ def crawl_priceoye_page(
         page.close()
 
 
+DARAZ_PRICE_PATTERN = re.compile(r"(?i)(?:৳|rs\.?|pkr|tk|bdt)\s*[\d,]+")
+DARAZ_CURRENT_PRICE_SELECTORS = [
+    ".pdp-price_type_normal",
+    "[class*='pdp-price_type_normal']",
+    ".pdp-price",
+    ".pdp-product-price .pdp-price",
+    "[class*='sale-price']",
+    "[class*='current-price']",
+    "[class*='product-price']",
+    "[class*='price']",
+]
+DARAZ_ORIGINAL_PRICE_SELECTORS = [
+    "del",
+    "s",
+    ".pdp-price_type_deleted",
+    "[class*='pdp-price_type_deleted']",
+    "[class*='original-price']",
+    "[class*='old-price']",
+    "[class*='regular-price']",
+]
+
+
+def parse_daraz_price_to_int(value: Any) -> Any:
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return value
+
+    text = str(value).replace("\xa0", " ")
+    match = DARAZ_PRICE_PATTERN.search(text)
+    if match:
+        text = match.group(0)
+    text = re.sub(r"(?i)(rs|pkr|tk|bdt)\.?\s*", "", text)
+    text = text.replace("৳", "")
+    text = text.replace(",", "")
+    text = re.sub(r"\s+", "", text)
+    if not text or not text.isdigit():
+        return ""
+    try:
+        return int(text)
+    except ValueError:
+        return ""
+
+
+def first_daraz_price_to_int(text: str) -> Any:
+    for match in DARAZ_PRICE_PATTERN.finditer(text or ""):
+        parsed = parse_daraz_price_to_int(match.group(0))
+        if isinstance(parsed, int) and parsed > 0:
+            return parsed
+    return ""
+
+
+def get_visible_daraz_texts(page: Any, selectors: List[str]) -> List[Dict[str, str]]:
+    values = page.evaluate(
+        r"""
+        (selectors) => {
+            const nodes = Array.from(document.querySelectorAll(selectors.join(',')));
+            const isVisible = (el) => {
+                const style = window.getComputedStyle(el);
+                if (!style) return false;
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+            return nodes
+                .filter(isVisible)
+                .map((el) => ({
+                    text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(),
+                    class_name: String(el.className || ''),
+                    tag_name: String(el.tagName || '').toLowerCase()
+                }))
+                .filter((item) => item.text);
+        }
+        """,
+        selectors,
+    )
+    if not isinstance(values, list):
+        return []
+
+    output: List[Dict[str, str]] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        output.append(
+            {
+                "text": clean_price(str(item.get("text", ""))),
+                "class_name": clean_price(str(item.get("class_name", ""))),
+                "tag_name": clean_price(str(item.get("tag_name", ""))),
+            }
+        )
+    return output
+
+
+def extract_daraz_product_price(page: Any, body_text: str) -> Any:
+    skipped_context_pattern = re.compile(
+        r"(?i)(deleted|original|old|regular|strike|discount|voucher|coupon|shipping|delivery|save|off)"
+    )
+    for item in get_visible_daraz_texts(page, DARAZ_CURRENT_PRICE_SELECTORS):
+        class_name = item.get("class_name", "")
+        tag_name = item.get("tag_name", "")
+        text = item.get("text", "")
+        if tag_name in {"del", "s"} or skipped_context_pattern.search(class_name):
+            continue
+        parsed = first_daraz_price_to_int(text)
+        if isinstance(parsed, int):
+            return parsed
+
+    for line in [clean_price(line) for line in (body_text or "").splitlines()]:
+        if not line or skipped_context_pattern.search(line):
+            continue
+        parsed = first_daraz_price_to_int(line)
+        if isinstance(parsed, int):
+            return parsed
+    return ""
+
+
+def extract_daraz_original_price(page: Any, product_price: Any) -> Any:
+    for item in get_visible_daraz_texts(page, DARAZ_ORIGINAL_PRICE_SELECTORS):
+        parsed = first_daraz_price_to_int(item.get("text", ""))
+        if isinstance(parsed, int) and parsed > 0:
+            return parsed
+    return product_price if isinstance(product_price, int) else ""
+
+
+def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
+    page = browser_context.new_page()
+    try:
+        page.goto(product_url, wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_timeout(3000)
+
+        raw_body_text = page.locator("body").inner_text()
+        body_text = clean_price(raw_body_text)
+        product_price = extract_daraz_product_price(page, raw_body_text)
+
+        stock_status = "unknown"
+        if re.search(r"(?i)(out of stock|sold out|this item is no longer available)", body_text):
+            stock_status = "out_of_stock"
+        elif re.search(r"(?i)(buy now|add to cart|almost sold out)", body_text):
+            stock_status = "active"
+
+        if not isinstance(product_price, int):
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": stock_status,
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": "Product price not parsed",
+            }
+
+        original_price = extract_daraz_original_price(page, product_price)
+        if not isinstance(original_price, int):
+            original_price = product_price
+
+        return {
+            "product_price": product_price,
+            "original_price": original_price,
+            "stock_status": stock_status,
+            "voucher_amount": 0,
+            "effective_price": product_price,
+        }
+    except PlaywrightTimeoutError:
+        return {
+            "product_price": "",
+            "original_price": "",
+            "stock_status": "unknown",
+            "voucher_amount": 0,
+            "effective_price": "",
+            "error_message": "Timeout while loading page",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "product_price": "",
+            "original_price": "",
+            "stock_status": "unknown",
+            "voucher_amount": 0,
+            "effective_price": "",
+            "error_message": f"Crawl failed: {exc}",
+        }
+    finally:
+        page.close()
+
+
 def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any]:
     started_at = time.monotonic()
     page = browser_context.new_page()
@@ -1098,6 +1281,8 @@ def main() -> None:
                 )
             elif platform == "pickaboo":
                 crawl_result = crawl_pickaboo_page(context, product_url)
+            elif platform == "daraz":
+                crawl_result = parse_daraz(context, product_url)
             else:
                 crawl_result = {
                     "product_price": "",
