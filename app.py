@@ -43,16 +43,16 @@ TABLE_COLUMNS = [
     "crawl_time",
 ]
 GAP_COLUMNS = [
-    "country",
-    "brand",
-    "model",
-    "memory",
-    "daraz_effective_price",
-    "lowest_competitor_platform",
-    "lowest_competitor_price",
-    "price_gap",
-    "gap_pct",
-    "alert_level",
+    "Country",
+    "Brand",
+    "SKU",
+    "Memory",
+    "Daraz Price",
+    "Competitor Platform",
+    "Competitor Price",
+    "Gap Amount",
+    "Gap %",
+    "Alert",
 ]
 
 
@@ -296,7 +296,7 @@ def inject_styles() -> None:
         .pm-eyebrow { color: #6e6e73; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; }
         .pm-title { font-size: 2.8rem; font-weight: 760; letter-spacing: -0.07em; margin-bottom: 0; }
         .pm-subtitle { color: #6e6e73; font-size: 1.05rem; margin-top: 4px; }
-        .tag-red, .tag-brown, .tag-green {
+        .tag-red, .tag-orange, .tag-green {
             border-radius: 999px;
             color: #ffffff;
             display: inline-block;
@@ -305,7 +305,7 @@ def inject_styles() -> None:
             padding: 4px 10px;
         }
         .tag-red { background: #c1121f; }
-        .tag-brown { background: #8b5e34; }
+        .tag-orange { background: #f77f00; }
         .tag-green { background: #2d6a4f; }
         </style>
         """,
@@ -324,10 +324,8 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     filter_specs = [
         ("country", "Country"),
         ("brand", "Brand"),
-        ("model", "Model / SKU"),
+        ("model", "SKU"),
         ("memory", "Memory"),
-        ("platform", "Platform"),
-        ("stock_status", "Stock Status"),
     ]
 
     for col, label in filter_specs:
@@ -374,63 +372,77 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or not required.issubset(df.columns):
         return pd.DataFrame(columns=GAP_COLUMNS)
 
-    group_cols = SKU_COLUMNS + (["crawl_date"] if "crawl_date" in df.columns else [])
     working = df.dropna(subset=["effective_price"]).copy()
     if working.empty:
         return pd.DataFrame(columns=GAP_COLUMNS)
 
+    working["__platform_key"] = (
+        working["platform"].fillna("").astype(str).str.strip().str.casefold()
+    )
+    sort_cols = available_columns(["crawl_datetime", "crawl_date"], working)
+    if sort_cols:
+        working = working.sort_values(sort_cols, na_position="last")
+
+    latest_by_platform = working.groupby(
+        SKU_COLUMNS + ["__platform_key"],
+        dropna=False,
+        as_index=False,
+    ).tail(1)
+
     daraz = (
-        working[working["platform"].str.casefold() == DARAZ_PLATFORM.casefold()]
-        .groupby(group_cols, dropna=False, as_index=False)["effective_price"]
-        .min()
-        .rename(columns={"effective_price": "daraz_effective_price"})
+        latest_by_platform[latest_by_platform["__platform_key"] == DARAZ_PLATFORM.casefold()]
+        [SKU_COLUMNS + ["effective_price"]]
+        .rename(columns={"effective_price": "Daraz Price"})
     )
 
-    competitor_mask = working["platform"].str.casefold().isin(
-        [platform.casefold() for platform in COMPETITOR_PLATFORMS]
-    )
-    competitors = working[competitor_mask].copy()
+    competitor_name_by_key = {platform.casefold(): platform for platform in COMPETITOR_PLATFORMS}
+    competitors = latest_by_platform[
+        latest_by_platform["__platform_key"].isin(competitor_name_by_key)
+    ].copy()
     if competitors.empty or daraz.empty:
         return pd.DataFrame(columns=GAP_COLUMNS)
 
-    competitors = competitors.sort_values(group_cols + ["effective_price"], na_position="last")
-    competitors = competitors.groupby(group_cols, dropna=False).head(1)
-    competitors = competitors.rename(
+    competitors["Competitor Platform"] = competitors["__platform_key"].map(
+        competitor_name_by_key
+    )
+    competitors = competitors.rename(columns={"effective_price": "Competitor Price"})
+    competitors = competitors[SKU_COLUMNS + ["Competitor Platform", "Competitor Price"]]
+
+    gap = daraz.merge(competitors, on=SKU_COLUMNS, how="inner")
+    if gap.empty:
+        return pd.DataFrame(columns=GAP_COLUMNS)
+
+    gap["Gap Amount"] = gap["Daraz Price"] - gap["Competitor Price"]
+    gap["Gap %"] = gap["Gap Amount"] / gap["Competitor Price"]
+    gap["Alert"] = gap["Gap %"].apply(alert_level)
+    gap = gap.rename(
         columns={
-            "platform": "lowest_competitor_platform",
-            "effective_price": "lowest_competitor_price",
+            "country": "Country",
+            "brand": "Brand",
+            "model": "SKU",
+            "memory": "Memory",
         }
-    )[group_cols + ["lowest_competitor_platform", "lowest_competitor_price"]]
-
-    gap = daraz.merge(competitors, on=group_cols, how="inner")
-    gap["price_gap"] = gap["daraz_effective_price"] - gap["lowest_competitor_price"]
-    gap["gap_pct"] = gap["price_gap"] / gap["daraz_effective_price"]
-    gap["alert_level"] = gap["gap_pct"].apply(alert_level)
-
-    if "crawl_date" in gap.columns:
-        gap = gap.sort_values(["crawl_date", "gap_pct"], ascending=[False, False])
-        gap = gap.groupby(SKU_COLUMNS, dropna=False).head(1)
-
-    return gap[available_columns(GAP_COLUMNS, gap)]
+    )
+    return gap[available_columns(GAP_COLUMNS, gap)].sort_values("Gap %", ascending=True)
 
 
 def alert_level(gap_pct: float) -> str:
     if pd.isna(gap_pct):
         return "Green"
-    if gap_pct > 0.05:
+    if gap_pct <= -0.05:
         return "Red"
-    if gap_pct >= 0.01:
-        return "Brown"
+    if gap_pct <= -0.01:
+        return "Orange"
     return "Green"
 
 
 def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
     formatted = gap_df.copy()
-    for col in ["daraz_effective_price", "lowest_competitor_price", "price_gap"]:
+    for col in ["Daraz Price", "Competitor Price", "Gap Amount"]:
         if col in formatted.columns:
             formatted[col] = formatted[col].round(2)
-    if "gap_pct" in formatted.columns:
-        formatted["gap_pct"] = (formatted["gap_pct"] * 100).round(2)
+    if "Gap %" in formatted.columns:
+        formatted["Gap %"] = (formatted["Gap %"] * 100).round(2)
     return formatted
 
 
@@ -450,8 +462,8 @@ def render_kpis(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
     total_active_skus = active_latest.drop_duplicates(sku_cols).shape[0] if sku_cols else len(active_latest)
     daraz_skus = count_platform_skus(latest_df, [DARAZ_PLATFORM])
     competitor_skus = count_platform_skus(latest_df, COMPETITOR_PLATFORMS)
-    red_alerts = int((gap_df.get("alert_level", pd.Series(dtype=str)) == "Red").sum())
-    average_gap = gap_df["gap_pct"].mean() * 100 if "gap_pct" in gap_df.columns and not gap_df.empty else 0
+    red_alerts = int((gap_df.get("Alert", pd.Series(dtype=str)) == "Red").sum())
+    average_gap = gap_df["Gap %"].mean() * 100 if "Gap %" in gap_df.columns and not gap_df.empty else 0
 
     cols = st.columns(6)
     metrics = [
@@ -515,9 +527,9 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     st.markdown("<div class='pm-card'>", unsafe_allow_html=True)
     st.subheader(title)
     display_df = df[available_columns(columns, df)] if columns else df
-    if "alert_level" in display_df.columns:
+    if "Alert" in display_df.columns:
         st.dataframe(
-            display_df.style.applymap(style_alert_level, subset=["alert_level"]),
+            display_df.style.applymap(style_alert_level, subset=["Alert"]),
             use_container_width=True,
             hide_index=True,
         )
@@ -529,7 +541,7 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
 def style_alert_level(value: object) -> str:
     colors = {
         "Red": "background-color: #c1121f; color: #ffffff; font-weight: 700;",
-        "Brown": "background-color: #8b5e34; color: #ffffff; font-weight: 700;",
+        "Orange": "background-color: #f77f00; color: #ffffff; font-weight: 700;",
         "Green": "background-color: #2d6a4f; color: #ffffff; font-weight: 700;",
     }
     return colors.get(str(value), "")
@@ -547,9 +559,9 @@ def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
         use_container_width=True,
     )
     col2.download_button(
-        label="Download gap table CSV",
+        label="Download price gap analysis CSV",
         data=gap_df.to_csv(index=False).encode("utf-8"),
-        file_name="daraz_competitor_gap_table.csv",
+        file_name="price_gap_analysis.csv",
         mime="text/csv",
         use_container_width=True,
     )
@@ -589,17 +601,17 @@ def main() -> None:
     render_kpis(latest_df, gap_df)
 
     render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
-    render_data_section("Daraz vs Competitor Gap Table", formatted_gap_df, GAP_COLUMNS)
+    render_data_section("Price Gap Analysis", formatted_gap_df, GAP_COLUMNS)
     render_gap_chart(filtered)
 
     alert_df = (
-        formatted_gap_df[formatted_gap_df["alert_level"].isin(["Red", "Brown"])]
-        if "alert_level" in formatted_gap_df.columns
+        formatted_gap_df[formatted_gap_df["Alert"].isin(["Red", "Orange"])]
+        if "Alert" in formatted_gap_df.columns
         else formatted_gap_df
     )
-    if "gap_pct" in alert_df.columns:
-        alert_df = alert_df.sort_values("gap_pct", ascending=False)
-    render_data_section("Alert Section — Red and Brown", alert_df, GAP_COLUMNS)
+    if "Gap %" in alert_df.columns:
+        alert_df = alert_df.sort_values("Gap %", ascending=True)
+    render_data_section("Alert Section — Red and Orange", alert_df, GAP_COLUMNS)
 
     out_of_stock_df = latest_df.copy()
     if "stock_status" in out_of_stock_df.columns:
