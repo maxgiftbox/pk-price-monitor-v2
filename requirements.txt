@@ -5,3 +5,4 @@ streamlit
 playwright
 beautifulsoup4
 requests
+plotly
