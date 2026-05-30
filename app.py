@@ -9,12 +9,22 @@ from google.oauth2.service_account import Credentials
 
 SHEET_NAME = "Mob Price Monitor"
 PRICE_DAILY_TAB = "price_daily"
+SKU_MASTER_TAB = "sku_master"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 PRICE_COLUMNS = ["original_price", "product_price", "voucher_amount", "effective_price"]
 SKU_COLUMNS = ["country", "brand", "model", "memory"]
+SKU_MASTER_JOIN_COLUMNS = [
+    "platform",
+    "country",
+    "brand",
+    "model",
+    "memory",
+    "product_url",
+]
+SKU_MASTER_STANDARD_COLUMNS = ["standard_model", "standard_memory"]
 COMPETITOR_PLATFORMS = ["PriceOye", "Pickaboo"]
 DARAZ_PLATFORM = "Daraz"
 OUT_OF_STOCK_STATUSES = {"out_of_stock", "unavailable"}
@@ -79,6 +89,13 @@ def load_price_data() -> pd.DataFrame:
     if df.empty:
         return df
 
+    df = prepare_price_daily_df(df)
+    sku_master_df = load_sku_master_df(sheet)
+    return enrich_with_sku_master(df, sku_master_df)
+
+
+def prepare_price_daily_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
     df.columns = [str(col).strip() for col in df.columns]
 
     for col in PRICE_COLUMNS:
@@ -106,6 +123,115 @@ def load_price_data() -> pd.DataFrame:
         df["crawl_datetime"] = pd.NaT
 
     return df
+
+
+def load_sku_master_df(sheet: object) -> pd.DataFrame:
+    try:
+        worksheet = sheet.worksheet(SKU_MASTER_TAB)
+        records = worksheet.get_all_records()
+    except Exception:  # noqa: BLE001 - missing sku_master should not block the dashboard.
+        return pd.DataFrame()
+
+    sku_master_df = pd.DataFrame(records)
+    if sku_master_df.empty:
+        return sku_master_df
+
+    sku_master_df.columns = [str(col).strip() for col in sku_master_df.columns]
+    for col in set(SKU_MASTER_JOIN_COLUMNS + SKU_MASTER_STANDARD_COLUMNS):
+        if col in sku_master_df.columns:
+            sku_master_df[col] = sku_master_df[col].fillna("").astype(str).str.strip()
+
+    return sku_master_df
+
+
+def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.DataFrame:
+    enriched = df.copy()
+    enriched["raw_model"] = enriched["model"] if "model" in enriched.columns else ""
+    enriched["raw_memory"] = enriched["memory"] if "memory" in enriched.columns else ""
+    enriched["standard_model"] = ""
+    enriched["standard_memory"] = ""
+
+    if not sku_master_df.empty:
+        enriched = apply_sku_master_match(enriched, sku_master_df, ["product_url"])
+        unmatched_mask = missing_standard_mask(enriched)
+        if unmatched_mask.any():
+            fallback_keys = [col for col in SKU_MASTER_JOIN_COLUMNS if col in enriched.columns]
+            if fallback_keys and set(fallback_keys).issubset(sku_master_df.columns):
+                fallback_matches = apply_sku_master_match(
+                    enriched.loc[unmatched_mask].copy(),
+                    sku_master_df,
+                    fallback_keys,
+                )
+                for col in SKU_MASTER_STANDARD_COLUMNS:
+                    enriched.loc[unmatched_mask, col] = coalesce_text(
+                        fallback_matches[col].reset_index(drop=True),
+                        enriched.loc[unmatched_mask, col].reset_index(drop=True),
+                    ).values
+
+    enriched["dashboard_model"] = coalesce_text(enriched["standard_model"], enriched["raw_model"])
+    enriched["dashboard_memory"] = coalesce_text(enriched["standard_memory"], enriched["raw_memory"])
+    enriched["model"] = enriched["dashboard_model"]
+    enriched["memory"] = enriched["dashboard_memory"]
+    return enriched
+
+
+def apply_sku_master_match(
+    df: pd.DataFrame,
+    sku_master_df: pd.DataFrame,
+    join_keys: list[str],
+) -> pd.DataFrame:
+    required_sku_master_cols = set(join_keys + SKU_MASTER_STANDARD_COLUMNS)
+    if not join_keys or not required_sku_master_cols.issubset(sku_master_df.columns):
+        return df
+    if not set(join_keys).issubset(df.columns):
+        return df
+
+    left = df.copy()
+    right = sku_master_df[join_keys + SKU_MASTER_STANDARD_COLUMNS].copy()
+    left_key_cols = add_normalized_join_keys(left, join_keys)
+    right_key_cols = add_normalized_join_keys(right, join_keys)
+    right = right[right[right_key_cols].ne("").all(axis=1)]
+    right = right.drop_duplicates(right_key_cols, keep="first")
+
+    if right.empty:
+        return left.drop(columns=left_key_cols, errors="ignore")
+
+    merged = left.merge(
+        right[right_key_cols + SKU_MASTER_STANDARD_COLUMNS],
+        left_on=left_key_cols,
+        right_on=right_key_cols,
+        how="left",
+        suffixes=("", "_sku_master"),
+    )
+
+    for col in SKU_MASTER_STANDARD_COLUMNS:
+        matched_col = f"{col}_sku_master"
+        if matched_col in merged.columns:
+            merged[col] = coalesce_text(merged[matched_col], merged[col])
+            merged = merged.drop(columns=[matched_col])
+
+    return merged.drop(columns=left_key_cols + right_key_cols, errors="ignore")
+
+
+def add_normalized_join_keys(df: pd.DataFrame, join_keys: list[str]) -> list[str]:
+    normalized_key_cols = []
+    for key in join_keys:
+        normalized_col = f"__join_{key}"
+        df[normalized_col] = df[key].fillna("").astype(str).str.strip().str.casefold()
+        normalized_key_cols.append(normalized_col)
+    return normalized_key_cols
+
+
+def missing_standard_mask(df: pd.DataFrame) -> pd.Series:
+    return df["standard_model"].fillna("").astype(str).str.strip().eq("") | df[
+        "standard_memory"
+    ].fillna("").astype(str).str.strip().eq("")
+
+
+def coalesce_text(primary: pd.Series, fallback: pd.Series) -> pd.Series:
+    primary_text = primary.fillna("").astype(str).str.strip()
+    fallback_text = fallback.fillna("").astype(str).str.strip()
+    return primary_text.where(primary_text.ne(""), fallback_text)
 
 
 def to_numeric_price(series: pd.Series) -> pd.Series:
