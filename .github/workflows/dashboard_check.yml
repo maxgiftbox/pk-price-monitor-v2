@@ -1,0 +1,35 @@
+name: Dashboard Check
+
+on:
+  pull_request:
+    paths:
+      - app.py
+      - requirements.txt
+  push:
+    branches:
+      - main
+    paths:
+      - app.py
+      - requirements.txt
+
+jobs:
+  dashboard-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile dashboard
+        run: python -m py_compile app.py
+
+      - name: Import dashboard dependencies
+        run: python -c "import streamlit, plotly, pandas, gspread"
