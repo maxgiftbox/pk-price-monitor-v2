@@ -383,41 +383,311 @@ def inject_styles() -> None:
     st.markdown(
         """
         <style>
-        :root { --radius: 22px; }
-        .stApp { background: #f5f5f7; color: #111111; }
-        h1, h2, h3 { letter-spacing: -0.04em; color: #111111; }
-        section[data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid #e5e5e7; }
+        :root {
+            --pm-ink: #101614;
+            --pm-muted: #66736d;
+            --pm-green: #203f35;
+            --pm-green-deep: #0d221d;
+            --pm-border: rgba(255, 255, 255, 0.54);
+            --pm-card: rgba(255, 255, 255, 0.72);
+            --pm-sidebar: rgba(10, 24, 21, 0.78);
+            --pm-radius: 22px;
+            --pm-shadow: 0 24px 70px rgba(13, 34, 29, 0.20);
+        }
+
+        .stApp {
+            color: var(--pm-ink);
+            background:
+                radial-gradient(circle at 12% 12%, rgba(116, 145, 121, 0.55), transparent 26%),
+                radial-gradient(circle at 82% 4%, rgba(229, 236, 226, 0.52), transparent 24%),
+                radial-gradient(circle at 88% 86%, rgba(22, 56, 47, 0.58), transparent 30%),
+                linear-gradient(135deg, #182b25 0%, #56615b 42%, #dfe4dd 100%);
+            background-attachment: fixed;
+        }
+
+        .stApp::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            backdrop-filter: blur(2px);
+            background:
+                linear-gradient(120deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02)),
+                radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.16), transparent 46%);
+            z-index: 0;
+        }
+
+        [data-testid="stAppViewContainer"] > .main {
+            position: relative;
+            z-index: 1;
+        }
+
+        .block-container {
+            max-width: 1460px;
+            padding: 2.4rem 3rem 3.5rem;
+            margin-top: 1.25rem;
+            margin-bottom: 2rem;
+            border: 1px solid var(--pm-border);
+            border-radius: 30px;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(239, 244, 239, 0.58));
+            box-shadow: 0 30px 90px rgba(4, 20, 17, 0.25);
+            backdrop-filter: blur(22px) saturate(1.3);
+            -webkit-backdrop-filter: blur(22px) saturate(1.3);
+        }
+
+        h1, h2, h3 {
+            color: var(--pm-ink);
+            letter-spacing: -0.04em;
+        }
+
+        h2, h3, .stSubheader {
+            font-weight: 750;
+        }
+
+        hr {
+            display: none;
+        }
+
+        section[data-testid="stSidebar"] {
+            width: 18.5rem !important;
+            background: transparent;
+        }
+
+        section[data-testid="stSidebar"] > div {
+            padding-top: 1.3rem;
+            background:
+                linear-gradient(180deg, rgba(14, 32, 28, 0.88), rgba(8, 18, 16, 0.78)),
+                radial-gradient(circle at 30% 0%, rgba(93, 126, 107, 0.34), transparent 42%);
+            border-right: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 18px 0 60px rgba(0, 0, 0, 0.22);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3,
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] span {
+            color: rgba(255, 255, 255, 0.88) !important;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stHeader"] {
+            background: transparent;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stMultiSelect),
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stDateInput) {
+            margin: 0.55rem 0;
+            padding: 0.75rem 0.75rem 0.9rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.07);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+        section[data-testid="stSidebar"] [data-baseweb="input"] {
+            border-color: rgba(255, 255, 255, 0.14) !important;
+            border-radius: 14px !important;
+            background-color: rgba(4, 12, 10, 0.45) !important;
+            color: rgba(255, 255, 255, 0.92) !important;
+        }
+
+        .pm-hero {
+            display: flex;
+            justify-content: space-between;
+            gap: 1.5rem;
+            align-items: stretch;
+            margin: 0 0 1.8rem;
+            padding: 1.65rem;
+            border: 1px solid rgba(255, 255, 255, 0.62);
+            border-radius: 28px;
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(235, 241, 235, 0.58)),
+                radial-gradient(circle at top right, rgba(56, 94, 78, 0.18), transparent 34%);
+            box-shadow: var(--pm-shadow);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+
+        .pm-hero-copy {
+            min-width: 0;
+        }
+
+        .pm-eyebrow {
+            color: #587167;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.16em;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+        }
+
+        .pm-title {
+            color: var(--pm-ink);
+            font-size: clamp(2.45rem, 5vw, 4.45rem);
+            font-weight: 830;
+            letter-spacing: -0.085em;
+            line-height: 0.92;
+            margin: 0;
+        }
+
+        .pm-subtitle {
+            color: var(--pm-muted);
+            font-size: clamp(1rem, 1.8vw, 1.22rem);
+            font-weight: 520;
+            margin-top: 0.85rem;
+        }
+
+        .pm-hero-panel {
+            align-items: flex-end;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-width: 250px;
+            padding: 1rem;
+            border: 1px solid rgba(18, 37, 32, 0.08);
+            border-radius: 22px;
+            background: rgba(21, 48, 41, 0.08);
+        }
+
+        .pm-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            justify-content: flex-end;
+        }
+
+        .pm-pill {
+            border: 1px solid rgba(32, 63, 53, 0.16);
+            border-radius: 999px;
+            color: #203f35;
+            background: rgba(255, 255, 255, 0.54);
+            font-size: 0.78rem;
+            font-weight: 760;
+            padding: 0.48rem 0.76rem;
+        }
+
+        .pm-hero-note {
+            color: #485b54;
+            font-size: 0.88rem;
+            line-height: 1.35;
+            margin-top: 1rem;
+            text-align: right;
+        }
+
+
+        .pm-section-label {
+            color: #314d43;
+            font-size: 0.82rem;
+            font-weight: 820;
+            letter-spacing: 0.14em;
+            margin: 0.25rem 0 0.85rem;
+            text-transform: uppercase;
+        }
         div[data-testid="stMetric"] {
-            background: #ffffff;
-            border: 1px solid #e5e5e7;
-            border-radius: var(--radius);
-            padding: 18px 18px 14px 18px;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.04);
+            min-height: 122px;
+            padding: 1.2rem 1.1rem 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.62);
+            border-radius: 22px;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(245, 248, 245, 0.64));
+            box-shadow: 0 18px 44px rgba(11, 31, 26, 0.12);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
         }
-        div[data-testid="stMetricLabel"] p { color: #6e6e73; font-size: 0.86rem; }
-        div[data-testid="stMetricValue"] { color: #111111; }
+
+        div[data-testid="stMetricLabel"] p {
+            color: var(--pm-muted);
+            font-size: 0.78rem;
+            font-weight: 760;
+            letter-spacing: 0.02em;
+        }
+
+        div[data-testid="stMetricValue"] {
+            color: var(--pm-ink);
+            font-weight: 830;
+            letter-spacing: -0.05em;
+        }
+
         .pm-card {
-            background: #ffffff;
-            border: 1px solid #e5e5e7;
-            border-radius: var(--radius);
-            padding: 22px;
-            margin: 10px 0 22px 0;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.04);
+            margin: 1.45rem 0;
+            padding: 1.35rem;
+            border: 1px solid rgba(255, 255, 255, 0.58);
+            border-radius: var(--pm-radius);
+            background: var(--pm-card);
+            box-shadow: var(--pm-shadow);
+            backdrop-filter: blur(18px) saturate(1.18);
+            -webkit-backdrop-filter: blur(18px) saturate(1.18);
         }
-        .pm-eyebrow { color: #6e6e73; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; }
-        .pm-title { font-size: 2.8rem; font-weight: 760; letter-spacing: -0.07em; margin-bottom: 0; }
-        .pm-subtitle { color: #6e6e73; font-size: 1.05rem; margin-top: 4px; }
+
+        .pm-card h2, .pm-card h3 {
+            margin-top: 0;
+        }
+
+        [data-testid="stDataFrame"] {
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid rgba(16, 22, 20, 0.08);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+        }
+
+        [data-testid="stDataFrame"] div[role="grid"] {
+            background: rgba(15, 23, 21, 0.94);
+        }
+
+        .stPlotlyChart {
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .stDownloadButton button, .stButton button {
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 16px;
+            background: linear-gradient(135deg, #203f35, #111d1a);
+            color: #ffffff;
+            box-shadow: 0 12px 28px rgba(11, 31, 26, 0.18);
+        }
+
         .tag-red, .tag-orange, .tag-green {
+            display: inline-block;
             border-radius: 999px;
             color: #ffffff;
-            display: inline-block;
             font-size: 0.78rem;
-            font-weight: 700;
+            font-weight: 760;
             padding: 4px 10px;
         }
+
         .tag-red { background: #c1121f; }
         .tag-orange { background: #f77f00; }
         .tag-green { background: #2d6a4f; }
+
+        @media (max-width: 980px) {
+            .block-container {
+                padding: 1.4rem 1rem 2rem;
+                margin-top: 0.5rem;
+                border-radius: 22px;
+            }
+
+            .pm-hero {
+                flex-direction: column;
+                padding: 1.2rem;
+            }
+
+            .pm-hero-panel {
+                align-items: flex-start;
+                min-width: 0;
+            }
+
+            .pm-pill-row {
+                justify-content: flex-start;
+            }
+
+            .pm-hero-note {
+                text-align: left;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -678,6 +948,8 @@ def render_kpis(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
     average_gap = gap_df["Gap %"].mean() * 100 if "Gap %" in gap_df.columns and not gap_df.empty else 0
 
     cols = st.columns(6)
+    st.markdown("<div class='pm-section-label'>Overview</div>", unsafe_allow_html=True)
+
     metrics = [
         ("Latest crawl time", latest_crawl),
         ("Total active SKUs", f"{total_active_skus:,}"),
@@ -734,8 +1006,8 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         template="plotly_white",
     )
     fig.update_layout(
-        plot_bgcolor="#ffffff",
-        paper_bgcolor="#ffffff",
+        plot_bgcolor="rgba(255, 255, 255, 0.52)",
+        paper_bgcolor="rgba(255, 255, 255, 0)",
         font_color="#111111",
         legend_title_text="Platform",
         margin=dict(l=10, r=10, t=20, b=10),
@@ -801,10 +1073,26 @@ def main() -> None:
     st.set_page_config(page_title="Mob Price Monitor", layout="wide", page_icon="📱")
     inject_styles()
 
-    st.markdown("<div class='pm-eyebrow'>Mob Price Monitor</div>", unsafe_allow_html=True)
-    st.markdown("<div class='pm-title'>Price Monitor</div>", unsafe_allow_html=True)
     st.markdown(
-        "<div class='pm-subtitle'>SKU-level Daraz vs PriceOye / Pickaboo pricing intelligence.</div>",
+        """
+        <div class="pm-hero">
+            <div class="pm-hero-copy">
+                <div class="pm-eyebrow">Pricing intelligence dashboard</div>
+                <div class="pm-title">Mob Price Monitor</div>
+                <div class="pm-subtitle">Daraz vs Competitor Pricing Intelligence</div>
+            </div>
+            <div class="pm-hero-panel">
+                <div class="pm-pill-row">
+                    <span class="pm-pill">Daraz</span>
+                    <span class="pm-pill">PriceOye</span>
+                    <span class="pm-pill">Pickaboo</span>
+                </div>
+                <div class="pm-hero-note">
+                    Monitor SKU coverage, active price gaps, and alert conditions from one compact executive view.
+                </div>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
