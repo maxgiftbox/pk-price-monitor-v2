@@ -70,9 +70,9 @@ PLATFORM_DISPLAY_NAMES = {
     "pickaboo": "pickaboo",
 }
 PLATFORM_COLORS = {
-    "daraz": "#f85606",
-    "priceoye": "#0a84ff",
-    "pickaboo": "#34c759",
+    "daraz": "#9b7bff",
+    "priceoye": "#5b8def",
+    "pickaboo": "#34c7a0",
 }
 ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
 DEFAULT_ROWS_PER_PAGE = 20
@@ -387,16 +387,24 @@ def inject_styles() -> None:
         """
         <style>
         :root {
-            --pm-ink: #111715;
-            --pm-muted: #6f7c80;
-            --pm-soft: #e6eef2;
-            --pm-card: rgba(255, 255, 255, 0.88);
-            --pm-border: rgba(255, 255, 255, 0.62);
-            --pm-sidebar: rgba(12, 25, 23, 0.82);
-            --pm-shadow: 0 34px 90px rgba(5, 18, 17, 0.28);
-            --pm-card-shadow: 0 22px 54px rgba(20, 38, 42, 0.12);
-            --pm-radius: 22px;
-            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            --pm-ink: #182033;
+            --pm-heading: #0f172a;
+            --pm-muted: #667085;
+            --pm-soft: #eef4ff;
+            --pm-card: rgba(255, 255, 255, 0.92);
+            --pm-card-solid: #ffffff;
+            --pm-sidebar: rgba(255, 255, 255, 0.62);
+            --pm-border: rgba(148, 163, 184, 0.16);
+            --pm-table-header: #f4f7fb;
+            --pm-table-header-text: #5c6678;
+            --pm-blue: #5b8def;
+            --pm-purple: #9b7bff;
+            --pm-green: #34c7a0;
+            --pm-shadow: 0 28px 80px rgba(91, 119, 190, 0.18);
+            --pm-card-shadow: 0 18px 45px rgba(79, 96, 140, 0.11);
+            --pm-card-shadow-hover: 0 24px 70px rgba(79, 96, 140, 0.16);
+            --pm-radius: 24px;
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         }
 
         #MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"] {
@@ -406,7 +414,7 @@ def inject_styles() -> None:
 
         html, body, .stApp, [data-testid="stAppViewContainer"] {
             min-height: 100%;
-            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         }
 
         html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main {
@@ -417,55 +425,58 @@ def inject_styles() -> None:
         .stApp {
             color: var(--pm-ink);
             background:
-                radial-gradient(circle at 12% 8%, rgba(208, 231, 224, 0.78), transparent 30%),
-                radial-gradient(circle at 82% 10%, rgba(230, 238, 242, 0.80), transparent 28%),
-                linear-gradient(135deg, #f7faf9 0%, #edf4f3 44%, #dfe9ec 100%);
+                radial-gradient(circle at 4% 8%, rgba(208, 228, 255, 0.95) 0, rgba(208, 228, 255, 0.38) 27%, transparent 48%),
+                radial-gradient(circle at 88% 4%, rgba(222, 210, 255, 0.85) 0, rgba(222, 210, 255, 0.34) 29%, transparent 50%),
+                radial-gradient(circle at 72% 88%, rgba(198, 244, 233, 0.70) 0, rgba(198, 244, 233, 0.26) 28%, transparent 50%),
+                linear-gradient(135deg, #fbfdff 0%, #f4f8ff 36%, #f9f5ff 72%, #ffffff 100%);
         }
 
         [data-testid="stAppViewContainer"] > .main {
             position: relative;
         }
 
+        .main .block-container {
+            max-width: 100%;
+            padding-left: 32px;
+            padding-right: 32px;
+            padding-top: 32px;
+            padding-bottom: 48px;
+        }
+
         .block-container {
-            max-width: 1400px;
             min-height: auto;
-            padding: 2.05rem 2.25rem 2.65rem;
-            margin: 1.55rem auto;
-            border: 1px solid rgba(255, 255, 255, 0.58);
-            border-radius: 28px;
-            background:
-                linear-gradient(145deg, rgba(230, 238, 242, 0.72), rgba(236, 242, 244, 0.60)),
-                radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.55), transparent 34%);
-            box-shadow: var(--pm-shadow);
-            backdrop-filter: blur(24px) saturate(1.22);
-            -webkit-backdrop-filter: blur(24px) saturate(1.22);
+            margin: 0 auto;
+            border: 0;
+            background: transparent;
+            box-shadow: none;
         }
 
         h1, h2, h3, p { font-family: inherit; }
-        h1, h2, h3 { color: var(--pm-ink); letter-spacing: -0.045em; }
-        h2, h3, .stSubheader { font-weight: 780; }
+        h1, h2, h3 { color: var(--pm-heading); letter-spacing: -0.045em; }
+        h2, h3, .stSubheader { font-weight: 760; }
         hr { display: none; }
 
         section[data-testid="stSidebar"] {
-            width: 240px !important;
+            width: 292px !important;
             background: transparent;
-            padding: 1.55rem 0 1.55rem 1.35rem;
+            padding: 24px 0 24px 24px;
             overflow-y: auto;
         }
 
         section[data-testid="stSidebar"] > div {
             margin: 0;
-            padding: 1.45rem 1rem 1.2rem;
-            width: 240px;
-            min-height: auto;
-            border-radius: 28px 22px 22px 28px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 24px 18px 20px;
+            width: 268px;
+            min-height: calc(100vh - 48px);
+            border-radius: 32px;
+            border: 1px solid rgba(255, 255, 255, 0.72);
             background:
-                linear-gradient(180deg, rgba(25, 40, 37, 0.88), rgba(9, 19, 17, 0.80)),
-                radial-gradient(circle at 28% 0%, rgba(95, 132, 120, 0.35), transparent 38%);
-            box-shadow: 18px 30px 72px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(24px) saturate(1.25);
-            -webkit-backdrop-filter: blur(24px) saturate(1.25);
+                linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.50)),
+                radial-gradient(circle at 24% 0%, rgba(157, 188, 255, 0.30), transparent 42%),
+                radial-gradient(circle at 92% 18%, rgba(180, 152, 255, 0.22), transparent 38%);
+            box-shadow: 0 24px 70px rgba(91, 119, 190, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(30px) saturate(1.35);
+            -webkit-backdrop-filter: blur(30px) saturate(1.35);
         }
 
         section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
@@ -478,59 +489,59 @@ def inject_styles() -> None:
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] p,
         section[data-testid="stSidebar"] span {
-            color: rgba(245, 249, 248, 0.88) !important;
+            color: #344054 !important;
         }
 
         .pm-sidebar-brand {
             display: flex;
             align-items: center;
-            gap: 0.72rem;
-            margin: 0.05rem 0 1.55rem;
-            padding: 0 0.15rem;
+            gap: 0.8rem;
+            margin: 0.15rem 0 1.65rem;
+            padding: 0 0.25rem;
         }
         .pm-logo-orb {
-            width: 34px;
-            height: 34px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #72d0ff 0%, #4a7dff 54%, #8ec7ff 100%);
-            box-shadow: 0 10px 28px rgba(67, 139, 255, 0.42), inset 0 1px 10px rgba(255, 255, 255, 0.50);
+            width: 38px;
+            height: 38px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #64a7ff 0%, #8d7bff 58%, #c8b6ff 100%);
+            box-shadow: 0 14px 32px rgba(111, 124, 255, 0.32), inset 0 1px 10px rgba(255, 255, 255, 0.58);
         }
-        .pm-brand-title { font-size: 1.03rem; font-weight: 800; letter-spacing: -0.03em; color: #f8fbfb; }
-        .pm-sidebar-menu { display: grid; gap: 0.48rem; margin-bottom: 1.55rem; }
+        .pm-brand-title { font-size: 1.05rem; font-weight: 780; letter-spacing: -0.035em; color: #111827; }
+        .pm-sidebar-menu { display: grid; gap: 0.42rem; margin-bottom: 1.65rem; }
         .pm-menu-item {
-            border-radius: 16px;
-            padding: 0.78rem 0.88rem;
-            color: rgba(233, 238, 237, 0.72);
-            font-size: 0.91rem;
-            font-weight: 680;
+            border-radius: 18px;
+            padding: 0.82rem 0.9rem;
+            color: #667085;
+            font-size: 0.92rem;
+            font-weight: 650;
             letter-spacing: -0.01em;
         }
         .pm-menu-item.is-active {
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.07));
-            box-shadow: 0 12px 30px rgba(169, 213, 199, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+            color: #25314a;
+            border: 0;
+            background: rgba(255, 255, 255, 0.74);
+            box-shadow: 0 14px 34px rgba(91, 119, 190, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.90);
         }
-        .pm-filter-title { color: rgba(241, 246, 246, 0.94); font-size: 0.78rem; font-weight: 820; letter-spacing: 0.12em; text-transform: uppercase; margin: 0.25rem 0 0.2rem; }
-        .pm-filter-caption { color: rgba(221, 229, 228, 0.58); font-size: 0.78rem; line-height: 1.35; margin-bottom: 0.8rem; }
+        .pm-filter-title { color: #344054; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; margin: 0.3rem 0 0.2rem; }
+        .pm-filter-caption { color: #7a8699; font-size: 0.8rem; line-height: 1.4; margin-bottom: 0.95rem; }
 
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stMultiSelect),
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stDateInput) {
-            margin: 0.52rem 0;
-            padding: 0.74rem 0.72rem 0.82rem;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 18px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 28px rgba(0, 0, 0, 0.12);
+            margin: 0.58rem 0;
+            padding: 0.78rem 0.78rem 0.88rem;
+            border: 0;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.58);
+            box-shadow: 0 10px 26px rgba(91, 119, 190, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.82);
         }
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
         section[data-testid="stSidebar"] [data-baseweb="input"] {
-            min-height: 40px;
-            border-color: rgba(255, 255, 255, 0.14) !important;
+            min-height: 42px;
+            border: 0 !important;
             border-radius: 14px !important;
-            background-color: rgba(4, 12, 10, 0.42) !important;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-            color: rgba(255, 255, 255, 0.94) !important;
+            background-color: rgba(255, 255, 255, 0.82) !important;
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.90), 0 8px 18px rgba(91, 119, 190, 0.08);
+            color: #1f2937 !important;
         }
 
         .pm-topbar {
@@ -538,168 +549,180 @@ def inject_styles() -> None:
             justify-content: space-between;
             align-items: center;
             gap: 1.25rem;
-            margin-bottom: 1.72rem;
+            margin-bottom: 2rem;
         }
         .pm-search-pill {
-            width: min(460px, 100%);
-            min-height: 46px;
+            width: min(520px, 100%);
+            min-height: 48px;
             display: flex;
             align-items: center;
-            gap: 0.72rem;
-            padding: 0 1.05rem;
+            gap: 0.78rem;
+            padding: 0 1.12rem;
             border-radius: 999px;
-            border: 1px solid rgba(255, 255, 255, 0.76);
-            background: rgba(255, 255, 255, 0.48);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65), 0 12px 28px rgba(32, 52, 56, 0.07);
-            color: #829096;
+            border: 1px solid rgba(255, 255, 255, 0.82);
+            background: rgba(255, 255, 255, 0.70);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 12px 30px rgba(91, 119, 190, 0.10);
+            color: #7a8699;
             font-size: 0.94rem;
-            font-weight: 560;
+            font-weight: 550;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
         }
         .pm-top-icons { display: flex; gap: 0.72rem; }
         .pm-icon-button {
-            width: 44px;
-            height: 44px;
+            width: 46px;
+            height: 46px;
             display: grid;
             place-items: center;
-            border-radius: 50%;
-            border: 1px solid rgba(255, 255, 255, 0.75);
-            background: rgba(255, 255, 255, 0.56);
-            box-shadow: 0 14px 30px rgba(26, 49, 55, 0.10), inset 0 1px 0 rgba(255,255,255,0.75);
-            color: #22332f;
-            font-size: 1.05rem;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.82);
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: 0 14px 30px rgba(91, 119, 190, 0.12), inset 0 1px 0 rgba(255,255,255,0.86);
+            color: #344054;
+            font-size: 1.03rem;
         }
 
         .pm-hero {
-            margin: 0 0 1.55rem;
-            padding: 0.35rem 0 0;
+            margin: 0 0 2rem;
+            padding: 0.15rem 0 0;
         }
         .pm-eyebrow { display: none; }
         .pm-title {
-            color: #101513;
-            font-size: clamp(3rem, 5.1vw, 5.15rem);
-            font-weight: 850;
+            color: #0f172a;
+            font-size: clamp(3rem, 5.3vw, 5.6rem);
+            font-weight: 820;
             letter-spacing: -0.085em;
             line-height: 0.9;
             margin: 0;
         }
         .pm-subtitle {
-            color: #68777c;
+            color: #667085;
             font-size: clamp(1rem, 1.55vw, 1.22rem);
-            font-weight: 540;
-            margin-top: 0.85rem;
+            font-weight: 520;
+            margin-top: 0.95rem;
         }
         .pm-overview { display: none; }
         .pm-hero-panel { display: none; }
 
         .pm-section-label {
-            color: #415651;
-            font-size: 0.78rem;
-            font-weight: 820;
-            letter-spacing: 0.13em;
-            margin: 0.2rem 0 0.85rem;
+            color: #667085;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            margin: 0.25rem 0 1rem;
             text-transform: uppercase;
         }
 
+        .metric-card,
         div[data-testid="stMetric"] {
-            min-height: 126px;
-            padding: 1.15rem 1.08rem 1rem;
-            border: 1px solid rgba(13, 28, 27, 0.055);
-            border-radius: 22px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 251, 0.93));
+            min-height: 136px;
+            padding: 1.25rem 1.18rem 1.08rem;
+            border: 0;
+            border-radius: var(--pm-radius);
+            background:
+                linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(250, 252, 255, 0.92)),
+                radial-gradient(circle at 0% 0%, rgba(91, 141, 239, 0.11), transparent 48%);
             box-shadow: var(--pm-card-shadow);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
+            backdrop-filter: blur(18px) saturate(1.16);
+            -webkit-backdrop-filter: blur(18px) saturate(1.16);
         }
         div[data-testid="stMetric"]::before {
             content: "Live";
             float: right;
             border-radius: 999px;
-            padding: 0.18rem 0.46rem;
-            background: rgba(50, 89, 75, 0.08);
-            color: #5d716a;
+            padding: 0.2rem 0.5rem;
+            background: #eef4ff;
+            color: #5b8def;
             font-size: 0.64rem;
             font-weight: 800;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.05em;
         }
         div[data-testid="stMetricLabel"] p {
             color: var(--pm-muted);
             font-size: 0.76rem;
-            font-weight: 760;
+            font-weight: 720;
             letter-spacing: 0.01em;
         }
         div[data-testid="stMetricValue"] {
-            color: #121817;
-            font-weight: 850;
-            letter-spacing: -0.05em;
+            color: #111827;
+            font-weight: 800;
+            letter-spacing: -0.055em;
         }
 
-        .pm-card {
-            margin: 1.75rem 0 0;
-            padding: 1.5rem;
-            border: 1px solid rgba(17, 35, 34, 0.065);
-            border-radius: 22px;
-            background: rgba(255, 255, 255, 0.88);
+        .pm-card,
+        .metric-card,
+        .table-card,
+        .chart-card {
+            margin: 2rem 0 0;
+            padding: 1.65rem;
+            border: 0;
+            border-radius: var(--pm-radius);
+            background: var(--pm-card);
             box-shadow: var(--pm-card-shadow);
-            backdrop-filter: blur(14px) saturate(1.12);
-            -webkit-backdrop-filter: blur(14px) saturate(1.12);
+            backdrop-filter: blur(18px) saturate(1.12);
+            -webkit-backdrop-filter: blur(18px) saturate(1.12);
         }
-        .pm-card h2, .pm-card h3 { margin-top: 0; color: #17201d; letter-spacing: -0.04em; }
-        .pm-table-card {
-            border: 1px solid #E5E7EB;
-            border-radius: 18px;
-            background: #FFFFFF;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+        .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
+        .pm-table-card,
+        .table-card {
+            border-radius: 24px;
+            background: #ffffff;
+            box-shadow: 0 18px 48px rgba(79, 96, 140, 0.10);
+        }
+        .pm-chart-card,
+        .chart-card {
+            border-radius: 24px;
+            background: #ffffff;
+            box-shadow: 0 18px 48px rgba(79, 96, 140, 0.10);
         }
 
         .pm-table-scroll,
         [data-testid="stDataFrame"] {
             width: 100%;
             overflow: auto;
-            border-radius: 18px;
-            border: 1px solid #E5E7EB;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
-            background: #FFFFFF;
+            border-radius: 24px;
+            border: 0;
+            box-shadow: 0 10px 30px rgba(79, 96, 140, 0.08);
+            background: #ffffff;
         }
         .pm-dashboard-table {
             width: 100%;
             min-width: 860px;
             border-collapse: separate;
             border-spacing: 0;
-            background: #FFFFFF;
-            color: #111827;
+            background: #ffffff;
+            color: #1f2937;
             font-size: 0.88rem;
-            line-height: 1.45;
+            line-height: 1.5;
         }
         .pm-dashboard-table thead th {
             position: sticky;
             top: 0;
             z-index: 2;
-            padding: 0.72rem 0.85rem;
-            border-right: 1px solid #E5E7EB;
-            border-bottom: 1px solid #D1D5DB;
-            background: #F3F4F6;
-            color: #374151;
-            font-weight: 600;
+            padding: 0.86rem 1rem;
+            border-right: 0;
+            border-bottom: 1px solid rgba(92, 102, 120, 0.08);
+            background: #f4f7fb;
+            color: #5c6678;
+            font-weight: 700;
             text-align: left;
             white-space: nowrap;
         }
-        .pm-dashboard-table thead th:last-child,
-        .pm-dashboard-table tbody td:last-child {
-            border-right: 0;
-        }
+        .pm-dashboard-table thead th:first-child { border-top-left-radius: 18px; }
+        .pm-dashboard-table thead th:last-child { border-top-right-radius: 18px; }
         .pm-dashboard-table tbody td {
-            padding: 0.68rem 0.85rem;
-            border-right: 1px solid #E5E7EB;
-            border-bottom: 1px solid #E5E7EB;
-            background: #FFFFFF;
-            color: #111827;
+            padding: 0.86rem 1rem;
+            border-right: 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+            background: #ffffff;
+            color: #1f2937;
             vertical-align: top;
         }
         .pm-dashboard-table tbody tr:nth-child(even) td {
-            background: #FAFAFA;
+            background: #fbfcff;
         }
         .pm-dashboard-table tbody tr:hover td {
-            background: #F3F4F6;
+            background: #f7faff;
         }
         .pm-dashboard-table tbody tr:last-child td {
             border-bottom: 0;
@@ -709,65 +732,75 @@ def inject_styles() -> None:
             align-items: center;
             justify-content: center;
             min-width: 4.25rem;
-            padding: 0.18rem 0.58rem;
+            padding: 0.22rem 0.62rem;
             border-radius: 999px;
-            color: #FFFFFF;
+            color: #ffffff;
             font-size: 0.76rem;
-            font-weight: 700;
+            font-weight: 760;
             line-height: 1.35;
+            box-shadow: 0 8px 18px rgba(79, 96, 140, 0.14);
         }
-        .pm-alert-badge.is-red { background: #EF4444; }
-        .pm-alert-badge.is-orange { background: #F59E0B; }
-        .pm-alert-badge.is-green { background: #10B981; }
+        .pm-alert-badge.is-red { background: #f04463; }
+        .pm-alert-badge.is-orange { background: #f59e0b; }
+        .pm-alert-badge.is-green { background: #22c55e; }
 
         [data-testid="stDataFrame"] div[role="grid"],
         [data-testid="stDataFrame"] [role="table"] {
-            background: #FFFFFF !important;
-            color: #111827 !important;
+            background: #ffffff !important;
+            color: #1f2937 !important;
         }
         [data-testid="stDataFrame"] [role="columnheader"],
         [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] {
-            border-right: 1px solid #E5E7EB !important;
-            border-bottom: 1px solid #D1D5DB !important;
-            background: #F3F4F6 !important;
-            color: #374151 !important;
-            font-weight: 600 !important;
+            border-right: 0 !important;
+            border-bottom: 1px solid rgba(92, 102, 120, 0.08) !important;
+            background: #f4f7fb !important;
+            color: #5c6678 !important;
+            font-weight: 700 !important;
         }
         [data-testid="stDataFrame"] [role="gridcell"],
         [data-testid="stDataFrame"] [role="cell"] {
-            border-right: 1px solid #E5E7EB !important;
-            border-bottom: 1px solid #E5E7EB !important;
-            background: #FFFFFF !important;
-            color: #111827 !important;
+            border-right: 0 !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.10) !important;
+            background: #ffffff !important;
+            color: #1f2937 !important;
         }
         [data-testid="stDataFrame"] [role="row"]:nth-child(even) [role="gridcell"],
         [data-testid="stDataFrame"] [role="row"]:nth-child(even) [role="cell"] {
-            background: #FAFAFA !important;
+            background: #fbfcff !important;
         }
         [data-testid="stDataFrame"] [role="row"]:hover,
         [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"],
         [data-testid="stDataFrame"] [role="row"]:hover [role="cell"] {
-            background: #F3F4F6 !important;
+            background: #f7faff !important;
         }
 
         .stPlotlyChart {
-            border-radius: 18px;
-            border: 1px solid rgba(20, 34, 36, 0.05);
-            background: rgba(255, 255, 255, 0.65);
+            padding: 0.35rem;
+            border-radius: 24px;
+            border: 0;
+            background: #ffffff;
+            box-shadow: 0 10px 30px rgba(79, 96, 140, 0.08);
         }
         .stDownloadButton button, .stButton button {
-            border: 1px solid rgba(255, 255, 255, 0.48);
+            border: 0;
             border-radius: 16px;
-            background: linear-gradient(135deg, #304a43, #14201d);
+            background: linear-gradient(135deg, #5b8def, #9b7bff);
             color: #ffffff;
-            box-shadow: 0 12px 28px rgba(11, 31, 26, 0.18);
+            box-shadow: 0 14px 30px rgba(91, 141, 239, 0.26);
+            font-weight: 720;
+        }
+        .stDownloadButton button:hover, .stButton button:hover {
+            box-shadow: var(--pm-card-shadow-hover);
+            transform: translateY(-1px);
         }
 
         @media (max-width: 980px) {
-            .block-container { padding: 1.35rem 1rem 2rem; margin-top: 0.5rem; border-radius: 22px; }
+            .main .block-container { padding-left: 16px; padding-right: 16px; padding-top: 20px; }
             section[data-testid="stSidebar"] { width: 19rem !important; padding-left: 0.8rem; }
+            section[data-testid="stSidebar"] > div { width: 17.8rem; border-radius: 26px; }
             .pm-topbar { align-items: flex-start; flex-direction: column; }
             .pm-title { font-size: clamp(2.4rem, 14vw, 3.6rem); }
+            .pm-card, .table-card, .chart-card { padding: 1.15rem; border-radius: 22px; }
         }
         </style>
         """,
@@ -1101,7 +1134,7 @@ def count_platform_skus(df: pd.DataFrame, platforms: list[str]) -> int:
 
 
 def render_gap_chart(filtered: pd.DataFrame) -> None:
-    st.markdown("<div class='pm-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='pm-card pm-chart-card chart-card'>", unsafe_allow_html=True)
     st.subheader("Price Trend Chart")
 
     required = {"crawl_date", "effective_price", "platform"}
@@ -1135,18 +1168,20 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         template="plotly_white",
     )
     fig.update_layout(
-        plot_bgcolor="rgba(255, 255, 255, 0.52)",
-        paper_bgcolor="rgba(255, 255, 255, 0)",
-        font_color="#111111",
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
+        font_color="#344054",
         legend_title_text="Platform",
-        margin=dict(l=10, r=10, t=20, b=10),
+        margin=dict(l=10, r=10, t=24, b=10),
+        xaxis=dict(gridcolor="rgba(148, 163, 184, 0.16)", zerolinecolor="rgba(148, 163, 184, 0.18)"),
+        yaxis=dict(gridcolor="rgba(148, 163, 184, 0.16)", zerolinecolor="rgba(148, 163, 184, 0.18)"),
     )
     st.plotly_chart(fig, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
-    st.markdown("<div class='pm-card pm-table-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
     st.subheader(title)
     display_df = df[available_columns(columns, df)] if columns else df
     page_df = render_table_pagination_controls(title, display_df)
@@ -1270,7 +1305,7 @@ def format_table_cell(column: str, value: object) -> str:
 
 
 def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
-    st.markdown("<div class='pm-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='pm-card table-card'>", unsafe_allow_html=True)
     st.subheader("Download")
     col1, col2 = st.columns(2)
     col1.download_button(
