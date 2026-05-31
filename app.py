@@ -29,20 +29,31 @@ COMPETITOR_PLATFORMS = ["PriceOye", "Pickaboo"]
 DARAZ_PLATFORM = "Daraz"
 OUT_OF_STOCK_STATUSES = {"out_of_stock", "unavailable"}
 TABLE_COLUMNS = [
+    "crawl_time",
     "country",
     "brand",
     "model",
     "memory",
-    "platform",
-    "original_price",
-    "product_price",
-    "voucher_amount",
-    "effective_price",
+    "Daraz Effective Price",
+    "Competitor Platform",
+    "Competitor Effective Price",
     "stock_status",
     "product_url",
-    "crawl_time",
 ]
 GAP_COLUMNS = [
+    "crawl_time",
+    "country",
+    "brand",
+    "model",
+    "memory",
+    "Daraz Effective Price",
+    "Competitor Effective Price",
+    "Gap Amount",
+    "Gap %",
+    "Alert",
+]
+RAW_GAP_COLUMNS = [
+    "crawl_date",
     "Country",
     "Brand",
     "SKU",
@@ -54,6 +65,16 @@ GAP_COLUMNS = [
     "Gap %",
     "Alert",
 ]
+PLATFORM_DISPLAY_NAMES = {
+    "daraz": "daraz",
+    "priceoye": "priceoye",
+    "pickaboo": "pickaboo",
+}
+PLATFORM_COLORS = {
+    "daraz": "#f85606",
+    "priceoye": "#0a84ff",
+    "pickaboo": "#34c759",
+}
 
 
 def get_config_value(name: str) -> str:
@@ -245,6 +266,51 @@ def to_numeric_price(series: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors="coerce")
 
 
+def format_date(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return value
+        if isinstance(value, date):
+            return value.strftime("%Y-%m-%d")
+        parsed = pd.to_datetime(value, errors="coerce")
+        if pd.isna(parsed):
+            return value
+        return parsed.strftime("%Y-%m-%d")
+    except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
+        return value
+
+
+def format_price(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return value
+        numeric_value = pd.to_numeric(value, errors="coerce")
+        if pd.isna(numeric_value):
+            return value
+        return f"{numeric_value:,.0f}"
+    except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
+        return value
+
+
+def format_gap_pct(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return value
+        numeric_value = pd.to_numeric(value, errors="coerce")
+        if pd.isna(numeric_value):
+            return value
+        return f"{numeric_value * 100:.2f}%"
+    except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
+        return value
+
+
+def normalized_platform(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    platform_key = str(value).strip().casefold()
+    return PLATFORM_DISPLAY_NAMES.get(platform_key, platform_key)
+
+
 def require_password() -> bool:
     password = get_config_value("STREAMLIT_DASHBOARD_PASSWORD")
     if not password:
@@ -350,31 +416,119 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
-        return df
+        return pd.DataFrame(columns=TABLE_COLUMNS)
 
-    sort_col = "crawl_datetime" if "crawl_datetime" in df.columns else None
+    required = {"country", "brand", "model", "memory", "platform", "effective_price"}
+    if not required.issubset(df.columns):
+        return pd.DataFrame(columns=TABLE_COLUMNS)
+
+    sort_cols = [col for col in ["crawl_date", "crawl_datetime"] if col in df.columns]
     working = df.copy()
-    if sort_col:
-        working = working.sort_values(sort_col)
+    if sort_cols:
+        working = working.sort_values(sort_cols, na_position="last")
 
-    group_cols = available_columns(["country", "platform", "brand", "model", "memory", "product_url"], working)
-    if group_cols and sort_col:
-        working = working.groupby(group_cols, dropna=False).tail(1)
+    base_cols = ["crawl_date", "country", "brand", "model", "memory"]
+    key_cols = available_columns(base_cols, working)
+    platform_group_cols = key_cols + ["platform"]
+    if "product_url" in working.columns:
+        platform_group_cols.append("product_url")
 
-    if sort_col:
-        working = working.sort_values(sort_col, ascending=False, na_position="last")
+    if platform_group_cols and "crawl_datetime" in working.columns:
+        working = working.groupby(platform_group_cols, dropna=False).tail(1)
 
-    return working
+    working["__platform_key"] = working["platform"].apply(normalized_platform)
+    if "effective_price" in working.columns:
+        working = working.sort_values(
+            key_cols + ["__platform_key", "effective_price"],
+            ascending=[True] * (len(key_cols) + 1) + [True],
+            na_position="last",
+        )
+
+    selected_cols = key_cols + ["__platform_key", "effective_price"]
+    selected_cols += available_columns(["stock_status", "product_url"], working)
+    platform_latest = working[selected_cols].drop_duplicates(
+        key_cols + ["__platform_key"], keep="first"
+    )
+
+    daraz = platform_latest[platform_latest["__platform_key"] == DARAZ_PLATFORM.casefold()].copy()
+    if daraz.empty:
+        return pd.DataFrame(columns=TABLE_COLUMNS)
+
+    daraz = daraz.rename(
+        columns={
+            "effective_price": "Daraz Effective Price",
+            "stock_status": "daraz_stock_status",
+            "product_url": "daraz_product_url",
+        }
+    )
+
+    competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
+    competitors = platform_latest[platform_latest["__platform_key"].isin(competitor_keys)].copy()
+    competitors = competitors.rename(
+        columns={
+            "__platform_key": "Competitor Platform",
+            "effective_price": "Competitor Effective Price",
+            "stock_status": "competitor_stock_status",
+            "product_url": "competitor_product_url",
+        }
+    )
+
+    if competitors.empty:
+        comparison = daraz.copy()
+        comparison["Competitor Platform"] = ""
+        comparison["Competitor Effective Price"] = pd.NA
+        comparison["competitor_stock_status"] = ""
+        comparison["competitor_product_url"] = ""
+    else:
+        comparison = daraz.merge(competitors, on=key_cols, how="left")
+        for col in ["Competitor Platform", "competitor_stock_status", "competitor_product_url"]:
+            if col in comparison.columns:
+                comparison[col] = comparison[col].fillna("")
+
+    if "crawl_date" in comparison.columns:
+        comparison["crawl_time"] = comparison["crawl_date"].apply(format_date)
+    elif "crawl_time" in comparison.columns:
+        comparison["crawl_time"] = comparison["crawl_time"].apply(format_date)
+    else:
+        comparison["crawl_time"] = ""
+
+    comparison["stock_status"] = coalesce_text(
+        comparison.get("competitor_stock_status", pd.Series("", index=comparison.index)),
+        comparison.get("daraz_stock_status", pd.Series("", index=comparison.index)),
+    )
+    comparison["product_url"] = coalesce_text(
+        comparison.get("competitor_product_url", pd.Series("", index=comparison.index)),
+        comparison.get("daraz_product_url", pd.Series("", index=comparison.index)),
+    )
+
+    for col in ["Daraz Effective Price", "Competitor Effective Price"]:
+        if col in comparison.columns:
+            comparison[col] = comparison[col].apply(format_price)
+    if "Competitor Effective Price" in comparison.columns:
+        comparison["Competitor Effective Price"] = comparison["Competitor Effective Price"].fillna("")
+
+    display = comparison.rename(columns={"__platform_key": "platform"})
+    display = display[available_columns(TABLE_COLUMNS, display)]
+    sort_display_cols = available_columns(
+        ["crawl_time", "country", "brand", "model", "memory", "Competitor Platform"], display
+    )
+    return (
+        display.sort_values(
+            sort_display_cols, ascending=[False] + [True] * (len(sort_display_cols) - 1)
+        )
+        if sort_display_cols
+        else display
+    )
 
 
 def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     required = set(SKU_COLUMNS + ["platform", "effective_price"])
     if df.empty or not required.issubset(df.columns):
-        return pd.DataFrame(columns=GAP_COLUMNS)
+        return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     working = df.dropna(subset=["effective_price"]).copy()
     if working.empty:
-        return pd.DataFrame(columns=GAP_COLUMNS)
+        return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     working["__platform_key"] = (
         working["platform"].fillna("").astype(str).str.strip().str.casefold()
@@ -391,7 +545,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
     competitors = working[working["__platform_key"].isin(competitor_keys)].copy()
     if competitors.empty or daraz.empty:
-        return pd.DataFrame(columns=GAP_COLUMNS)
+        return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     competitors = (
         competitors.groupby(group_cols + ["platform"], dropna=False, as_index=False)[
@@ -403,7 +557,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
 
     gap = daraz.merge(competitors, on=group_cols, how="inner")
     if gap.empty:
-        return pd.DataFrame(columns=GAP_COLUMNS)
+        return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     gap["Gap Amount"] = gap["Daraz Price"] - gap["Competitor Price"]
     gap["Gap %"] = gap["Gap Amount"] / gap["Competitor Price"]
@@ -421,7 +575,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
             "memory": "Memory",
         }
     )
-    return gap[available_columns(GAP_COLUMNS, gap)].sort_values("Gap %", ascending=True)
+    return gap[available_columns(RAW_GAP_COLUMNS, gap)].sort_values("Gap %", ascending=True)
 
 
 def alert_level(gap_pct: float) -> str:
@@ -435,13 +589,34 @@ def alert_level(gap_pct: float) -> str:
 
 
 def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
-    formatted = gap_df.copy()
-    for col in ["Daraz Price", "Competitor Price", "Gap Amount"]:
-        if col in formatted.columns:
-            formatted[col] = formatted[col].round(2)
-    if "Gap %" in formatted.columns:
-        formatted["Gap %"] = (formatted["Gap %"] * 100).round(2)
-    return formatted
+    if gap_df.empty:
+        return pd.DataFrame(columns=GAP_COLUMNS)
+
+    try:
+        formatted = pd.DataFrame(index=gap_df.index)
+        formatted["crawl_time"] = (
+            gap_df["crawl_date"].apply(format_date) if "crawl_date" in gap_df.columns else ""
+        )
+        formatted["country"] = gap_df["Country"] if "Country" in gap_df.columns else ""
+        formatted["brand"] = gap_df["Brand"] if "Brand" in gap_df.columns else ""
+        formatted["model"] = gap_df["SKU"] if "SKU" in gap_df.columns else ""
+        formatted["memory"] = gap_df["Memory"] if "Memory" in gap_df.columns else ""
+        formatted["Daraz Effective Price"] = (
+            gap_df["Daraz Price"].apply(format_price) if "Daraz Price" in gap_df.columns else ""
+        )
+        formatted["Competitor Effective Price"] = (
+            gap_df["Competitor Price"].apply(format_price)
+            if "Competitor Price" in gap_df.columns
+            else ""
+        )
+        formatted["Gap Amount"] = (
+            gap_df["Gap Amount"].apply(format_price) if "Gap Amount" in gap_df.columns else ""
+        )
+        formatted["Gap %"] = gap_df["Gap %"].apply(format_gap_pct) if "Gap %" in gap_df.columns else ""
+        formatted["Alert"] = gap_df["Alert"] if "Alert" in gap_df.columns else ""
+        return formatted[available_columns(GAP_COLUMNS, formatted)]
+    except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
+        return gap_df[available_columns(GAP_COLUMNS, gap_df)]
 
 
 def render_kpis(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
@@ -456,10 +631,19 @@ def render_kpis(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
     elif "crawl_date" in latest_df.columns and not latest_df["crawl_date"].dropna().empty:
         latest_value = latest_df["crawl_date"].max()
         latest_crawl = latest_value.isoformat() if isinstance(latest_value, date) else str(latest_value)
+    elif "crawl_time" in latest_df.columns and not latest_df["crawl_time"].dropna().empty:
+        latest_crawl = str(latest_df["crawl_time"].max())
 
     total_active_skus = active_latest.drop_duplicates(sku_cols).shape[0] if sku_cols else len(active_latest)
-    daraz_skus = count_platform_skus(latest_df, [DARAZ_PLATFORM])
-    competitor_skus = count_platform_skus(latest_df, COMPETITOR_PLATFORMS)
+    if "Daraz Effective Price" in latest_df.columns:
+        daraz_skus = latest_df.dropna(subset=["Daraz Effective Price"]).drop_duplicates(sku_cols).shape[0]
+    else:
+        daraz_skus = count_platform_skus(latest_df, [DARAZ_PLATFORM])
+    if "Competitor Platform" in latest_df.columns:
+        competitor_rows = latest_df[latest_df["Competitor Platform"].fillna("").astype(str).str.strip().ne("")]
+        competitor_skus = competitor_rows.drop_duplicates(sku_cols).shape[0] if sku_cols else len(competitor_rows)
+    else:
+        competitor_skus = count_platform_skus(latest_df, COMPETITOR_PLATFORMS)
     red_alerts = int((gap_df.get("Alert", pd.Series(dtype=str)) == "Red").sum())
     average_gap = gap_df["Gap %"].mean() * 100 if "Gap %" in gap_df.columns and not gap_df.empty else 0
 
@@ -501,13 +685,22 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
+    chart_df["crawl_date_display"] = chart_df["crawl_date"].apply(format_date)
+    chart_df["platform_display"] = chart_df["platform"].apply(normalized_platform)
+
     fig = px.line(
         chart_df.sort_values("crawl_date"),
-        x="crawl_date",
+        x="crawl_date_display",
         y="effective_price",
-        color="platform",
+        color="platform_display",
+        color_discrete_map=PLATFORM_COLORS,
         markers=True,
         hover_data=available_columns(["country", "brand", "model", "memory", "stock_status"], chart_df),
+        labels={
+            "crawl_date_display": "crawl_date",
+            "effective_price": "effective_price",
+            "platform_display": "platform",
+        },
         template="plotly_white",
     )
     fig.update_layout(
@@ -533,7 +726,14 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
         except Exception as exc:  # noqa: BLE001 - styling should not block dashboard data rendering.
             st.warning(f"{title} styling could not be applied; showing the table without styling. {exc}")
 
-    st.dataframe(dataframe_to_render, use_container_width=True, hide_index=True)
+    try:
+        st.dataframe(dataframe_to_render, use_container_width=True, hide_index=True)
+    except Exception as exc:  # noqa: BLE001 - styling should never block the table itself.
+        if dataframe_to_render is not display_df:
+            st.warning(f"{title} styled rendering failed; showing the table without styling. {exc}")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        else:
+            raise
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -608,8 +808,6 @@ def main() -> None:
         if "Alert" in formatted_gap_df.columns
         else formatted_gap_df
     )
-    if "Gap %" in alert_df.columns:
-        alert_df = alert_df.sort_values("Gap %", ascending=True)
     render_data_section("Alert Section — Red and Orange", alert_df, GAP_COLUMNS)
 
     out_of_stock_df = latest_df.copy()
