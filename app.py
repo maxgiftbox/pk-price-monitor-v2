@@ -384,25 +384,35 @@ def inject_styles() -> None:
         """
         <style>
         :root {
-            --pm-ink: #111815;
-            --pm-muted: #64736b;
-            --pm-green: #244a3d;
-            --pm-green-deep: #071814;
+            --pm-ink: #111715;
+            --pm-muted: #6f7c80;
+            --pm-soft: #e6eef2;
+            --pm-card: rgba(255, 255, 255, 0.88);
             --pm-border: rgba(255, 255, 255, 0.62);
-            --pm-card: rgba(255, 255, 255, 0.90);
-            --pm-panel: rgba(240, 245, 239, 0.74);
-            --pm-sidebar: rgba(9, 25, 21, 0.82);
-            --pm-radius: 24px;
-            --pm-shadow: 0 24px 70px rgba(5, 24, 19, 0.18);
+            --pm-sidebar: rgba(12, 25, 23, 0.82);
+            --pm-shadow: 0 34px 90px rgba(5, 18, 17, 0.28);
+            --pm-card-shadow: 0 22px 54px rgba(20, 38, 42, 0.12);
+            --pm-radius: 22px;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        #MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"] {
+            visibility: hidden;
+            height: 0;
+        }
+
+        html, body, .stApp, [data-testid="stAppViewContainer"] {
+            min-height: 100vh;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         .stApp {
             color: var(--pm-ink);
             background:
-                radial-gradient(circle at 10% 14%, rgba(87, 119, 101, 0.72), transparent 28%),
-                radial-gradient(circle at 78% 8%, rgba(173, 190, 176, 0.34), transparent 24%),
-                radial-gradient(circle at 88% 86%, rgba(10, 52, 43, 0.68), transparent 30%),
-                linear-gradient(135deg, #071411 0%, #253b33 42%, #66716a 100%);
+                radial-gradient(circle at 15% 12%, rgba(134, 162, 151, 0.50), transparent 28%),
+                radial-gradient(circle at 76% 6%, rgba(215, 225, 228, 0.34), transparent 24%),
+                radial-gradient(circle at 86% 82%, rgba(14, 55, 48, 0.70), transparent 32%),
+                linear-gradient(135deg, #101a18 0%, #34443f 42%, #9aa7aa 100%);
             background-attachment: fixed;
         }
 
@@ -411,10 +421,11 @@ def inject_styles() -> None:
             position: fixed;
             inset: 0;
             pointer-events: none;
-            backdrop-filter: blur(3px);
             background:
-                linear-gradient(120deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.01)),
-                radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.11), transparent 46%);
+                radial-gradient(circle at 50% 45%, rgba(238, 246, 248, 0.18), transparent 48%),
+                linear-gradient(120deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.02));
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
             z-index: 0;
         }
 
@@ -424,291 +435,298 @@ def inject_styles() -> None:
         }
 
         .block-container {
-            max-width: 1460px;
-            padding: 2.35rem 2.65rem 3.1rem;
-            margin-top: 1.35rem;
-            margin-bottom: 2rem;
-            border: 1px solid var(--pm-border);
-            border-radius: 30px;
+            max-width: 1400px;
+            min-height: calc(100vh - 3.2rem);
+            padding: 2.05rem 2.25rem 2.65rem;
+            margin: 1.55rem auto;
+            border: 1px solid rgba(255, 255, 255, 0.58);
+            border-radius: 28px;
             background:
-                linear-gradient(145deg, rgba(255, 255, 255, 0.78), var(--pm-panel)),
-                radial-gradient(circle at 8% 0%, rgba(193, 211, 198, 0.42), transparent 34%);
-            box-shadow: 0 34px 95px rgba(2, 15, 12, 0.30);
-            backdrop-filter: blur(26px) saturate(1.35);
-            -webkit-backdrop-filter: blur(26px) saturate(1.35);
+                linear-gradient(145deg, rgba(230, 238, 242, 0.72), rgba(236, 242, 244, 0.60)),
+                radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.55), transparent 34%);
+            box-shadow: var(--pm-shadow);
+            backdrop-filter: blur(24px) saturate(1.22);
+            -webkit-backdrop-filter: blur(24px) saturate(1.22);
         }
 
-        h1, h2, h3 {
-            color: var(--pm-ink);
-            letter-spacing: -0.04em;
-        }
-
-        h2, h3, .stSubheader {
-            font-weight: 750;
-        }
-
-        hr {
-            display: none;
-        }
+        h1, h2, h3, p { font-family: inherit; }
+        h1, h2, h3 { color: var(--pm-ink); letter-spacing: -0.045em; }
+        h2, h3, .stSubheader { font-weight: 780; }
+        hr { display: none; }
 
         section[data-testid="stSidebar"] {
-            width: 19.5rem !important;
+            width: 240px !important;
             background: transparent;
-            padding: 1.25rem 0 1.25rem 1rem;
+            padding: 1.55rem 0 1.55rem 1.35rem;
         }
 
         section[data-testid="stSidebar"] > div {
-            margin: 0.75rem 0.85rem 0.75rem 0.65rem;
-            padding-top: 1.5rem;
+            margin: 0;
+            padding: 1.45rem 1rem 1.2rem;
+            width: 240px;
+            min-height: calc(100vh - 3.1rem);
+            border-radius: 28px 22px 22px 28px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
             background:
-                linear-gradient(180deg, rgba(17, 39, 33, 0.88), rgba(6, 17, 14, 0.82)),
-                radial-gradient(circle at 24% 2%, rgba(107, 142, 120, 0.34), transparent 40%);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 28px;
-            box-shadow: 18px 26px 70px rgba(0, 0, 0, 0.28);
-            backdrop-filter: blur(22px) saturate(1.25);
-            -webkit-backdrop-filter: blur(22px) saturate(1.25);
+                linear-gradient(180deg, rgba(25, 40, 37, 0.88), rgba(9, 19, 17, 0.80)),
+                radial-gradient(circle at 28% 0%, rgba(95, 132, 120, 0.35), transparent 38%);
+            box-shadow: 18px 30px 72px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(24px) saturate(1.25);
+            -webkit-backdrop-filter: blur(24px) saturate(1.25);
         }
 
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 0; }
         section[data-testid="stSidebar"] h1,
         section[data-testid="stSidebar"] h2,
         section[data-testid="stSidebar"] h3,
         section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] p,
         section[data-testid="stSidebar"] span {
-            color: rgba(255, 255, 255, 0.88) !important;
+            color: rgba(245, 249, 248, 0.88) !important;
         }
 
-        section[data-testid="stSidebar"] [data-testid="stHeader"] {
-            background: transparent;
+        .pm-sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            margin: 0.05rem 0 1.55rem;
+            padding: 0 0.15rem;
         }
+        .pm-logo-orb {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #72d0ff 0%, #4a7dff 54%, #8ec7ff 100%);
+            box-shadow: 0 10px 28px rgba(67, 139, 255, 0.42), inset 0 1px 10px rgba(255, 255, 255, 0.50);
+        }
+        .pm-brand-title { font-size: 1.03rem; font-weight: 800; letter-spacing: -0.03em; color: #f8fbfb; }
+        .pm-sidebar-menu { display: grid; gap: 0.48rem; margin-bottom: 1.55rem; }
+        .pm-menu-item {
+            border-radius: 16px;
+            padding: 0.78rem 0.88rem;
+            color: rgba(233, 238, 237, 0.72);
+            font-size: 0.91rem;
+            font-weight: 680;
+            letter-spacing: -0.01em;
+        }
+        .pm-menu-item.is-active {
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.07));
+            box-shadow: 0 12px 30px rgba(169, 213, 199, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        }
+        .pm-filter-title { color: rgba(241, 246, 246, 0.94); font-size: 0.78rem; font-weight: 820; letter-spacing: 0.12em; text-transform: uppercase; margin: 0.25rem 0 0.2rem; }
+        .pm-filter-caption { color: rgba(221, 229, 228, 0.58); font-size: 0.78rem; line-height: 1.35; margin-bottom: 0.8rem; }
 
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stMultiSelect),
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stDateInput) {
-            margin: 0.55rem 0;
-            padding: 0.85rem 0.8rem 0.95rem;
-            border: 1px solid rgba(255, 255, 255, 0.13);
-            border-radius: 20px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.045));
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 14px 30px rgba(0, 0, 0, 0.13);
+            margin: 0.52rem 0;
+            padding: 0.74rem 0.72rem 0.82rem;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 18px;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 12px 28px rgba(0, 0, 0, 0.12);
         }
-
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
         section[data-testid="stSidebar"] [data-baseweb="input"] {
+            min-height: 40px;
             border-color: rgba(255, 255, 255, 0.14) !important;
             border-radius: 14px !important;
-            background-color: rgba(4, 12, 10, 0.45) !important;
-            color: rgba(255, 255, 255, 0.92) !important;
+            background-color: rgba(4, 12, 10, 0.42) !important;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.94) !important;
+        }
+
+        .pm-topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1.25rem;
+            margin-bottom: 1.72rem;
+        }
+        .pm-search-pill {
+            width: min(460px, 100%);
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            padding: 0 1.05rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.76);
+            background: rgba(255, 255, 255, 0.48);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65), 0 12px 28px rgba(32, 52, 56, 0.07);
+            color: #829096;
+            font-size: 0.94rem;
+            font-weight: 560;
+        }
+        .pm-top-icons { display: flex; gap: 0.72rem; }
+        .pm-icon-button {
+            width: 44px;
+            height: 44px;
+            display: grid;
+            place-items: center;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.75);
+            background: rgba(255, 255, 255, 0.56);
+            box-shadow: 0 14px 30px rgba(26, 49, 55, 0.10), inset 0 1px 0 rgba(255,255,255,0.75);
+            color: #22332f;
+            font-size: 1.05rem;
         }
 
         .pm-hero {
-            display: flex;
-            justify-content: space-between;
-            gap: 1.5rem;
-            align-items: stretch;
-            margin: 0 0 1.8rem;
-            padding: 1.65rem;
-            border: 1px solid rgba(255, 255, 255, 0.62);
-            border-radius: 28px;
-            background:
-                linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(235, 241, 235, 0.66)),
-                radial-gradient(circle at top right, rgba(56, 94, 78, 0.18), transparent 34%);
-            box-shadow: var(--pm-shadow);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            margin: 0 0 1.55rem;
+            padding: 0.35rem 0 0;
         }
-
-        .pm-hero-copy {
-            min-width: 0;
-        }
-
-        .pm-eyebrow {
-            color: #587167;
-            font-size: 0.76rem;
-            font-weight: 800;
-            letter-spacing: 0.16em;
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-        }
-
+        .pm-eyebrow { display: none; }
         .pm-title {
-            color: var(--pm-ink);
-            font-size: clamp(2.45rem, 5vw, 4.45rem);
-            font-weight: 830;
+            color: #101513;
+            font-size: clamp(3rem, 5.1vw, 5.15rem);
+            font-weight: 850;
             letter-spacing: -0.085em;
-            line-height: 0.92;
+            line-height: 0.9;
             margin: 0;
         }
-
         .pm-subtitle {
-            color: var(--pm-muted);
-            font-size: clamp(1rem, 1.8vw, 1.22rem);
-            font-weight: 520;
+            color: #68777c;
+            font-size: clamp(1rem, 1.55vw, 1.22rem);
+            font-weight: 540;
             margin-top: 0.85rem;
         }
-
-        .pm-overview {
-            color: #53665d;
-            font-size: 0.92rem;
-            font-weight: 650;
-            margin-top: 0.8rem;
-        }
-
-        .pm-hero-panel {
-            align-items: flex-end;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            min-width: 250px;
-            padding: 1rem;
-            border: 1px solid rgba(18, 37, 32, 0.08);
-            border-radius: 22px;
-            background: rgba(21, 48, 41, 0.08);
-        }
-
-        .pm-pill-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.55rem;
-            justify-content: flex-end;
-        }
-
-        .pm-pill {
-            border: 1px solid rgba(32, 63, 53, 0.16);
-            border-radius: 999px;
-            color: #203f35;
-            background: rgba(255, 255, 255, 0.54);
-            font-size: 0.78rem;
-            font-weight: 760;
-            padding: 0.48rem 0.76rem;
-        }
-
-        .pm-hero-note {
-            color: #485b54;
-            font-size: 0.88rem;
-            line-height: 1.35;
-            margin-top: 1rem;
-            text-align: right;
-        }
-
+        .pm-overview { display: none; }
+        .pm-hero-panel { display: none; }
 
         .pm-section-label {
-            color: #314d43;
-            font-size: 0.82rem;
+            color: #415651;
+            font-size: 0.78rem;
             font-weight: 820;
-            letter-spacing: 0.14em;
-            margin: 0.25rem 0 0.85rem;
+            letter-spacing: 0.13em;
+            margin: 0.2rem 0 0.85rem;
             text-transform: uppercase;
         }
+
         div[data-testid="stMetric"] {
-            min-height: 122px;
-            padding: 1.2rem 1.1rem 1rem;
-            border: 1px solid rgba(18, 37, 32, 0.06);
+            min-height: 126px;
+            padding: 1.15rem 1.08rem 1rem;
+            border: 1px solid rgba(13, 28, 27, 0.055);
             border-radius: 22px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 248, 0.92));
-            box-shadow: 0 18px 44px rgba(11, 31, 26, 0.12);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 251, 0.93));
+            box-shadow: var(--pm-card-shadow);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
         }
-
+        div[data-testid="stMetric"]::before {
+            content: "Live";
+            float: right;
+            border-radius: 999px;
+            padding: 0.18rem 0.46rem;
+            background: rgba(50, 89, 75, 0.08);
+            color: #5d716a;
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+        }
         div[data-testid="stMetricLabel"] p {
             color: var(--pm-muted);
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             font-weight: 760;
-            letter-spacing: 0.02em;
+            letter-spacing: 0.01em;
         }
-
         div[data-testid="stMetricValue"] {
-            color: var(--pm-ink);
-            font-weight: 830;
+            color: #121817;
+            font-weight: 850;
             letter-spacing: -0.05em;
         }
 
         .pm-card {
-            margin: 1.45rem 0;
-            padding: 1.45rem;
-            border: 1px solid rgba(17, 35, 30, 0.07);
-            border-radius: var(--pm-radius);
-            background: var(--pm-card);
-            box-shadow: 0 18px 48px rgba(5, 24, 19, 0.12);
+            margin: 1.75rem 0 0;
+            padding: 1.5rem;
+            border: 1px solid rgba(17, 35, 34, 0.065);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.88);
+            box-shadow: var(--pm-card-shadow);
             backdrop-filter: blur(14px) saturate(1.12);
             -webkit-backdrop-filter: blur(14px) saturate(1.12);
         }
-
-        .pm-card h2, .pm-card h3 {
-            margin-top: 0;
-        }
+        .pm-card h2, .pm-card h3 { margin-top: 0; color: #17201d; letter-spacing: -0.04em; }
 
         [data-testid="stDataFrame"] {
             border-radius: 18px;
             overflow: hidden;
-            border: 1px solid rgba(16, 22, 20, 0.07);
-            box-shadow: 0 10px 28px rgba(14, 28, 24, 0.08);
-        }
-
-        [data-testid="stDataFrame"] div[role="grid"] {
+            border: 1px solid rgba(18, 31, 32, 0.07);
+            box-shadow: 0 12px 30px rgba(24, 42, 45, 0.075);
             background: #ffffff;
-            color: #1c2421;
         }
-
+        [data-testid="stDataFrame"] div[role="grid"] { background: #ffffff; color: #202827; }
         [data-testid="stDataFrame"] [role="columnheader"] {
-            background: #eef2ee !important;
-            color: #2c3833 !important;
-            font-weight: 750 !important;
+            background: #f1f4f5 !important;
+            color: #33413f !important;
+            font-weight: 760 !important;
         }
+        [data-testid="stDataFrame"] [role="row"] { border-bottom-color: rgba(20, 34, 36, 0.06) !important; }
 
         .stPlotlyChart {
             border-radius: 18px;
             overflow: hidden;
+            border: 1px solid rgba(20, 34, 36, 0.05);
+            background: rgba(255, 255, 255, 0.65);
         }
-
         .stDownloadButton button, .stButton button {
-            border: 1px solid rgba(255, 255, 255, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.48);
             border-radius: 16px;
-            background: linear-gradient(135deg, #203f35, #111d1a);
+            background: linear-gradient(135deg, #304a43, #14201d);
             color: #ffffff;
             box-shadow: 0 12px 28px rgba(11, 31, 26, 0.18);
         }
 
-        .tag-red, .tag-orange, .tag-green {
-            display: inline-block;
-            border-radius: 999px;
-            color: #ffffff;
-            font-size: 0.78rem;
-            font-weight: 760;
-            padding: 4px 10px;
-        }
-
-        .tag-red { background: #c1121f; }
-        .tag-orange { background: #f77f00; }
-        .tag-green { background: #2d6a4f; }
-
         @media (max-width: 980px) {
-            .block-container {
-                padding: 1.4rem 1rem 2rem;
-                margin-top: 0.5rem;
-                border-radius: 22px;
-            }
-
-            .pm-hero {
-                flex-direction: column;
-                padding: 1.2rem;
-            }
-
-            .pm-hero-panel {
-                align-items: flex-start;
-                min-width: 0;
-            }
-
-            .pm-pill-row {
-                justify-content: flex-start;
-            }
-
-            .pm-hero-note {
-                text-align: left;
-            }
+            .block-container { padding: 1.35rem 1rem 2rem; margin-top: 0.5rem; border-radius: 22px; }
+            section[data-testid="stSidebar"] { width: 19rem !important; padding-left: 0.8rem; }
+            .pm-topbar { align-items: flex-start; flex-direction: column; }
+            .pm-title { font-size: clamp(2.4rem, 14vw, 3.6rem); }
         }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar_chrome() -> None:
+    st.sidebar.markdown(
+        """
+        <div class="pm-sidebar-brand">
+            <span class="pm-logo-orb"></span>
+            <span class="pm-brand-title">Mob Monitor</span>
+        </div>
+        <div class="pm-sidebar-menu">
+            <div class="pm-menu-item is-active">Dashboard</div>
+            <div class="pm-menu-item">Price Table</div>
+            <div class="pm-menu-item">Gap Analysis</div>
+            <div class="pm-menu-item">Trend Chart</div>
+            <div class="pm-menu-item">Settings</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_dashboard_header() -> None:
+    st.markdown(
+        f"""
+        <div class="pm-topbar">
+            <div class="pm-search-pill">⌕ <span>Search country, brand, SKU...</span></div>
+            <div class="pm-top-icons">
+                <div class="pm-icon-button">◔</div>
+                <div class="pm-icon-button">⚙</div>
+                <div class="pm-icon-button">●</div>
+            </div>
+        </div>
+        <div class="pm-hero">
+            <div class="pm-hero-copy">
+                <div class="pm-title">Overview</div>
+                <div class="pm-subtitle">Daraz vs Competitor Pricing Intelligence — Latest Market Snapshot</div>
+                <div class="pm-overview">Overview generated on {date.today().strftime("%B %d, %Y")}</div>
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -720,8 +738,13 @@ def available_columns(columns: list[str], df: pd.DataFrame) -> list[str]:
 
 def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
-    st.sidebar.markdown("### Filters")
-    st.sidebar.caption("Refine the pricing intelligence view")
+    st.sidebar.markdown(
+        """
+        <div class="pm-filter-title">Filters</div>
+        <div class="pm-filter-caption">Refine the pricing intelligence view</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     filter_specs = [
         ("country", "Country"),
@@ -1094,29 +1117,8 @@ def main() -> None:
     st.set_page_config(page_title="Mob Price Monitor", layout="wide", page_icon="📱")
     inject_styles()
 
-    st.markdown(
-        f"""
-        <div class="pm-hero">
-            <div class="pm-hero-copy">
-                <div class="pm-eyebrow">Pricing intelligence dashboard</div>
-                <div class="pm-title">Mob Price Monitor</div>
-                <div class="pm-subtitle">Daraz vs Competitor Pricing Intelligence</div>
-                <div class="pm-overview">Overview generated on {date.today().strftime("%B %d, %Y")} • SKU pricing, gap alerts, and trend monitoring</div>
-            </div>
-            <div class="pm-hero-panel">
-                <div class="pm-pill-row">
-                    <span class="pm-pill">Daraz</span>
-                    <span class="pm-pill">PriceOye</span>
-                    <span class="pm-pill">Pickaboo</span>
-                </div>
-                <div class="pm-hero-note">
-                    Monitor SKU coverage, active price gaps, and alert conditions from one compact executive view.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    render_sidebar_chrome()
+    render_dashboard_header()
 
     if not require_password():
         st.stop()
