@@ -641,20 +641,51 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(14px) saturate(1.12);
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #17201d; letter-spacing: -0.04em; }
+        .pm-table-card {
+            border-color: #E5E7EB;
+            border-radius: 18px;
+            background: #FFFFFF;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+        }
 
         [data-testid="stDataFrame"] {
+            overflow: hidden;
             border-radius: 18px;
-            border: 1px solid rgba(18, 31, 32, 0.07);
-            box-shadow: 0 12px 30px rgba(24, 42, 45, 0.075);
-            background: #ffffff;
+            border: 1px solid #E5E7EB;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+            background: #FFFFFF;
+            color: #111111;
         }
-        [data-testid="stDataFrame"] div[role="grid"] { background: #ffffff; color: #202827; }
+        [data-testid="stDataFrame"] div[role="grid"],
+        [data-testid="stDataFrame"] [role="table"] {
+            background: #FFFFFF !important;
+            color: #111111 !important;
+        }
         [data-testid="stDataFrame"] [role="columnheader"] {
-            background: #f1f4f5 !important;
-            color: #33413f !important;
-            font-weight: 760 !important;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            border-color: #E5E7EB !important;
+            background: #F3F4F6 !important;
+            color: #374151 !important;
+            font-weight: 600 !important;
         }
-        [data-testid="stDataFrame"] [role="row"] { border-bottom-color: rgba(20, 34, 36, 0.06) !important; }
+        [data-testid="stDataFrame"] [role="gridcell"],
+        [data-testid="stDataFrame"] [role="cell"] {
+            border-color: #E5E7EB;
+            background: #FFFFFF;
+            color: #111111;
+        }
+        [data-testid="stDataFrame"] [role="row"] {
+            border-bottom-color: #E5E7EB !important;
+            background: #FFFFFF !important;
+            color: #111111 !important;
+        }
+        [data-testid="stDataFrame"] [role="row"]:hover,
+        [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"],
+        [data-testid="stDataFrame"] [role="row"]:hover [role="cell"] {
+            background: #F8F9FA;
+        }
 
         .stPlotlyChart {
             border-radius: 18px;
@@ -1052,16 +1083,16 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
 
 
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
-    st.markdown("<div class='pm-card'>", unsafe_allow_html=True)
+    st.markdown("<div class='pm-card pm-table-card'>", unsafe_allow_html=True)
     st.subheader(title)
     display_df = df[available_columns(columns, df)] if columns else df
     dataframe_to_render = display_df
 
-    if "Alert" in display_df.columns:
-        try:
-            dataframe_to_render = display_df.style.map(style_alert_level, subset=["Alert"])
-        except Exception as exc:  # noqa: BLE001 - styling should not block dashboard data rendering.
-            st.warning(f"{title} styling could not be applied; showing the table without styling. {exc}")
+    try:
+        dataframe_to_render = style_dashboard_table(display_df)
+    except Exception as exc:  # noqa: BLE001 - styling should not block dashboard data rendering.
+        st.warning(f"{title} styling could not be applied; showing the table without styling. {exc}")
+
 
     try:
         st.dataframe(dataframe_to_render, use_container_width=True, hide_index=True)
@@ -1074,11 +1105,53 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def style_dashboard_table(df: pd.DataFrame) -> object:
+    table_styles = [
+        {
+            "selector": "table",
+            "props": [("background-color", "#FFFFFF"), ("color", "#111111")],
+        },
+        {
+            "selector": "thead th",
+            "props": [
+                ("background-color", "#F3F4F6"),
+                ("color", "#374151"),
+                ("font-weight", "600"),
+                ("border", "1px solid #E5E7EB"),
+            ],
+        },
+        {
+            "selector": "tbody td",
+            "props": [
+                ("background-color", "#FFFFFF"),
+                ("color", "#111111"),
+                ("border", "1px solid #E5E7EB"),
+            ],
+        },
+        {
+            "selector": "tbody tr:hover td",
+            "props": [("background-color", "#F8F9FA")],
+        },
+    ]
+    styler = df.style.set_table_styles(table_styles).set_properties(
+        **{
+            "background-color": "#FFFFFF",
+            "color": "#111111",
+            "border-color": "#E5E7EB",
+        }
+    )
+
+    if "Alert" in df.columns:
+        styler = styler.map(style_alert_level, subset=["Alert"])
+
+    return styler
+
+
 def style_alert_level(value: object) -> str:
     colors = {
-        "Red": "background-color: #c1121f; color: #ffffff; font-weight: 700;",
-        "Orange": "background-color: #f77f00; color: #ffffff; font-weight: 700;",
-        "Green": "background-color: #2d6a4f; color: #ffffff; font-weight: 700;",
+        "Red": "background-color: #c1121f; color: #ffffff; font-weight: 700; border-radius: 999px;",
+        "Orange": "background-color: #f77f00; color: #ffffff; font-weight: 700; border-radius: 999px;",
+        "Green": "background-color: #2d6a4f; color: #ffffff; font-weight: 700; border-radius: 999px;",
     }
     return colors.get(str(value), "")
 
