@@ -525,14 +525,15 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     st.markdown("<div class='pm-card'>", unsafe_allow_html=True)
     st.subheader(title)
     display_df = df[available_columns(columns, df)] if columns else df
+    dataframe_to_render = display_df
+
     if "Alert" in display_df.columns:
-        st.dataframe(
-            display_df.style.applymap(style_alert_level, subset=["Alert"]),
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        try:
+            dataframe_to_render = display_df.style.map(style_alert_level, subset=["Alert"])
+        except Exception as exc:  # noqa: BLE001 - styling should not block dashboard data rendering.
+            st.warning(f"{title} styling could not be applied; showing the table without styling. {exc}")
+
+    st.dataframe(dataframe_to_render, use_container_width=True, hide_index=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
