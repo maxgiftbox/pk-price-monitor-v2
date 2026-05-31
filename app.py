@@ -16,14 +16,11 @@ SCOPES = [
 ]
 PRICE_COLUMNS = ["original_price", "product_price", "voucher_amount", "effective_price"]
 SKU_COLUMNS = ["country", "brand", "model", "memory"]
-SKU_MASTER_JOIN_COLUMNS = [
-    "platform",
-    "country",
-    "brand",
-    "model",
-    "memory",
-    "product_url",
-]
+SKU_MASTER_PRODUCT_URL_JOIN_COLUMNS = ["platform", "country", "product_url"]
+SKU_MASTER_FALLBACK_JOIN_COLUMNS = ["platform", "country", "brand", "model", "memory"]
+SKU_MASTER_JOIN_COLUMNS = list(
+    dict.fromkeys(SKU_MASTER_PRODUCT_URL_JOIN_COLUMNS + SKU_MASTER_FALLBACK_JOIN_COLUMNS)
+)
 SKU_MASTER_STANDARD_COLUMNS = ["standard_model", "standard_memory"]
 COMPETITOR_PLATFORMS = ["PriceOye", "Pickaboo"]
 DARAZ_PLATFORM = "Daraz"
@@ -173,21 +170,23 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
     enriched["standard_memory"] = ""
 
     if not sku_master_df.empty:
-        fallback_keys = [col for col in SKU_MASTER_JOIN_COLUMNS if col in enriched.columns]
-        if fallback_keys and set(fallback_keys).issubset(sku_master_df.columns):
-            enriched = apply_sku_master_match(enriched, sku_master_df, fallback_keys)
+        enriched = apply_sku_master_match(
+            enriched,
+            sku_master_df,
+            SKU_MASTER_PRODUCT_URL_JOIN_COLUMNS,
+        )
 
         unmatched_mask = missing_standard_mask(enriched)
-        if unmatched_mask.any() and is_unique_sku_master_key(sku_master_df, ["product_url"]):
-            product_url_matches = apply_sku_master_match(
+        if unmatched_mask.any():
+            fallback_matches = apply_sku_master_match(
                 enriched.loc[unmatched_mask].copy(),
                 sku_master_df,
-                ["product_url"],
+                SKU_MASTER_FALLBACK_JOIN_COLUMNS,
             )
             for col in SKU_MASTER_STANDARD_COLUMNS:
                 enriched.loc[unmatched_mask, col] = coalesce_text(
-                    product_url_matches[col].reset_index(drop=True),
                     enriched.loc[unmatched_mask, col].reset_index(drop=True),
+                    fallback_matches[col].reset_index(drop=True),
                 ).values
 
     enriched["dashboard_model"] = coalesce_text(enriched["standard_model"], enriched["raw_model"])
