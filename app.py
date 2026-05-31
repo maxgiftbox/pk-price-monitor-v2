@@ -1,3 +1,4 @@
+import html
 import json
 import os
 from datetime import date
@@ -642,49 +643,109 @@ def inject_styles() -> None:
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #17201d; letter-spacing: -0.04em; }
         .pm-table-card {
-            border-color: #E5E7EB;
+            border: 1px solid #E5E7EB;
             border-radius: 18px;
             background: #FFFFFF;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
         }
 
+        .pm-table-scroll,
         [data-testid="stDataFrame"] {
-            overflow: hidden;
+            width: 100%;
+            overflow: auto;
             border-radius: 18px;
             border: 1px solid #E5E7EB;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
             background: #FFFFFF;
-            color: #111111;
         }
-        [data-testid="stDataFrame"] div[role="grid"],
-        [data-testid="stDataFrame"] [role="table"] {
-            background: #FFFFFF !important;
-            color: #111111 !important;
+        .pm-dashboard-table {
+            width: 100%;
+            min-width: 860px;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: #FFFFFF;
+            color: #111827;
+            font-size: 0.88rem;
+            line-height: 1.45;
         }
-        [data-testid="stDataFrame"] [role="columnheader"] {
+        .pm-dashboard-table thead th {
             position: sticky;
             top: 0;
             z-index: 2;
-            border-color: #E5E7EB !important;
+            padding: 0.72rem 0.85rem;
+            border-right: 1px solid #E5E7EB;
+            border-bottom: 1px solid #D1D5DB;
+            background: #F3F4F6;
+            color: #374151;
+            font-weight: 600;
+            text-align: left;
+            white-space: nowrap;
+        }
+        .pm-dashboard-table thead th:last-child,
+        .pm-dashboard-table tbody td:last-child {
+            border-right: 0;
+        }
+        .pm-dashboard-table tbody td {
+            padding: 0.68rem 0.85rem;
+            border-right: 1px solid #E5E7EB;
+            border-bottom: 1px solid #E5E7EB;
+            background: #FFFFFF;
+            color: #111827;
+            vertical-align: top;
+        }
+        .pm-dashboard-table tbody tr:nth-child(even) td {
+            background: #FAFAFA;
+        }
+        .pm-dashboard-table tbody tr:hover td {
+            background: #F3F4F6;
+        }
+        .pm-dashboard-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+        .pm-alert-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 4.25rem;
+            padding: 0.18rem 0.58rem;
+            border-radius: 999px;
+            color: #FFFFFF;
+            font-size: 0.76rem;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+        .pm-alert-badge.is-red { background: #EF4444; }
+        .pm-alert-badge.is-orange { background: #F59E0B; }
+        .pm-alert-badge.is-green { background: #10B981; }
+
+        [data-testid="stDataFrame"] div[role="grid"],
+        [data-testid="stDataFrame"] [role="table"] {
+            background: #FFFFFF !important;
+            color: #111827 !important;
+        }
+        [data-testid="stDataFrame"] [role="columnheader"],
+        [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] {
+            border-right: 1px solid #E5E7EB !important;
+            border-bottom: 1px solid #D1D5DB !important;
             background: #F3F4F6 !important;
             color: #374151 !important;
             font-weight: 600 !important;
         }
         [data-testid="stDataFrame"] [role="gridcell"],
         [data-testid="stDataFrame"] [role="cell"] {
-            border-color: #E5E7EB;
-            background: #FFFFFF;
-            color: #111111;
-        }
-        [data-testid="stDataFrame"] [role="row"] {
-            border-bottom-color: #E5E7EB !important;
+            border-right: 1px solid #E5E7EB !important;
+            border-bottom: 1px solid #E5E7EB !important;
             background: #FFFFFF !important;
-            color: #111111 !important;
+            color: #111827 !important;
+        }
+        [data-testid="stDataFrame"] [role="row"]:nth-child(even) [role="gridcell"],
+        [data-testid="stDataFrame"] [role="row"]:nth-child(even) [role="cell"] {
+            background: #FAFAFA !important;
         }
         [data-testid="stDataFrame"] [role="row"]:hover,
         [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"],
         [data-testid="stDataFrame"] [role="row"]:hover [role="cell"] {
-            background: #F8F9FA;
+            background: #F3F4F6 !important;
         }
 
         .stPlotlyChart {
@@ -1086,74 +1147,61 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     st.markdown("<div class='pm-card pm-table-card'>", unsafe_allow_html=True)
     st.subheader(title)
     display_df = df[available_columns(columns, df)] if columns else df
-    dataframe_to_render = display_df
-
-    try:
-        dataframe_to_render = style_dashboard_table(display_df)
-    except Exception as exc:  # noqa: BLE001 - styling should not block dashboard data rendering.
-        st.warning(f"{title} styling could not be applied; showing the table without styling. {exc}")
-
-
-    try:
-        st.dataframe(dataframe_to_render, use_container_width=True, hide_index=True)
-    except Exception as exc:  # noqa: BLE001 - styling should never block the table itself.
-        if dataframe_to_render is not display_df:
-            st.warning(f"{title} styled rendering failed; showing the table without styling. {exc}")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        else:
-            raise
+    st.markdown(render_dashboard_table(display_df), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def style_dashboard_table(df: pd.DataFrame) -> object:
-    table_styles = [
-        {
-            "selector": "table",
-            "props": [("background-color", "#FFFFFF"), ("color", "#111111")],
-        },
-        {
-            "selector": "thead th",
-            "props": [
-                ("background-color", "#F3F4F6"),
-                ("color", "#374151"),
-                ("font-weight", "600"),
-                ("border", "1px solid #E5E7EB"),
-            ],
-        },
-        {
-            "selector": "tbody td",
-            "props": [
-                ("background-color", "#FFFFFF"),
-                ("color", "#111111"),
-                ("border", "1px solid #E5E7EB"),
-            ],
-        },
-        {
-            "selector": "tbody tr:hover td",
-            "props": [("background-color", "#F8F9FA")],
-        },
-    ]
-    styler = df.style.set_table_styles(table_styles).set_properties(
-        **{
-            "background-color": "#FFFFFF",
-            "color": "#111111",
-            "border-color": "#E5E7EB",
-        }
+def render_dashboard_table(df: pd.DataFrame) -> str:
+    header_cells = "".join(
+        f"<th scope='col'>{html.escape(str(column))}</th>" for column in df.columns
     )
 
-    if "Alert" in df.columns:
-        styler = styler.map(style_alert_level, subset=["Alert"])
+    if df.empty:
+        empty_message = html.escape("No rows to display")
+        colspan = max(len(df.columns), 1)
+        return (
+            "<div class='pm-table-scroll'>"
+            "<table class='pm-dashboard-table'>"
+            f"<thead><tr>{header_cells}</tr></thead>"
+            f"<tbody><tr><td colspan='{colspan}'>{empty_message}</td></tr></tbody>"
+            "</table>"
+            "</div>"
+        )
 
-    return styler
+    body_rows = []
+    for _, row in df.iterrows():
+        cells = []
+        for column, value in row.items():
+            cell_html = format_table_cell(column, value)
+            cells.append(f"<td>{cell_html}</td>")
+        body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
+    return (
+        "<div class='pm-table-scroll'>"
+        "<table class='pm-dashboard-table'>"
+        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        "</table>"
+        "</div>"
+    )
 
 
-def style_alert_level(value: object) -> str:
-    colors = {
-        "Red": "background-color: #c1121f; color: #ffffff; font-weight: 700; border-radius: 999px;",
-        "Orange": "background-color: #f77f00; color: #ffffff; font-weight: 700; border-radius: 999px;",
-        "Green": "background-color: #2d6a4f; color: #ffffff; font-weight: 700; border-radius: 999px;",
-    }
-    return colors.get(str(value), "")
+def format_table_cell(column: str, value: object) -> str:
+    if pd.isna(value):
+        return ""
+
+    value_text = str(value)
+    if column == "Alert":
+        badge_class = {
+            "Red": "is-red",
+            "Orange": "is-orange",
+            "Green": "is-green",
+        }.get(value_text)
+        if badge_class:
+            escaped_value = html.escape(value_text)
+            return f"<span class='pm-alert-badge {badge_class}'>{escaped_value}</span>"
+
+    return html.escape(value_text)
 
 
 def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
