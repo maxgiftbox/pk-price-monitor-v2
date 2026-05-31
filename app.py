@@ -74,6 +74,8 @@ PLATFORM_COLORS = {
     "priceoye": "#0a84ff",
     "pickaboo": "#34c759",
 }
+ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
+DEFAULT_ROWS_PER_PAGE = 20
 
 
 def get_config_value(name: str) -> str:
@@ -1147,8 +1149,71 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     st.markdown("<div class='pm-card pm-table-card'>", unsafe_allow_html=True)
     st.subheader(title)
     display_df = df[available_columns(columns, df)] if columns else df
-    st.markdown(render_dashboard_table(display_df), unsafe_allow_html=True)
+    page_df = render_table_pagination_controls(title, display_df)
+    st.markdown(render_dashboard_table(page_df), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFrame:
+    section_key = section_state_key(title)
+    rows_key = f"{section_key}_rows_per_page"
+    page_key = f"{section_key}_page"
+
+    if rows_key not in st.session_state:
+        st.session_state[rows_key] = DEFAULT_ROWS_PER_PAGE
+    if page_key not in st.session_state:
+        st.session_state[page_key] = 1
+
+    rows_per_page = st.selectbox(
+        "Rows per page",
+        ROWS_PER_PAGE_OPTIONS,
+        index=ROWS_PER_PAGE_OPTIONS.index(st.session_state[rows_key]),
+        key=rows_key,
+    )
+    total_rows = len(df)
+    total_pages = max((total_rows + rows_per_page - 1) // rows_per_page, 1)
+    st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
+
+    if total_rows > rows_per_page:
+        previous_col, page_col, next_col = st.columns([1, 2, 1])
+        previous_clicked = previous_col.button(
+            "Previous",
+            key=f"{section_key}_previous_page",
+            disabled=st.session_state[page_key] <= 1,
+            use_container_width=True,
+        )
+        next_clicked = next_col.button(
+            "Next",
+            key=f"{section_key}_next_page",
+            disabled=st.session_state[page_key] >= total_pages,
+            use_container_width=True,
+        )
+        if previous_clicked:
+            st.session_state[page_key] -= 1
+        if next_clicked:
+            st.session_state[page_key] += 1
+        st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
+        page_col.markdown(
+            f"<div style='text-align:center; padding-top:0.45rem;'>"
+            f"Page {st.session_state[page_key]} / {total_pages}</div>",
+            unsafe_allow_html=True,
+        )
+
+    current_page = min(max(int(st.session_state[page_key]), 1), total_pages)
+    start_index = (current_page - 1) * rows_per_page
+    end_index = min(start_index + rows_per_page, total_rows)
+
+    if total_rows:
+        st.caption(f"Showing {start_index + 1}–{end_index} of {total_rows} rows")
+    else:
+        st.caption("Showing 0–0 of 0 rows")
+    return df.iloc[start_index:end_index]
+
+
+def section_state_key(title: str) -> str:
+    normalized = "".join(char.casefold() if char.isalnum() else "_" for char in title)
+    normalized = "_".join(part for part in normalized.split("_") if part)
+    return f"table_{normalized or 'section'}"
 
 
 def render_dashboard_table(df: pd.DataFrame) -> str:
