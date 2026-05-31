@@ -384,24 +384,25 @@ def inject_styles() -> None:
         """
         <style>
         :root {
-            --pm-ink: #101614;
-            --pm-muted: #66736d;
-            --pm-green: #203f35;
-            --pm-green-deep: #0d221d;
-            --pm-border: rgba(255, 255, 255, 0.54);
-            --pm-card: rgba(255, 255, 255, 0.72);
-            --pm-sidebar: rgba(10, 24, 21, 0.78);
-            --pm-radius: 22px;
-            --pm-shadow: 0 24px 70px rgba(13, 34, 29, 0.20);
+            --pm-ink: #111815;
+            --pm-muted: #64736b;
+            --pm-green: #244a3d;
+            --pm-green-deep: #071814;
+            --pm-border: rgba(255, 255, 255, 0.62);
+            --pm-card: rgba(255, 255, 255, 0.90);
+            --pm-panel: rgba(240, 245, 239, 0.74);
+            --pm-sidebar: rgba(9, 25, 21, 0.82);
+            --pm-radius: 24px;
+            --pm-shadow: 0 24px 70px rgba(5, 24, 19, 0.18);
         }
 
         .stApp {
             color: var(--pm-ink);
             background:
-                radial-gradient(circle at 12% 12%, rgba(116, 145, 121, 0.55), transparent 26%),
-                radial-gradient(circle at 82% 4%, rgba(229, 236, 226, 0.52), transparent 24%),
-                radial-gradient(circle at 88% 86%, rgba(22, 56, 47, 0.58), transparent 30%),
-                linear-gradient(135deg, #182b25 0%, #56615b 42%, #dfe4dd 100%);
+                radial-gradient(circle at 10% 14%, rgba(87, 119, 101, 0.72), transparent 28%),
+                radial-gradient(circle at 78% 8%, rgba(173, 190, 176, 0.34), transparent 24%),
+                radial-gradient(circle at 88% 86%, rgba(10, 52, 43, 0.68), transparent 30%),
+                linear-gradient(135deg, #071411 0%, #253b33 42%, #66716a 100%);
             background-attachment: fixed;
         }
 
@@ -410,10 +411,10 @@ def inject_styles() -> None:
             position: fixed;
             inset: 0;
             pointer-events: none;
-            backdrop-filter: blur(2px);
+            backdrop-filter: blur(3px);
             background:
-                linear-gradient(120deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02)),
-                radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.16), transparent 46%);
+                linear-gradient(120deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.01)),
+                radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.11), transparent 46%);
             z-index: 0;
         }
 
@@ -424,15 +425,17 @@ def inject_styles() -> None:
 
         .block-container {
             max-width: 1460px;
-            padding: 2.4rem 3rem 3.5rem;
-            margin-top: 1.25rem;
+            padding: 2.35rem 2.65rem 3.1rem;
+            margin-top: 1.35rem;
             margin-bottom: 2rem;
             border: 1px solid var(--pm-border);
             border-radius: 30px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(239, 244, 239, 0.58));
-            box-shadow: 0 30px 90px rgba(4, 20, 17, 0.25);
-            backdrop-filter: blur(22px) saturate(1.3);
-            -webkit-backdrop-filter: blur(22px) saturate(1.3);
+            background:
+                linear-gradient(145deg, rgba(255, 255, 255, 0.78), var(--pm-panel)),
+                radial-gradient(circle at 8% 0%, rgba(193, 211, 198, 0.42), transparent 34%);
+            box-shadow: 0 34px 95px rgba(2, 15, 12, 0.30);
+            backdrop-filter: blur(26px) saturate(1.35);
+            -webkit-backdrop-filter: blur(26px) saturate(1.35);
         }
 
         h1, h2, h3 {
@@ -449,19 +452,22 @@ def inject_styles() -> None:
         }
 
         section[data-testid="stSidebar"] {
-            width: 18.5rem !important;
+            width: 19.5rem !important;
             background: transparent;
+            padding: 1.25rem 0 1.25rem 1rem;
         }
 
         section[data-testid="stSidebar"] > div {
-            padding-top: 1.3rem;
+            margin: 0.75rem 0.85rem 0.75rem 0.65rem;
+            padding-top: 1.5rem;
             background:
-                linear-gradient(180deg, rgba(14, 32, 28, 0.88), rgba(8, 18, 16, 0.78)),
-                radial-gradient(circle at 30% 0%, rgba(93, 126, 107, 0.34), transparent 42%);
-            border-right: 1px solid rgba(255, 255, 255, 0.12);
-            box-shadow: 18px 0 60px rgba(0, 0, 0, 0.22);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
+                linear-gradient(180deg, rgba(17, 39, 33, 0.88), rgba(6, 17, 14, 0.82)),
+                radial-gradient(circle at 24% 2%, rgba(107, 142, 120, 0.34), transparent 40%);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 28px;
+            box-shadow: 18px 26px 70px rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(22px) saturate(1.25);
+            -webkit-backdrop-filter: blur(22px) saturate(1.25);
         }
 
         section[data-testid="stSidebar"] h1,
@@ -480,11 +486,11 @@ def inject_styles() -> None:
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stMultiSelect),
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stDateInput) {
             margin: 0.55rem 0;
-            padding: 0.75rem 0.75rem 0.9rem;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.07);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            padding: 0.85rem 0.8rem 0.95rem;
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.045));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 14px 30px rgba(0, 0, 0, 0.13);
         }
 
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
@@ -505,7 +511,7 @@ def inject_styles() -> None:
             border: 1px solid rgba(255, 255, 255, 0.62);
             border-radius: 28px;
             background:
-                linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(235, 241, 235, 0.58)),
+                linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(235, 241, 235, 0.66)),
                 radial-gradient(circle at top right, rgba(56, 94, 78, 0.18), transparent 34%);
             box-shadow: var(--pm-shadow);
             backdrop-filter: blur(20px);
@@ -539,6 +545,13 @@ def inject_styles() -> None:
             font-size: clamp(1rem, 1.8vw, 1.22rem);
             font-weight: 520;
             margin-top: 0.85rem;
+        }
+
+        .pm-overview {
+            color: #53665d;
+            font-size: 0.92rem;
+            font-weight: 650;
+            margin-top: 0.8rem;
         }
 
         .pm-hero-panel {
@@ -590,9 +603,9 @@ def inject_styles() -> None:
         div[data-testid="stMetric"] {
             min-height: 122px;
             padding: 1.2rem 1.1rem 1rem;
-            border: 1px solid rgba(255, 255, 255, 0.62);
+            border: 1px solid rgba(18, 37, 32, 0.06);
             border-radius: 22px;
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(245, 248, 245, 0.64));
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 248, 0.92));
             box-shadow: 0 18px 44px rgba(11, 31, 26, 0.12);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
@@ -613,13 +626,13 @@ def inject_styles() -> None:
 
         .pm-card {
             margin: 1.45rem 0;
-            padding: 1.35rem;
-            border: 1px solid rgba(255, 255, 255, 0.58);
+            padding: 1.45rem;
+            border: 1px solid rgba(17, 35, 30, 0.07);
             border-radius: var(--pm-radius);
             background: var(--pm-card);
-            box-shadow: var(--pm-shadow);
-            backdrop-filter: blur(18px) saturate(1.18);
-            -webkit-backdrop-filter: blur(18px) saturate(1.18);
+            box-shadow: 0 18px 48px rgba(5, 24, 19, 0.12);
+            backdrop-filter: blur(14px) saturate(1.12);
+            -webkit-backdrop-filter: blur(14px) saturate(1.12);
         }
 
         .pm-card h2, .pm-card h3 {
@@ -629,12 +642,19 @@ def inject_styles() -> None:
         [data-testid="stDataFrame"] {
             border-radius: 18px;
             overflow: hidden;
-            border: 1px solid rgba(16, 22, 20, 0.08);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+            border: 1px solid rgba(16, 22, 20, 0.07);
+            box-shadow: 0 10px 28px rgba(14, 28, 24, 0.08);
         }
 
         [data-testid="stDataFrame"] div[role="grid"] {
-            background: rgba(15, 23, 21, 0.94);
+            background: #ffffff;
+            color: #1c2421;
+        }
+
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            background: #eef2ee !important;
+            color: #2c3833 !important;
+            font-weight: 750 !important;
         }
 
         .stPlotlyChart {
@@ -700,7 +720,8 @@ def available_columns(columns: list[str], df: pd.DataFrame) -> list[str]:
 
 def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
-    st.sidebar.header("Filters")
+    st.sidebar.markdown("### Filters")
+    st.sidebar.caption("Refine the pricing intelligence view")
 
     filter_specs = [
         ("country", "Country"),
@@ -1074,12 +1095,13 @@ def main() -> None:
     inject_styles()
 
     st.markdown(
-        """
+        f"""
         <div class="pm-hero">
             <div class="pm-hero-copy">
                 <div class="pm-eyebrow">Pricing intelligence dashboard</div>
                 <div class="pm-title">Mob Price Monitor</div>
                 <div class="pm-subtitle">Daraz vs Competitor Pricing Intelligence</div>
+                <div class="pm-overview">Overview generated on {date.today().strftime("%B %d, %Y")} • SKU pricing, gap alerts, and trend monitoring</div>
             </div>
             <div class="pm-hero-panel">
                 <div class="pm-pill-row">
