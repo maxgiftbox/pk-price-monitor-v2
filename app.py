@@ -402,41 +402,30 @@ def inject_styles() -> None:
         }
 
         html, body, .stApp, [data-testid="stAppViewContainer"] {
-            min-height: 100vh;
+            min-height: 100%;
             font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > .main {
+            overflow-y: auto;
+            overflow-x: visible;
         }
 
         .stApp {
             color: var(--pm-ink);
             background:
-                radial-gradient(circle at 15% 12%, rgba(134, 162, 151, 0.50), transparent 28%),
-                radial-gradient(circle at 76% 6%, rgba(215, 225, 228, 0.34), transparent 24%),
-                radial-gradient(circle at 86% 82%, rgba(14, 55, 48, 0.70), transparent 32%),
-                linear-gradient(135deg, #101a18 0%, #34443f 42%, #9aa7aa 100%);
-            background-attachment: fixed;
-        }
-
-        .stApp::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            background:
-                radial-gradient(circle at 50% 45%, rgba(238, 246, 248, 0.18), transparent 48%),
-                linear-gradient(120deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.02));
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            z-index: 0;
+                radial-gradient(circle at 12% 8%, rgba(208, 231, 224, 0.78), transparent 30%),
+                radial-gradient(circle at 82% 10%, rgba(230, 238, 242, 0.80), transparent 28%),
+                linear-gradient(135deg, #f7faf9 0%, #edf4f3 44%, #dfe9ec 100%);
         }
 
         [data-testid="stAppViewContainer"] > .main {
             position: relative;
-            z-index: 1;
         }
 
         .block-container {
             max-width: 1400px;
-            min-height: calc(100vh - 3.2rem);
+            min-height: auto;
             padding: 2.05rem 2.25rem 2.65rem;
             margin: 1.55rem auto;
             border: 1px solid rgba(255, 255, 255, 0.58);
@@ -458,13 +447,14 @@ def inject_styles() -> None:
             width: 240px !important;
             background: transparent;
             padding: 1.55rem 0 1.55rem 1.35rem;
+            overflow-y: auto;
         }
 
         section[data-testid="stSidebar"] > div {
             margin: 0;
             padding: 1.45rem 1rem 1.2rem;
             width: 240px;
-            min-height: calc(100vh - 3.1rem);
+            min-height: auto;
             border-radius: 28px 22px 22px 28px;
             border: 1px solid rgba(255, 255, 255, 0.15);
             background:
@@ -475,7 +465,10 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(24px) saturate(1.25);
         }
 
-        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding-top: 0; }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            padding-top: 0;
+            overflow-y: auto;
+        }
         section[data-testid="stSidebar"] h1,
         section[data-testid="stSidebar"] h2,
         section[data-testid="stSidebar"] h3,
@@ -651,7 +644,6 @@ def inject_styles() -> None:
 
         [data-testid="stDataFrame"] {
             border-radius: 18px;
-            overflow: hidden;
             border: 1px solid rgba(18, 31, 32, 0.07);
             box-shadow: 0 12px 30px rgba(24, 42, 45, 0.075);
             background: #ffffff;
@@ -666,7 +658,6 @@ def inject_styles() -> None:
 
         .stPlotlyChart {
             border-radius: 18px;
-            overflow: hidden;
             border: 1px solid rgba(20, 34, 36, 0.05);
             background: rgba(255, 255, 255, 0.65);
         }
