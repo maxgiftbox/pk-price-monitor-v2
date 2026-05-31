@@ -37,7 +37,6 @@ TABLE_COLUMNS = [
     "Daraz Effective Price",
     "Competitor Platform",
     "Competitor Effective Price",
-    "stock_status",
     "product_url",
 ]
 GAP_COLUMNS = [
@@ -47,6 +46,7 @@ GAP_COLUMNS = [
     "model",
     "memory",
     "Daraz Effective Price",
+    "Competitor Platform",
     "Competitor Effective Price",
     "Gap Amount",
     "Gap %",
@@ -418,57 +418,41 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=TABLE_COLUMNS)
 
-    required = {"country", "brand", "model", "memory", "platform", "effective_price"}
+    required = {"crawl_date", "country", "brand", "model", "memory", "platform", "effective_price"}
     if not required.issubset(df.columns):
         return pd.DataFrame(columns=TABLE_COLUMNS)
 
-    sort_cols = [col for col in ["crawl_date", "crawl_datetime"] if col in df.columns]
     working = df.copy()
-    if sort_cols:
-        working = working.sort_values(sort_cols, na_position="last")
-
-    base_cols = ["crawl_date", "country", "brand", "model", "memory"]
-    key_cols = available_columns(base_cols, working)
-    platform_group_cols = key_cols + ["platform"]
-    if "product_url" in working.columns:
-        platform_group_cols.append("product_url")
-
-    if platform_group_cols and "crawl_datetime" in working.columns:
-        working = working.groupby(platform_group_cols, dropna=False).tail(1)
-
     working["__platform_key"] = working["platform"].apply(normalized_platform)
-    if "effective_price" in working.columns:
-        working = working.sort_values(
-            key_cols + ["__platform_key", "effective_price"],
-            ascending=[True] * (len(key_cols) + 1) + [True],
-            na_position="last",
-        )
+    key_cols = ["crawl_date", "country", "brand", "model", "memory"]
+    competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
 
     selected_cols = key_cols + ["__platform_key", "effective_price"]
-    selected_cols += available_columns(["stock_status", "product_url"], working)
-    platform_latest = working[selected_cols].drop_duplicates(
-        key_cols + ["__platform_key"], keep="first"
-    )
+    selected_cols += available_columns(["crawl_datetime", "product_url"], working)
 
-    daraz = platform_latest[platform_latest["__platform_key"] == DARAZ_PLATFORM.casefold()].copy()
+    daraz = latest_platform_rows(
+        working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
+        key_cols,
+        selected_cols,
+    )
     if daraz.empty:
         return pd.DataFrame(columns=TABLE_COLUMNS)
 
     daraz = daraz.rename(
         columns={
             "effective_price": "Daraz Effective Price",
-            "stock_status": "daraz_stock_status",
             "product_url": "daraz_product_url",
         }
     )
 
-    competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
-    competitors = platform_latest[platform_latest["__platform_key"].isin(competitor_keys)].copy()
-    competitors = competitors.rename(
+    competitors = latest_platform_rows(
+        working[working["__platform_key"].isin(competitor_keys)],
+        key_cols + ["__platform_key"],
+        selected_cols,
+    ).rename(
         columns={
             "__platform_key": "Competitor Platform",
             "effective_price": "Competitor Effective Price",
-            "stock_status": "competitor_stock_status",
             "product_url": "competitor_product_url",
         }
     )
@@ -477,25 +461,14 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
         comparison = daraz.copy()
         comparison["Competitor Platform"] = ""
         comparison["Competitor Effective Price"] = pd.NA
-        comparison["competitor_stock_status"] = ""
         comparison["competitor_product_url"] = ""
     else:
-        comparison = daraz.merge(competitors, on=key_cols, how="left")
-        for col in ["Competitor Platform", "competitor_stock_status", "competitor_product_url"]:
+        comparison = daraz.merge(competitors, on=key_cols, how="left", suffixes=("", "_competitor"))
+        for col in ["Competitor Platform", "competitor_product_url"]:
             if col in comparison.columns:
                 comparison[col] = comparison[col].fillna("")
 
-    if "crawl_date" in comparison.columns:
-        comparison["crawl_time"] = comparison["crawl_date"].apply(format_date)
-    elif "crawl_time" in comparison.columns:
-        comparison["crawl_time"] = comparison["crawl_time"].apply(format_date)
-    else:
-        comparison["crawl_time"] = ""
-
-    comparison["stock_status"] = coalesce_text(
-        comparison.get("competitor_stock_status", pd.Series("", index=comparison.index)),
-        comparison.get("daraz_stock_status", pd.Series("", index=comparison.index)),
-    )
+    comparison["crawl_time"] = comparison["crawl_date"].apply(format_date)
     comparison["product_url"] = coalesce_text(
         comparison.get("competitor_product_url", pd.Series("", index=comparison.index)),
         comparison.get("daraz_product_url", pd.Series("", index=comparison.index)),
@@ -503,12 +476,9 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in ["Daraz Effective Price", "Competitor Effective Price"]:
         if col in comparison.columns:
-            comparison[col] = comparison[col].apply(format_price)
-    if "Competitor Effective Price" in comparison.columns:
-        comparison["Competitor Effective Price"] = comparison["Competitor Effective Price"].fillna("")
+            comparison[col] = comparison[col].apply(format_price).fillna("")
 
-    display = comparison.rename(columns={"__platform_key": "platform"})
-    display = display[available_columns(TABLE_COLUMNS, display)]
+    display = comparison[available_columns(TABLE_COLUMNS, comparison)]
     sort_display_cols = available_columns(
         ["crawl_time", "country", "brand", "model", "memory", "Competitor Platform"], display
     )
@@ -521,8 +491,32 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def latest_platform_rows(
+    df: pd.DataFrame,
+    group_cols: list[str],
+    selected_cols: list[str],
+) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=selected_cols)
+
+    existing_selected_cols = available_columns(selected_cols, df)
+    sort_cols = available_columns(["crawl_datetime"], df) + ["effective_price"]
+    sorted_df = df[existing_selected_cols].copy()
+    if sort_cols:
+        sorted_df = sorted_df.sort_values(
+            sort_cols,
+            ascending=[False if col == "crawl_datetime" else True for col in sort_cols],
+            na_position="last",
+        )
+
+    existing_group_cols = available_columns(group_cols, sorted_df)
+    if not existing_group_cols:
+        return sorted_df
+    return sorted_df.drop_duplicates(existing_group_cols, keep="first")
+
+
 def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
-    required = set(SKU_COLUMNS + ["platform", "effective_price"])
+    required = {"crawl_date", "country", "brand", "model", "memory", "platform", "effective_price"}
     if df.empty or not required.issubset(df.columns):
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
@@ -530,43 +524,51 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     if working.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
-    working["__platform_key"] = (
-        working["platform"].fillna("").astype(str).str.strip().str.casefold()
-    )
-    group_cols = SKU_COLUMNS + (["crawl_date"] if "crawl_date" in working.columns else [])
-
-    daraz = (
-        working[working["__platform_key"] == DARAZ_PLATFORM.casefold()]
-        .groupby(group_cols, dropna=False, as_index=False)["effective_price"]
-        .min()
-        .rename(columns={"effective_price": "Daraz Price"})
-    )
-
+    working["__platform_key"] = working["platform"].apply(normalized_platform)
+    key_cols = ["crawl_date", "country", "brand", "model", "memory"]
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
-    competitors = working[working["__platform_key"].isin(competitor_keys)].copy()
+    selected_cols = key_cols + ["__platform_key", "effective_price"]
+    selected_cols += available_columns(["crawl_datetime"], working)
+
+    daraz = latest_platform_rows(
+        working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
+        key_cols,
+        selected_cols,
+    ).rename(columns={"effective_price": "Daraz Price"})
+
+    competitors = latest_platform_rows(
+        working[working["__platform_key"].isin(competitor_keys)],
+        key_cols + ["__platform_key"],
+        selected_cols,
+    ).rename(
+        columns={
+            "__platform_key": "Competitor Platform",
+            "effective_price": "Competitor Price",
+        }
+    )
+
     if competitors.empty or daraz.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
-    competitors = (
-        competitors.groupby(group_cols + ["platform"], dropna=False, as_index=False)[
-            "effective_price"
-        ]
-        .min()
-        .rename(columns={"platform": "Competitor Platform", "effective_price": "Competitor Price"})
-    )
-
-    gap = daraz.merge(competitors, on=group_cols, how="inner")
+    gap = daraz.merge(competitors, on=key_cols, how="inner", suffixes=("", "_competitor"))
     if gap.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     gap["Gap Amount"] = gap["Daraz Price"] - gap["Competitor Price"]
-    gap["Gap %"] = gap["Gap Amount"] / gap["Competitor Price"]
+    gap["Gap %"] = gap["Gap Amount"] / gap["Daraz Price"]
     gap["Alert"] = gap["Gap %"].apply(alert_level)
+    gap["__alert_sort"] = gap["Alert"].map({"Red": 0, "Orange": 1, "Green": 2}).fillna(3)
 
     if "crawl_date" in gap.columns:
-        gap = gap.sort_values(["crawl_date", "Gap %"], ascending=[False, True])
+        latest_sort_cols = available_columns(["crawl_date", "crawl_datetime"], gap)
+        gap = gap.sort_values(
+            latest_sort_cols,
+            ascending=[False] * len(latest_sort_cols),
+            na_position="last",
+        )
         gap = gap.groupby(SKU_COLUMNS + ["Competitor Platform"], dropna=False).head(1)
 
+    gap = gap.sort_values(["__alert_sort", "Gap %"], ascending=[True, False], na_position="last")
     gap = gap.rename(
         columns={
             "country": "Country",
@@ -575,15 +577,15 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
             "memory": "Memory",
         }
     )
-    return gap[available_columns(RAW_GAP_COLUMNS, gap)].sort_values("Gap %", ascending=True)
+    return gap[available_columns(RAW_GAP_COLUMNS, gap)]
 
 
 def alert_level(gap_pct: float) -> str:
     if pd.isna(gap_pct):
         return "Green"
-    if gap_pct <= -0.05:
+    if gap_pct >= 0.05:
         return "Red"
-    if gap_pct <= -0.01:
+    if gap_pct > 0:
         return "Orange"
     return "Green"
 
@@ -603,6 +605,9 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         formatted["memory"] = gap_df["Memory"] if "Memory" in gap_df.columns else ""
         formatted["Daraz Effective Price"] = (
             gap_df["Daraz Price"].apply(format_price) if "Daraz Price" in gap_df.columns else ""
+        )
+        formatted["Competitor Platform"] = (
+            gap_df["Competitor Platform"] if "Competitor Platform" in gap_df.columns else ""
         )
         formatted["Competitor Effective Price"] = (
             gap_df["Competitor Price"].apply(format_price)
