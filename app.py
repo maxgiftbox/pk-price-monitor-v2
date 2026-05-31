@@ -173,21 +173,22 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
     enriched["standard_memory"] = ""
 
     if not sku_master_df.empty:
-        enriched = apply_sku_master_match(enriched, sku_master_df, ["product_url"])
+        fallback_keys = [col for col in SKU_MASTER_JOIN_COLUMNS if col in enriched.columns]
+        if fallback_keys and set(fallback_keys).issubset(sku_master_df.columns):
+            enriched = apply_sku_master_match(enriched, sku_master_df, fallback_keys)
+
         unmatched_mask = missing_standard_mask(enriched)
-        if unmatched_mask.any():
-            fallback_keys = [col for col in SKU_MASTER_JOIN_COLUMNS if col in enriched.columns]
-            if fallback_keys and set(fallback_keys).issubset(sku_master_df.columns):
-                fallback_matches = apply_sku_master_match(
-                    enriched.loc[unmatched_mask].copy(),
-                    sku_master_df,
-                    fallback_keys,
-                )
-                for col in SKU_MASTER_STANDARD_COLUMNS:
-                    enriched.loc[unmatched_mask, col] = coalesce_text(
-                        fallback_matches[col].reset_index(drop=True),
-                        enriched.loc[unmatched_mask, col].reset_index(drop=True),
-                    ).values
+        if unmatched_mask.any() and is_unique_sku_master_key(sku_master_df, ["product_url"]):
+            product_url_matches = apply_sku_master_match(
+                enriched.loc[unmatched_mask].copy(),
+                sku_master_df,
+                ["product_url"],
+            )
+            for col in SKU_MASTER_STANDARD_COLUMNS:
+                enriched.loc[unmatched_mask, col] = coalesce_text(
+                    product_url_matches[col].reset_index(drop=True),
+                    enriched.loc[unmatched_mask, col].reset_index(drop=True),
+                ).values
 
     enriched["dashboard_model"] = coalesce_text(enriched["standard_model"], enriched["raw_model"])
     enriched["dashboard_memory"] = coalesce_text(enriched["standard_memory"], enriched["raw_memory"])
@@ -247,6 +248,50 @@ def missing_standard_mask(df: pd.DataFrame) -> pd.Series:
     return df["standard_model"].fillna("").astype(str).str.strip().eq("") | df[
         "standard_memory"
     ].fillna("").astype(str).str.strip().eq("")
+
+
+def is_unique_sku_master_key(sku_master_df: pd.DataFrame, join_keys: list[str]) -> bool:
+    if not join_keys or not set(join_keys).issubset(sku_master_df.columns):
+        return False
+
+    normalized = sku_master_df.copy()
+    normalized_key_cols = add_normalized_join_keys(normalized, join_keys)
+    normalized = normalized[normalized[normalized_key_cols].ne("").all(axis=1)]
+    return not normalized.duplicated(normalized_key_cols, keep=False).any()
+
+
+def normalize_join_text(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.strip().str.lower()
+
+
+def add_dashboard_join_fields(df: pd.DataFrame) -> pd.DataFrame:
+    working = df.copy()
+    if "crawl_date" in working.columns:
+        working["join_date"] = pd.to_datetime(working["crawl_date"], errors="coerce").dt.date
+    else:
+        working["join_date"] = pd.NaT
+
+    for source_col, join_col in [
+        ("country", "join_country"),
+        ("brand", "join_brand"),
+    ]:
+        working[join_col] = (
+            normalize_join_text(working[source_col]) if source_col in working.columns else ""
+        )
+
+    model_source = coalesce_text(
+        working["standard_model"], working["model"]
+    ) if "standard_model" in working.columns and "model" in working.columns else working.get(
+        "standard_model", working.get("model", pd.Series("", index=working.index))
+    )
+    memory_source = coalesce_text(
+        working["standard_memory"], working["memory"]
+    ) if "standard_memory" in working.columns and "memory" in working.columns else working.get(
+        "standard_memory", working.get("memory", pd.Series("", index=working.index))
+    )
+    working["join_model"] = normalize_join_text(model_source)
+    working["join_memory"] = normalize_join_text(memory_source)
+    return working
 
 
 def coalesce_text(primary: pd.Series, fallback: pd.Series) -> pd.Series:
@@ -422,17 +467,18 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
     if not required.issubset(df.columns):
         return pd.DataFrame(columns=TABLE_COLUMNS)
 
-    working = df.copy()
+    working = add_dashboard_join_fields(df)
     working["__platform_key"] = working["platform"].apply(normalized_platform)
-    key_cols = ["crawl_date", "country", "brand", "model", "memory"]
+    join_cols = ["join_date", "join_country", "join_brand", "join_model", "join_memory"]
+    display_key_cols = ["country", "brand", "model", "memory"]
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
 
-    selected_cols = key_cols + ["__platform_key", "effective_price"]
-    selected_cols += available_columns(["crawl_datetime", "product_url"], working)
+    selected_cols = join_cols + display_key_cols + ["__platform_key", "effective_price"]
+    selected_cols += available_columns(["crawl_datetime", "crawl_date", "product_url"], working)
 
     daraz = latest_platform_rows(
         working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
-        key_cols,
+        join_cols + ["__platform_key"],
         selected_cols,
     )
     if daraz.empty:
@@ -442,18 +488,22 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
         columns={
             "effective_price": "Daraz Effective Price",
             "product_url": "daraz_product_url",
+            "crawl_datetime": "daraz_crawl_datetime",
+            "crawl_date": "daraz_crawl_date",
         }
     )
 
     competitors = latest_platform_rows(
         working[working["__platform_key"].isin(competitor_keys)],
-        key_cols + ["__platform_key"],
+        join_cols + ["__platform_key"],
         selected_cols,
     ).rename(
         columns={
             "__platform_key": "Competitor Platform",
             "effective_price": "Competitor Effective Price",
             "product_url": "competitor_product_url",
+            "crawl_datetime": "competitor_crawl_datetime",
+            "crawl_date": "competitor_crawl_date",
         }
     )
 
@@ -463,12 +513,14 @@ def latest_price_table(df: pd.DataFrame) -> pd.DataFrame:
         comparison["Competitor Effective Price"] = pd.NA
         comparison["competitor_product_url"] = ""
     else:
-        comparison = daraz.merge(competitors, on=key_cols, how="left", suffixes=("", "_competitor"))
+        comparison = daraz.merge(competitors, on=join_cols, how="left", suffixes=("", "_competitor"))
         for col in ["Competitor Platform", "competitor_product_url"]:
             if col in comparison.columns:
                 comparison[col] = comparison[col].fillna("")
 
-    comparison["crawl_time"] = comparison["crawl_date"].apply(format_date)
+    comparison["crawl_time"] = comparison.get(
+        "daraz_crawl_date", comparison.get("join_date", pd.Series(pd.NaT, index=comparison.index))
+    ).apply(format_date)
     comparison["product_url"] = coalesce_text(
         comparison.get("competitor_product_url", pd.Series("", index=comparison.index)),
         comparison.get("daraz_product_url", pd.Series("", index=comparison.index)),
@@ -520,53 +572,68 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or not required.issubset(df.columns):
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
-    working = df.dropna(subset=["effective_price"]).copy()
+    working = add_dashboard_join_fields(df.dropna(subset=["effective_price"]))
     if working.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     working["__platform_key"] = working["platform"].apply(normalized_platform)
-    key_cols = ["crawl_date", "country", "brand", "model", "memory"]
+    join_cols = ["join_date", "join_country", "join_brand", "join_model", "join_memory"]
+    display_key_cols = ["country", "brand", "model", "memory"]
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
-    selected_cols = key_cols + ["__platform_key", "effective_price"]
-    selected_cols += available_columns(["crawl_datetime"], working)
+    selected_cols = join_cols + display_key_cols + ["__platform_key", "effective_price"]
+    selected_cols += available_columns(["crawl_datetime", "crawl_date"], working)
 
     daraz = latest_platform_rows(
         working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
-        key_cols,
+        join_cols + ["__platform_key"],
         selected_cols,
-    ).rename(columns={"effective_price": "Daraz Price"})
+    ).rename(
+        columns={
+            "effective_price": "Daraz Price",
+            "crawl_datetime": "daraz_crawl_datetime",
+            "crawl_date": "daraz_crawl_date",
+        }
+    )
 
     competitors = latest_platform_rows(
         working[working["__platform_key"].isin(competitor_keys)],
-        key_cols + ["__platform_key"],
+        join_cols + ["__platform_key"],
         selected_cols,
     ).rename(
         columns={
             "__platform_key": "Competitor Platform",
             "effective_price": "Competitor Price",
+            "crawl_datetime": "competitor_crawl_datetime",
+            "crawl_date": "competitor_crawl_date",
         }
     )
 
     if competitors.empty or daraz.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
-    gap = daraz.merge(competitors, on=key_cols, how="inner", suffixes=("", "_competitor"))
+    gap = daraz.merge(competitors, on=join_cols, how="inner", suffixes=("", "_competitor"))
     if gap.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
+    gap["crawl_date"] = gap.get(
+        "daraz_crawl_date", gap.get("join_date", pd.Series(pd.NaT, index=gap.index))
+    )
+    gap["crawl_datetime"] = gap.get(
+        "daraz_crawl_datetime", pd.Series(pd.NaT, index=gap.index)
+    )
     gap["Gap Amount"] = gap["Daraz Price"] - gap["Competitor Price"]
     gap["Gap %"] = gap["Gap Amount"] / gap["Daraz Price"]
     gap["Alert"] = gap["Gap %"].apply(alert_level)
     gap["__alert_sort"] = gap["Alert"].map({"Red": 0, "Orange": 1, "Green": 2}).fillna(3)
 
-    if "crawl_date" in gap.columns:
-        latest_sort_cols = available_columns(["crawl_date", "crawl_datetime"], gap)
+    latest_sort_cols = available_columns(["crawl_date", "crawl_datetime"], gap)
+    if latest_sort_cols:
         gap = gap.sort_values(
             latest_sort_cols,
             ascending=[False] * len(latest_sort_cols),
             na_position="last",
         )
-        gap = gap.groupby(SKU_COLUMNS + ["Competitor Platform"], dropna=False).head(1)
+        gap = gap.groupby(join_cols + ["Competitor Platform"], dropna=False).head(1)
 
     gap = gap.sort_values(["__alert_sort", "Gap %"], ascending=[True, False], na_position="last")
     gap = gap.rename(
