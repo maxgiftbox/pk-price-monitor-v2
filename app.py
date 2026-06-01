@@ -277,9 +277,13 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
 
     if not sku_master_df.empty:
         sku_master_df = add_standard_mapping_fields(sku_master_df)
+        url_unique_sku_master_df = filter_unique_sku_master_matches(
+            sku_master_df,
+            SKU_MASTER_PRIMARY_JOIN_COLUMNS,
+        )
         enriched = apply_sku_master_match(
             enriched,
-            sku_master_df,
+            url_unique_sku_master_df,
             SKU_MASTER_PRIMARY_JOIN_COLUMNS,
         )
         rows_missing_primary_match = missing_standard_mask(enriched)
@@ -310,6 +314,28 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
     enriched["model"] = enriched["dashboard_model"]
     enriched["memory"] = enriched["dashboard_memory"]
     return enriched
+
+
+def filter_unique_sku_master_matches(
+    sku_master_df: pd.DataFrame,
+    join_keys: list[str],
+) -> pd.DataFrame:
+    if not join_keys or not set(join_keys).issubset(sku_master_df.columns):
+        return sku_master_df.iloc[0:0].copy()
+
+    working = sku_master_df.copy()
+    normalized_key_cols = add_normalized_join_keys(working, join_keys)
+    valid_key_mask = working[normalized_key_cols].ne("").all(axis=1)
+    if not valid_key_mask.any():
+        return working.iloc[0:0].drop(columns=normalized_key_cols, errors="ignore")
+
+    valid_working = working.loc[valid_key_mask].copy()
+    key_row_counts = valid_working.groupby(
+        normalized_key_cols,
+        dropna=False,
+    )[normalized_key_cols[0]].transform("size")
+    unique_matches = valid_working.loc[key_row_counts.eq(1)].copy()
+    return unique_matches.drop(columns=normalized_key_cols, errors="ignore")
 
 
 def apply_sku_master_match(
