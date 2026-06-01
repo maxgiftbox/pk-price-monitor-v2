@@ -632,17 +632,6 @@ def inject_styles() -> None:
             backdrop-filter: blur(18px) saturate(1.16);
             -webkit-backdrop-filter: blur(18px) saturate(1.16);
         }
-        div[data-testid="stMetric"]::before {
-            content: "Live";
-            float: right;
-            border-radius: 999px;
-            padding: 0.2rem 0.5rem;
-            background: #eef4ff;
-            color: #5b8def;
-            font-size: 0.64rem;
-            font-weight: 800;
-            letter-spacing: 0.05em;
-        }
         div[data-testid="stMetricLabel"] p {
             color: var(--pm-muted);
             font-size: 0.76rem;
@@ -836,14 +825,6 @@ def render_sidebar_chrome() -> None:
 def render_dashboard_header() -> None:
     st.markdown(
         f"""
-        <div class="pm-topbar">
-            <div class="pm-search-pill">⌕ <span>Search country, brand, SKU...</span></div>
-            <div class="pm-top-icons">
-                <div class="pm-icon-button">◔</div>
-                <div class="pm-icon-button">⚙</div>
-                <div class="pm-icon-button">●</div>
-            </div>
-        </div>
         <div class="pm-hero">
             <div class="pm-hero-copy">
                 <div class="pm-title">Overview</div>
@@ -1092,55 +1073,54 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         return gap_df[available_columns(GAP_COLUMNS + INTERNAL_TABLE_COLUMNS, gap_df)]
 
 
-def render_kpis(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
-    sku_cols = available_columns(SKU_COLUMNS, latest_df)
-    active_latest = latest_df.copy()
-    if "stock_status" in active_latest.columns:
-        active_latest = active_latest[~active_latest["stock_status"].str.casefold().isin(OUT_OF_STOCK_STATUSES)]
+def render_kpis(gap_df: pd.DataFrame) -> None:
+    sku_cols = available_columns(["Country", "Brand", "SKU", "Memory"], gap_df)
+    daraz_prices = numeric_gap_price(gap_df, "Daraz Price")
+    competitor_prices = numeric_gap_price(gap_df, "Competitor Price")
 
-    latest_crawl = "—"
-    if "crawl_datetime" in latest_df.columns and not latest_df["crawl_datetime"].dropna().empty:
-        latest_crawl = latest_df["crawl_datetime"].max().strftime("%Y-%m-%d %H:%M")
-    elif "crawl_date" in latest_df.columns and not latest_df["crawl_date"].dropna().empty:
-        latest_value = latest_df["crawl_date"].max()
-        latest_crawl = latest_value.isoformat() if isinstance(latest_value, date) else str(latest_value)
-    elif "crawl_time" in latest_df.columns and not latest_df["crawl_time"].dropna().empty:
-        latest_crawl = str(latest_df["crawl_time"].max())
+    total_skus = count_distinct_gap_skus(gap_df, sku_cols)
+    daraz_skus = count_distinct_gap_skus(gap_df, sku_cols, daraz_prices.notna())
+    lc_skus = count_distinct_gap_skus(gap_df, sku_cols, competitor_prices.notna())
+    daraz_win_skus = count_distinct_gap_skus(
+        gap_df,
+        sku_cols,
+        daraz_prices.notna() & competitor_prices.notna() & (daraz_prices < competitor_prices),
+    )
+    daraz_loss_skus = count_distinct_gap_skus(
+        gap_df,
+        sku_cols,
+        daraz_prices.notna() & competitor_prices.notna() & (daraz_prices > competitor_prices),
+    )
 
-    total_active_skus = active_latest.drop_duplicates(sku_cols).shape[0] if sku_cols else len(active_latest)
-    if "Daraz Effective Price" in latest_df.columns:
-        daraz_skus = latest_df.dropna(subset=["Daraz Effective Price"]).drop_duplicates(sku_cols).shape[0]
-    else:
-        daraz_skus = count_platform_skus(latest_df, [DARAZ_PLATFORM])
-    if "Competitor Platform" in latest_df.columns:
-        competitor_rows = latest_df[latest_df["Competitor Platform"].fillna("").astype(str).str.strip().ne("")]
-        competitor_skus = competitor_rows.drop_duplicates(sku_cols).shape[0] if sku_cols else len(competitor_rows)
-    else:
-        competitor_skus = count_platform_skus(latest_df, COMPETITOR_PLATFORMS)
-    red_alerts = int((gap_df.get("Alert", pd.Series(dtype=str)) == "Red").sum())
-    average_gap = gap_df["Gap %"].mean() * 100 if "Gap %" in gap_df.columns and not gap_df.empty else 0
-
-    cols = st.columns(6)
+    cols = st.columns(5)
     st.markdown("<div class='pm-section-label'>Overview</div>", unsafe_allow_html=True)
 
     metrics = [
-        ("Latest crawl time", latest_crawl),
-        ("Total active SKUs", f"{total_active_skus:,}"),
-        ("Daraz SKUs", f"{daraz_skus:,}"),
-        ("Competitor SKUs", f"{competitor_skus:,}"),
-        ("Red alerts", f"{red_alerts:,}"),
-        ("Avg gap", f"{average_gap:.2f}%"),
+        ("Total SKU", f"{total_skus:,}"),
+        ("Total Drz SKU", f"{daraz_skus:,}"),
+        ("Total LC SKU", f"{lc_skus:,}"),
+        ("SKU Count - Drz Win Price", f"{daraz_win_skus:,}"),
+        ("SKU Count - Drz Loss Price", f"{daraz_loss_skus:,}"),
     ]
     for col, (label, value) in zip(cols, metrics, strict=False):
         col.metric(label, value)
 
 
-def count_platform_skus(df: pd.DataFrame, platforms: list[str]) -> int:
-    if df.empty or "platform" not in df.columns:
+def numeric_gap_price(gap_df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in gap_df.columns:
+        return pd.Series(pd.NA, index=gap_df.index, dtype="Float64")
+    return pd.to_numeric(gap_df[column], errors="coerce")
+
+
+def count_distinct_gap_skus(
+    gap_df: pd.DataFrame, sku_cols: list[str], mask: pd.Series | None = None
+) -> int:
+    if gap_df.empty:
         return 0
-    sku_cols = available_columns(SKU_COLUMNS, df)
-    platform_values = [platform.casefold() for platform in platforms]
-    selected = df[df["platform"].str.casefold().isin(platform_values)]
+
+    selected = gap_df.loc[mask] if mask is not None else gap_df
+    if selected.empty:
+        return 0
     return selected.drop_duplicates(sku_cols).shape[0] if sku_cols else len(selected)
 
 
@@ -1403,7 +1383,7 @@ def main() -> None:
     formatted_gap_df = format_gap_table(gap_df)
 
     st.markdown("---")
-    render_kpis(latest_df, gap_df)
+    render_kpis(gap_df)
 
     render_data_section("Price Gap Analysis", formatted_gap_df, GAP_COLUMNS)
     render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
