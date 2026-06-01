@@ -17,7 +17,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 PRICE_COLUMNS = ["original_price", "product_price", "voucher_amount", "effective_price"]
-DEBUG_MODE = os.getenv("DEBUG_MODE", "").strip().casefold() in {"1", "true", "yes", "on"}
 SKU_COLUMNS = ["country", "brand", "model", "memory"]
 DASHBOARD_SKU_IDENTITY_COLUMNS = [
     "join_date",
@@ -1847,45 +1846,6 @@ def linked_platform_cell(value_text: str, url: object) -> str:
     return f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_value}</a>'
 
 
-def standard_mapping_debug_table(df: pd.DataFrame) -> pd.DataFrame:
-    debug_columns = [
-        "platform",
-        "country",
-        "brand",
-        "model",
-        "memory",
-        "standard_model",
-        "standard_memory",
-        "dashboard_model",
-        "dashboard_memory",
-        "effective_price",
-        "product_url",
-    ]
-    if df.empty:
-        return pd.DataFrame(columns=debug_columns)
-
-    debug_df = df.copy()
-    if "raw_model" in debug_df.columns:
-        debug_df["model"] = debug_df["raw_model"]
-    if "raw_memory" in debug_df.columns:
-        debug_df["memory"] = debug_df["raw_memory"]
-    for col in debug_columns:
-        if col not in debug_df.columns:
-            debug_df[col] = ""
-    debug_df["effective_price"] = debug_df["effective_price"].apply(format_price).fillna("")
-    return debug_df[debug_columns]
-
-
-def render_standard_mapping_debug(df: pd.DataFrame) -> None:
-    if not DEBUG_MODE:
-        return
-
-    st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
-    st.subheader("Mapping Debug")
-    st.dataframe(standard_mapping_debug_table(df), use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
 def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
     st.markdown("<div class='pm-card table-card'>", unsafe_allow_html=True)
     st.subheader("Download")
@@ -1928,7 +1888,6 @@ def main() -> None:
         st.stop()
 
     filtered = apply_filters(df)
-    render_standard_mapping_debug(filtered)
     gap_df = calculate_gap_table(filtered)
     latest_df = latest_price_table(gap_df)
     formatted_gap_df = format_gap_table(gap_df)
