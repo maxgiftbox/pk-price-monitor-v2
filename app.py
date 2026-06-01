@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import re
 from datetime import date
 import gspread
 import pandas as pd
@@ -199,7 +200,9 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
         )
 
     enriched["dashboard_model"] = coalesce_text(enriched["standard_model"], enriched["raw_model"])
-    enriched["dashboard_memory"] = coalesce_text(enriched["standard_memory"], enriched["raw_memory"])
+    enriched["dashboard_memory"] = normalize_memory_series(
+        coalesce_text(enriched["standard_memory"], enriched["raw_memory"])
+    )
     enriched["model"] = enriched["dashboard_model"]
     enriched["memory"] = enriched["dashboard_memory"]
     return enriched
@@ -247,9 +250,43 @@ def add_normalized_join_keys(df: pd.DataFrame, join_keys: list[str]) -> list[str
     normalized_key_cols = []
     for key in join_keys:
         normalized_col = f"__join_{key}"
-        df[normalized_col] = df[key].fillna("").astype(str).str.strip().str.casefold()
+        source = df[key]
+        if key == "memory":
+            source = normalize_memory_series(source)
+        df[normalized_col] = source.fillna("").astype(str).str.strip().str.casefold()
         normalized_key_cols.append(normalized_col)
     return normalized_key_cols
+
+
+def normalize_memory(value: object) -> str:
+    if pd.isna(value):
+        return ""
+
+    memory = str(value).strip()
+    if not memory:
+        return ""
+    if memory.casefold() in {"n/a", "na", "none", "null"}:
+        return "N/A"
+
+    matches = re.findall(r"(\d+(?:\.\d+)?)\s*(tb|gb)?", memory, flags=re.IGNORECASE)
+    if not matches:
+        return memory
+
+    normalized_parts = []
+    for number_text, unit in matches:
+        number = float(number_text)
+        if unit.casefold() == "tb":
+            number *= 1024
+        if number.is_integer():
+            normalized_parts.append(str(int(number)))
+        else:
+            normalized_parts.append(str(number).rstrip("0").rstrip("."))
+
+    return "/".join(normalized_parts)
+
+
+def normalize_memory_series(series: pd.Series) -> pd.Series:
+    return series.apply(normalize_memory)
 
 
 def missing_standard_mask(df: pd.DataFrame) -> pd.Series:
@@ -298,7 +335,9 @@ def add_dashboard_join_fields(df: pd.DataFrame) -> pd.DataFrame:
         "standard_memory", working.get("memory", pd.Series("", index=working.index))
     )
     working["join_model"] = normalize_join_text(model_source)
-    working["join_memory"] = normalize_join_text(memory_source)
+    working["dashboard_memory"] = normalize_memory_series(memory_source)
+    working["memory"] = working["dashboard_memory"]
+    working["join_memory"] = normalize_join_text(working["dashboard_memory"])
     return working
 
 
