@@ -17,6 +17,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 PRICE_COLUMNS = ["original_price", "product_price", "voucher_amount", "effective_price"]
+DEBUG_MODE = os.getenv("DEBUG_MODE", "").strip().casefold() in {"1", "true", "yes", "on"}
 SKU_COLUMNS = ["country", "brand", "model", "memory"]
 DASHBOARD_SKU_IDENTITY_COLUMNS = [
     "join_date",
@@ -34,14 +35,14 @@ DASHBOARD_MATCH_IDENTITY_COLUMNS = [
     "join_memory",
 ]
 GAP_SKU_IDENTITY_COLUMNS = ["crawl_date", "Country", "Brand", "SKU", "Memory"]
-SKU_MASTER_PRIMARY_JOIN_COLUMNS = ["platform", "country", "normalized_url"]
-SKU_MASTER_FALLBACK_JOIN_COLUMNS = [
+SKU_MASTER_PRIMARY_JOIN_COLUMNS = [
     "norm_platform",
     "norm_country",
     "norm_brand",
     "norm_model",
     "norm_memory",
 ]
+SKU_MASTER_FALLBACK_JOIN_COLUMNS = ["norm_platform", "norm_country", "normalized_url"]
 SKU_MASTER_MODEL_FALLBACK_JOIN_COLUMNS = [
     "norm_platform",
     "norm_country",
@@ -277,33 +278,24 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
 
     if not sku_master_df.empty:
         sku_master_df = add_standard_mapping_fields(sku_master_df)
-        url_unique_sku_master_df = filter_unique_sku_master_matches(
+        enriched = apply_sku_master_match(
+            enriched,
             sku_master_df,
             SKU_MASTER_PRIMARY_JOIN_COLUMNS,
         )
-        enriched = apply_sku_master_match(
-            enriched,
-            url_unique_sku_master_df,
-            SKU_MASTER_PRIMARY_JOIN_COLUMNS,
-        )
+
         rows_missing_primary_match = missing_standard_mask(enriched)
         if rows_missing_primary_match.any():
-            fallback_matches = apply_sku_master_match(
-                enriched.loc[rows_missing_primary_match],
+            url_unique_sku_master_df = filter_unique_sku_master_matches(
                 sku_master_df,
                 SKU_MASTER_FALLBACK_JOIN_COLUMNS,
             )
-            enriched.loc[rows_missing_primary_match, SKU_MASTER_STANDARD_COLUMNS] = fallback_matches[
-                SKU_MASTER_STANDARD_COLUMNS
-            ].to_numpy()
-
-        rows_missing_exact_match = missing_standard_mask(enriched)
-        if rows_missing_exact_match.any():
-            model_fallback_matches = apply_unique_model_sku_master_match(
-                enriched.loc[rows_missing_exact_match],
-                sku_master_df,
+            fallback_matches = apply_sku_master_match(
+                enriched.loc[rows_missing_primary_match],
+                url_unique_sku_master_df,
+                SKU_MASTER_FALLBACK_JOIN_COLUMNS,
             )
-            enriched.loc[rows_missing_exact_match, SKU_MASTER_STANDARD_COLUMNS] = model_fallback_matches[
+            enriched.loc[rows_missing_primary_match, SKU_MASTER_STANDARD_COLUMNS] = fallback_matches[
                 SKU_MASTER_STANDARD_COLUMNS
             ].to_numpy()
 
@@ -1860,20 +1852,23 @@ def standard_mapping_debug_table(df: pd.DataFrame) -> pd.DataFrame:
         "platform",
         "country",
         "brand",
-        "raw_model",
-        "raw_memory",
+        "model",
+        "memory",
         "standard_model",
         "standard_memory",
         "dashboard_model",
         "dashboard_memory",
-        "product_url",
-        "normalized_url",
         "effective_price",
+        "product_url",
     ]
     if df.empty:
         return pd.DataFrame(columns=debug_columns)
 
     debug_df = df.copy()
+    if "raw_model" in debug_df.columns:
+        debug_df["model"] = debug_df["raw_model"]
+    if "raw_memory" in debug_df.columns:
+        debug_df["memory"] = debug_df["raw_memory"]
     for col in debug_columns:
         if col not in debug_df.columns:
             debug_df[col] = ""
@@ -1882,11 +1877,11 @@ def standard_mapping_debug_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def render_standard_mapping_debug(df: pd.DataFrame) -> None:
-    if not st.checkbox("Show Standard Mapping Debug"):
+    if not DEBUG_MODE:
         return
 
     st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
-    st.subheader("Standard Mapping Debug")
+    st.subheader("Mapping Debug")
     st.dataframe(standard_mapping_debug_table(df), use_container_width=True, hide_index=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
