@@ -756,8 +756,8 @@ def inject_styles() -> None:
         div[data-testid="stMetricLabel"],
         div[data-testid="stMetricLabel"] p,
         div[data-testid="stMetricLabel"] span {
-            color: #5B6475 !important;
-            -webkit-text-fill-color: #5B6475 !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
             font-size: 14px !important;
             font-weight: 700 !important;
             letter-spacing: 0.01em;
