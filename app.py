@@ -543,11 +543,51 @@ def inject_styles() -> None:
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
         section[data-testid="stSidebar"] [data-baseweb="input"] {
             min-height: 42px;
-            border: 0 !important;
+            border: 1px solid rgba(99, 102, 241, 0.20) !important;
             border-radius: 14px !important;
-            background-color: rgba(255, 255, 255, 0.82) !important;
+            background-color: rgba(255, 255, 255, 0.88) !important;
             box-shadow: 0 1px 0 rgba(255, 255, 255, 0.90), 0 8px 18px rgba(91, 119, 190, 0.08);
-            color: #1f2937 !important;
+            color: #111827 !important;
+        }
+        section[data-testid="stSidebar"] div[data-baseweb="select"] input,
+        section[data-testid="stSidebar"] [data-baseweb="input"] input,
+        section[data-testid="stSidebar"] .stDateInput input,
+        section[data-testid="stSidebar"] .stDateInput input::placeholder,
+        section[data-testid="stSidebar"] div[data-baseweb="input"] input {
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            caret-color: #6366F1 !important;
+        }
+        section[data-testid="stSidebar"] div[data-baseweb="tag"] {
+            background: linear-gradient(135deg, #6366F1, #8B5CF6) !important;
+            color: #ffffff !important;
+            border-radius: 999px !important;
+        }
+        section[data-testid="stSidebar"] div[data-baseweb="tag"] span,
+        section[data-testid="stSidebar"] div[data-baseweb="tag"] svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
+        div[data-baseweb="popover"] div[data-baseweb="menu"],
+        div[data-baseweb="popover"] ul,
+        div[data-baseweb="popover"] [role="listbox"] {
+            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%) !important;
+            color: #ffffff !important;
+            border-radius: 16px !important;
+            border: 1px solid rgba(255, 255, 255, 0.24) !important;
+            box-shadow: 0 20px 45px rgba(99, 102, 241, 0.28) !important;
+            overflow: hidden !important;
+        }
+        div[data-baseweb="popover"] [role="option"],
+        div[data-baseweb="popover"] li {
+            color: #ffffff !important;
+            background: transparent !important;
+        }
+        div[data-baseweb="popover"] [role="option"]:hover,
+        div[data-baseweb="popover"] li:hover,
+        div[data-baseweb="popover"] [aria-selected="true"] {
+            background: rgba(255, 255, 255, 0.18) !important;
+            color: #ffffff !important;
         }
 
         .pm-topbar {
@@ -633,10 +673,15 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(18px) saturate(1.16);
         }
         div[data-testid="stMetricLabel"] p {
-            color: var(--pm-muted);
-            font-size: 0.76rem;
-            font-weight: 720;
+            color: #5B6475 !important;
+            font-size: 0.84rem !important;
+            font-weight: 600 !important;
             letter-spacing: 0.01em;
+            opacity: 1 !important;
+        }
+        div[data-testid="stMetricLabel"] {
+            color: #5B6475 !important;
+            opacity: 1 !important;
         }
         div[data-testid="stMetricValue"] {
             color: #111827;
@@ -658,6 +703,33 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(18px) saturate(1.12);
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
+
+        .pm-sort-control-label {
+            color: #5B6475;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            margin: 0 0 0.18rem;
+        }
+        .pm-sort-control .stSelectbox,
+        .pm-pagination-control .stSelectbox {
+            margin-bottom: 0 !important;
+        }
+        .pm-pagination-summary {
+            color: #5B6475;
+            font-size: 0.86rem;
+            font-weight: 650;
+            padding-top: 0.56rem;
+            white-space: nowrap;
+        }
+        .pm-page-indicator {
+            color: #374151;
+            font-size: 0.88rem;
+            font-weight: 700;
+            padding-top: 0.56rem;
+            text-align: center;
+            white-space: nowrap;
+        }
         .pm-table-card,
         .table-card {
             border-radius: 24px;
@@ -1179,9 +1251,77 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
         column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
     ]
     display_df = df[display_columns] if display_columns else df
+    if title == "Price Gap Analysis":
+        display_df = render_gap_sort_controls(display_df)
     page_df = render_table_pagination_controls(title, display_df)
     st.markdown(render_dashboard_table(page_df, visible_columns), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    st.markdown("<div class='pm-sort-control'>", unsafe_allow_html=True)
+    sort_label_col, sort_field_col, sort_order_col, spacer_col = st.columns([1.15, 1.2, 1.25, 5.4])
+    sort_label_col.markdown(
+        "<div class='pm-sort-control-label'>Sort Price Gap Analysis</div>",
+        unsafe_allow_html=True,
+    )
+    sort_field = sort_field_col.selectbox(
+        "Sort field",
+        ["Gap %", "Alert"],
+        index=0,
+        key="price_gap_sort_field",
+        label_visibility="collapsed",
+    )
+    sort_order = sort_order_col.selectbox(
+        "Sort order",
+        ["Descending", "Ascending"],
+        index=0,
+        key="price_gap_sort_order",
+        label_visibility="collapsed",
+    )
+    spacer_col.empty()
+    st.markdown("</div>", unsafe_allow_html=True)
+    return sort_gap_display_df(df, sort_field, sort_order)
+
+
+def sort_gap_display_df(df: pd.DataFrame, sort_field: str, sort_order: str) -> pd.DataFrame:
+    if df.empty or sort_field not in df.columns:
+        return df
+
+    sorted_df = df.copy()
+    ascending = sort_order == "Ascending"
+    if sort_field == "Alert":
+        alert_rank = {"Green": 0, "Orange": 1, "Red": 2}
+        sorted_df["__alert_display_sort"] = (
+            sorted_df["Alert"].map(alert_rank).fillna(len(alert_rank)).astype(int)
+        )
+        sorted_df = sorted_df.sort_values(
+            ["__alert_display_sort"],
+            ascending=[ascending],
+            kind="mergesort",
+            na_position="last",
+        ).drop(columns=["__alert_display_sort"], errors="ignore")
+    else:
+        sort_values = parse_gap_percent_series(sorted_df["Gap %"])
+        sorted_df["__gap_pct_display_sort"] = sort_values
+        sorted_df = sorted_df.sort_values(
+            ["__gap_pct_display_sort"],
+            ascending=[ascending],
+            kind="mergesort",
+            na_position="last",
+        ).drop(columns=["__gap_pct_display_sort"], errors="ignore")
+
+    return sorted_df
+
+
+def parse_gap_percent_series(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(
+        series.fillna("").astype(str).str.replace("%", "", regex=False),
+        errors="coerce",
+    )
 
 
 def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFrame:
@@ -1194,49 +1334,60 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
     if page_key not in st.session_state:
         st.session_state[page_key] = 1
 
-    rows_per_page = st.selectbox(
+    st.markdown("<div class='pm-pagination-control'>", unsafe_allow_html=True)
+    rows_label_col, rows_select_col, previous_col, page_col, next_col, showing_col = st.columns(
+        [1.1, 0.8, 1.0, 1.15, 0.9, 2.25]
+    )
+    rows_label_col.markdown(
+        "<div class='pm-pagination-summary'>Rows per page</div>",
+        unsafe_allow_html=True,
+    )
+    rows_per_page = rows_select_col.selectbox(
         "Rows per page",
         ROWS_PER_PAGE_OPTIONS,
         index=ROWS_PER_PAGE_OPTIONS.index(st.session_state[rows_key]),
         key=rows_key,
+        label_visibility="collapsed",
     )
     total_rows = len(df)
     total_pages = max((total_rows + rows_per_page - 1) // rows_per_page, 1)
     st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
 
-    if total_rows > rows_per_page:
-        previous_col, page_col, next_col = st.columns([1, 2, 1])
-        previous_clicked = previous_col.button(
-            "Previous",
-            key=f"{section_key}_previous_page",
-            disabled=st.session_state[page_key] <= 1,
-            use_container_width=True,
-        )
-        next_clicked = next_col.button(
-            "Next",
-            key=f"{section_key}_next_page",
-            disabled=st.session_state[page_key] >= total_pages,
-            use_container_width=True,
-        )
-        if previous_clicked:
-            st.session_state[page_key] -= 1
-        if next_clicked:
-            st.session_state[page_key] += 1
-        st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
-        page_col.markdown(
-            f"<div style='text-align:center; padding-top:0.45rem;'>"
-            f"Page {st.session_state[page_key]} / {total_pages}</div>",
-            unsafe_allow_html=True,
-        )
+    previous_clicked = previous_col.button(
+        "Previous",
+        key=f"{section_key}_previous_page",
+        disabled=st.session_state[page_key] <= 1,
+        use_container_width=True,
+    )
+    next_clicked = next_col.button(
+        "Next",
+        key=f"{section_key}_next_page",
+        disabled=st.session_state[page_key] >= total_pages,
+        use_container_width=True,
+    )
+    if previous_clicked:
+        st.session_state[page_key] -= 1
+    if next_clicked:
+        st.session_state[page_key] += 1
+    st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
 
     current_page = min(max(int(st.session_state[page_key]), 1), total_pages)
     start_index = (current_page - 1) * rows_per_page
     end_index = min(start_index + rows_per_page, total_rows)
 
+    page_col.markdown(
+        f"<div class='pm-page-indicator'>Page {current_page} / {total_pages}</div>",
+        unsafe_allow_html=True,
+    )
     if total_rows:
-        st.caption(f"Showing {start_index + 1}–{end_index} of {total_rows} rows")
+        showing_text = f"Showing {start_index + 1}–{end_index} of {total_rows} rows"
     else:
-        st.caption("Showing 0–0 of 0 rows")
+        showing_text = "Showing 0–0 of 0 rows"
+    showing_col.markdown(
+        f"<div class='pm-pagination-summary'>{showing_text}</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
     return df.iloc[start_index:end_index]
 
 
