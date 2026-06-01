@@ -17,6 +17,22 @@ SCOPES = [
 ]
 PRICE_COLUMNS = ["original_price", "product_price", "voucher_amount", "effective_price"]
 SKU_COLUMNS = ["country", "brand", "model", "memory"]
+DASHBOARD_SKU_IDENTITY_COLUMNS = [
+    "join_date",
+    "__platform_key",
+    "join_country",
+    "join_brand",
+    "join_model",
+    "join_memory",
+]
+DASHBOARD_MATCH_IDENTITY_COLUMNS = [
+    "join_date",
+    "join_country",
+    "join_brand",
+    "join_model",
+    "join_memory",
+]
+GAP_SKU_IDENTITY_COLUMNS = ["crawl_date", "Country", "Brand", "SKU", "Memory"]
 SKU_MASTER_PRODUCT_URL_JOIN_COLUMNS = ["platform", "country", "product_url"]
 SKU_MASTER_FALLBACK_JOIN_COLUMNS = ["platform", "country", "brand", "model", "memory"]
 SKU_MASTER_JOIN_COLUMNS = list(
@@ -1105,7 +1121,8 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
     working["__platform_key"] = working["platform"].apply(normalized_platform)
-    join_cols = ["join_date", "join_country", "join_brand", "join_model", "join_memory"]
+    join_cols = available_columns(DASHBOARD_MATCH_IDENTITY_COLUMNS, working)
+    sku_cols = available_columns(DASHBOARD_SKU_IDENTITY_COLUMNS, working)
     display_key_cols = ["country", "brand", "model", "memory"]
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
     selected_cols = join_cols + display_key_cols + ["__platform_key", "effective_price"]
@@ -1113,7 +1130,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
 
     daraz = latest_platform_rows(
         working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
-        join_cols + ["__platform_key"],
+        sku_cols,
         selected_cols,
     ).rename(
         columns={
@@ -1126,7 +1143,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
 
     competitors = latest_platform_rows(
         working[working["__platform_key"].isin(competitor_keys)],
-        join_cols + ["__platform_key"],
+        sku_cols,
         selected_cols,
     ).rename(
         columns={
@@ -1163,7 +1180,10 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
             ascending=[False] * len(latest_sort_cols),
             na_position="last",
         )
-        gap = gap.groupby(join_cols + ["Competitor Platform"], dropna=False).head(1)
+        latest_gap_key_cols = available_columns(
+            DASHBOARD_MATCH_IDENTITY_COLUMNS + ["Competitor Platform"], gap
+        )
+        gap = gap.groupby(latest_gap_key_cols, dropna=False).head(1)
 
     gap = gap.sort_values(["__alert_sort", "Gap %"], ascending=[True, False], na_position="last")
     gap = gap.rename(
@@ -1226,7 +1246,7 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def render_kpis(gap_df: pd.DataFrame) -> None:
-    sku_cols = available_columns(["Country", "Brand", "SKU", "Memory"], gap_df)
+    sku_cols = available_columns(GAP_SKU_IDENTITY_COLUMNS, gap_df)
     daraz_prices = numeric_gap_price(gap_df, "Daraz Price")
     competitor_prices = numeric_gap_price(gap_df, "Competitor Price")
 
