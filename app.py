@@ -1254,8 +1254,35 @@ def render_kpis(gap_df: pd.DataFrame) -> None:
         ("Drz Wins", f"{daraz_win_skus:,}"),
         ("Drz Losses", f"{daraz_loss_skus:,}"),
     ]
+    label_style = (
+        "color:#0F172A !important; "
+        "opacity:1 !important; "
+        "font-size:13px !important; "
+        "font-weight:800 !important; "
+        "letter-spacing:0.8px !important; "
+        "text-transform:uppercase !important; "
+        "margin-bottom:18px !important; "
+        "display:block !important;"
+    )
+    value_style = (
+        "color:#111827; "
+        "font-size:2.25rem; "
+        "font-weight:800; "
+        "letter-spacing:-0.055em; "
+        "line-height:1;"
+    )
+    card_style = "margin:0 !important;"
+
     for col, (label, value) in zip(cols, metrics, strict=False):
-        col.metric(label, value)
+        col.markdown(
+            f"""
+            <div class="metric-card" style="{card_style}">
+                <div class="kpi-label" style="{label_style}">{html.escape(label)}</div>
+                <div class="kpi-value" style="{value_style}">{html.escape(value)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def numeric_gap_price(gap_df: pd.DataFrame, column: str) -> pd.Series:
