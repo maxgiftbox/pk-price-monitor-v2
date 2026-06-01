@@ -34,7 +34,8 @@ DASHBOARD_MATCH_IDENTITY_COLUMNS = [
     "join_memory",
 ]
 GAP_SKU_IDENTITY_COLUMNS = ["crawl_date", "Country", "Brand", "SKU", "Memory"]
-SKU_MASTER_JOIN_COLUMNS = ["platform", "country", "brand", "model", "memory"]
+SKU_MASTER_PRIMARY_JOIN_COLUMNS = ["platform", "country", "product_url"]
+SKU_MASTER_FALLBACK_JOIN_COLUMNS = ["platform", "country", "brand", "model", "memory"]
 SKU_MASTER_STANDARD_COLUMNS = ["standard_model", "standard_memory"]
 COMPETITOR_PLATFORMS = ["PriceOye", "Pickaboo"]
 DARAZ_PLATFORM = "Daraz"
@@ -178,7 +179,10 @@ def load_sku_master_df(sheet: object) -> pd.DataFrame:
         return sku_master_df
 
     sku_master_df.columns = [str(col).strip() for col in sku_master_df.columns]
-    for col in set(SKU_MASTER_JOIN_COLUMNS + SKU_MASTER_STANDARD_COLUMNS):
+    sku_master_text_columns = set(
+        SKU_MASTER_PRIMARY_JOIN_COLUMNS + SKU_MASTER_FALLBACK_JOIN_COLUMNS + SKU_MASTER_STANDARD_COLUMNS
+    )
+    for col in sku_master_text_columns:
         if col in sku_master_df.columns:
             sku_master_df[col] = sku_master_df[col].fillna("").astype(str).str.strip()
 
@@ -187,8 +191,16 @@ def load_sku_master_df(sheet: object) -> pd.DataFrame:
 
 def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.DataFrame:
     enriched = df.copy()
-    enriched["raw_model"] = enriched["model"] if "model" in enriched.columns else ""
-    enriched["raw_memory"] = enriched["memory"] if "memory" in enriched.columns else ""
+    enriched["raw_model"] = (
+        enriched["model"].fillna("").astype(str).str.strip()
+        if "model" in enriched.columns
+        else pd.Series("", index=enriched.index)
+    )
+    enriched["raw_memory"] = (
+        enriched["memory"].fillna("").astype(str).str.strip()
+        if "memory" in enriched.columns
+        else pd.Series("", index=enriched.index)
+    )
     enriched["standard_model"] = ""
     enriched["standard_memory"] = ""
 
@@ -196,8 +208,18 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
         enriched = apply_sku_master_match(
             enriched,
             sku_master_df,
-            SKU_MASTER_JOIN_COLUMNS,
+            SKU_MASTER_PRIMARY_JOIN_COLUMNS,
         )
+        rows_missing_primary_match = missing_standard_mask(enriched)
+        if rows_missing_primary_match.any():
+            fallback_matches = apply_sku_master_match(
+                enriched.loc[rows_missing_primary_match],
+                sku_master_df,
+                SKU_MASTER_FALLBACK_JOIN_COLUMNS,
+            )
+            enriched.loc[rows_missing_primary_match, SKU_MASTER_STANDARD_COLUMNS] = fallback_matches[
+                SKU_MASTER_STANDARD_COLUMNS
+            ].to_numpy()
 
     enriched["dashboard_model"] = coalesce_text(enriched["standard_model"], enriched["raw_model"])
     enriched["dashboard_memory"] = normalize_memory_series(
@@ -324,19 +346,19 @@ def add_dashboard_join_fields(df: pd.DataFrame) -> pd.DataFrame:
             normalize_join_text(working[source_col]) if source_col in working.columns else ""
         )
 
-    model_source = coalesce_text(
-        working["standard_model"], working["model"]
-    ) if "standard_model" in working.columns and "model" in working.columns else working.get(
-        "standard_model", working.get("model", pd.Series("", index=working.index))
+    model_source = working.get(
+        "dashboard_model",
+        working.get("model", pd.Series("", index=working.index)),
     )
-    memory_source = coalesce_text(
-        working["standard_memory"], working["memory"]
-    ) if "standard_memory" in working.columns and "memory" in working.columns else working.get(
-        "standard_memory", working.get("memory", pd.Series("", index=working.index))
+    memory_source = working.get(
+        "dashboard_memory",
+        working.get("memory", pd.Series("", index=working.index)),
     )
-    working["join_model"] = normalize_join_text(model_source)
+    working["dashboard_model"] = model_source.fillna("").astype(str).str.strip()
     working["dashboard_memory"] = normalize_memory_series(memory_source)
+    working["model"] = working["dashboard_model"]
     working["memory"] = working["dashboard_memory"]
+    working["join_model"] = normalize_join_text(working["dashboard_model"])
     working["join_memory"] = normalize_join_text(working["dashboard_memory"])
     return working
 
@@ -1646,6 +1668,41 @@ def linked_platform_cell(value_text: str, url: object) -> str:
     return f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_value}</a>'
 
 
+def standard_mapping_debug_table(df: pd.DataFrame) -> pd.DataFrame:
+    debug_columns = [
+        "platform",
+        "country",
+        "brand",
+        "raw_model",
+        "raw_memory",
+        "standard_model",
+        "standard_memory",
+        "dashboard_model",
+        "dashboard_memory",
+        "effective_price",
+        "product_url",
+    ]
+    if df.empty:
+        return pd.DataFrame(columns=debug_columns)
+
+    debug_df = df.copy()
+    for col in debug_columns:
+        if col not in debug_df.columns:
+            debug_df[col] = ""
+    debug_df["effective_price"] = debug_df["effective_price"].apply(format_price).fillna("")
+    return debug_df[debug_columns]
+
+
+def render_standard_mapping_debug(df: pd.DataFrame) -> None:
+    if not st.checkbox("Show Standard Mapping Debug"):
+        return
+
+    st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
+    st.subheader("Standard Mapping Debug")
+    st.dataframe(standard_mapping_debug_table(df), use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
     st.markdown("<div class='pm-card table-card'>", unsafe_allow_html=True)
     st.subheader("Download")
@@ -1688,6 +1745,7 @@ def main() -> None:
         st.stop()
 
     filtered = apply_filters(df)
+    render_standard_mapping_debug(filtered)
     gap_df = calculate_gap_table(filtered)
     latest_df = latest_price_table(gap_df)
     formatted_gap_df = format_gap_table(gap_df)
