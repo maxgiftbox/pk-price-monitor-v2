@@ -34,8 +34,20 @@ DASHBOARD_MATCH_IDENTITY_COLUMNS = [
     "join_memory",
 ]
 GAP_SKU_IDENTITY_COLUMNS = ["crawl_date", "Country", "Brand", "SKU", "Memory"]
-SKU_MASTER_PRIMARY_JOIN_COLUMNS = ["platform", "country", "product_url"]
-SKU_MASTER_FALLBACK_JOIN_COLUMNS = ["platform", "country", "brand", "model", "memory"]
+SKU_MASTER_PRIMARY_JOIN_COLUMNS = ["platform", "country", "normalized_url"]
+SKU_MASTER_FALLBACK_JOIN_COLUMNS = [
+    "norm_platform",
+    "norm_country",
+    "norm_brand",
+    "norm_model",
+    "norm_memory",
+]
+SKU_MASTER_MODEL_FALLBACK_JOIN_COLUMNS = [
+    "norm_platform",
+    "norm_country",
+    "norm_brand",
+    "norm_model",
+]
 SKU_MASTER_STANDARD_COLUMNS = ["standard_model", "standard_memory"]
 COMPETITOR_PLATFORMS = ["PriceOye", "Pickaboo"]
 DARAZ_PLATFORM = "Daraz"
@@ -136,6 +148,57 @@ def load_price_data() -> pd.DataFrame:
     return enrich_with_sku_master(df, sku_master_df)
 
 
+
+def normalize_url(url: object) -> str:
+    """Normalize product URLs for sku_master enrichment joins only."""
+    if pd.isna(url):
+        return ""
+
+    normalized = str(url).strip().casefold()
+    if not normalized:
+        return ""
+
+    normalized = normalized.split("?", 1)[0].split("#", 1)[0].strip()
+    normalized = re.sub(r"^https?://", "", normalized)
+    normalized = re.sub(r"^www\.", "", normalized)
+    normalized = normalized.rstrip("/")
+    return normalized
+
+
+def normalize_url_series(series: pd.Series) -> pd.Series:
+    return series.apply(normalize_url)
+
+
+def normalize_mapping_text(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip()).casefold()
+
+
+def normalize_mapping_text_series(series: pd.Series) -> pd.Series:
+    return series.apply(normalize_mapping_text)
+
+
+def add_standard_mapping_fields(df: pd.DataFrame) -> pd.DataFrame:
+    working = df.copy()
+    if "product_url" in working.columns:
+        working["normalized_url"] = normalize_url_series(working["product_url"])
+    elif "normalized_url" not in working.columns:
+        working["normalized_url"] = ""
+
+    for source_col, normalized_col in [
+        ("platform", "norm_platform"),
+        ("country", "norm_country"),
+        ("brand", "norm_brand"),
+        ("model", "norm_model"),
+    ]:
+        source = working[source_col] if source_col in working.columns else pd.Series("", index=working.index)
+        working[normalized_col] = normalize_mapping_text_series(source)
+
+    memory_source = working["memory"] if "memory" in working.columns else pd.Series("", index=working.index)
+    working["norm_memory"] = normalize_mapping_text_series(normalize_memory_series(memory_source))
+    return working
+
 def prepare_price_daily_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [str(col).strip() for col in df.columns]
@@ -147,6 +210,8 @@ def prepare_price_daily_df(df: pd.DataFrame) -> pd.DataFrame:
     for col in ["platform", "country", "brand", "model", "memory", "product_url", "stock_status"]:
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.strip()
+
+    df = add_standard_mapping_fields(df)
 
     if "crawl_date" in df.columns:
         df["crawl_date"] = pd.to_datetime(df["crawl_date"], errors="coerce").dt.date
@@ -180,17 +245,23 @@ def load_sku_master_df(sheet: object) -> pd.DataFrame:
 
     sku_master_df.columns = [str(col).strip() for col in sku_master_df.columns]
     sku_master_text_columns = set(
-        SKU_MASTER_PRIMARY_JOIN_COLUMNS + SKU_MASTER_FALLBACK_JOIN_COLUMNS + SKU_MASTER_STANDARD_COLUMNS
+        ["platform", "country", "brand", "model", "memory", "product_url"]
+        + SKU_MASTER_PRIMARY_JOIN_COLUMNS
+        + SKU_MASTER_FALLBACK_JOIN_COLUMNS
+        + SKU_MASTER_MODEL_FALLBACK_JOIN_COLUMNS
+        + SKU_MASTER_STANDARD_COLUMNS
     )
     for col in sku_master_text_columns:
         if col in sku_master_df.columns:
             sku_master_df[col] = sku_master_df[col].fillna("").astype(str).str.strip()
 
+    sku_master_df = add_standard_mapping_fields(sku_master_df)
+
     return sku_master_df
 
 
 def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.DataFrame:
-    enriched = df.copy()
+    enriched = add_standard_mapping_fields(df)
     enriched["raw_model"] = (
         enriched["model"].fillna("").astype(str).str.strip()
         if "model" in enriched.columns
@@ -205,6 +276,7 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
     enriched["standard_memory"] = ""
 
     if not sku_master_df.empty:
+        sku_master_df = add_standard_mapping_fields(sku_master_df)
         enriched = apply_sku_master_match(
             enriched,
             sku_master_df,
@@ -218,6 +290,16 @@ def enrich_with_sku_master(df: pd.DataFrame, sku_master_df: pd.DataFrame) -> pd.
                 SKU_MASTER_FALLBACK_JOIN_COLUMNS,
             )
             enriched.loc[rows_missing_primary_match, SKU_MASTER_STANDARD_COLUMNS] = fallback_matches[
+                SKU_MASTER_STANDARD_COLUMNS
+            ].to_numpy()
+
+        rows_missing_exact_match = missing_standard_mask(enriched)
+        if rows_missing_exact_match.any():
+            model_fallback_matches = apply_unique_model_sku_master_match(
+                enriched.loc[rows_missing_exact_match],
+                sku_master_df,
+            )
+            enriched.loc[rows_missing_exact_match, SKU_MASTER_STANDARD_COLUMNS] = model_fallback_matches[
                 SKU_MASTER_STANDARD_COLUMNS
             ].to_numpy()
 
@@ -267,6 +349,85 @@ def apply_sku_master_match(
 
     return merged.drop(columns=left_key_cols + right_key_cols, errors="ignore")
 
+
+
+def apply_unique_model_sku_master_match(
+    df: pd.DataFrame,
+    sku_master_df: pd.DataFrame,
+) -> pd.DataFrame:
+    join_keys = SKU_MASTER_MODEL_FALLBACK_JOIN_COLUMNS
+    required_sku_master_cols = set(join_keys + ["norm_memory"] + SKU_MASTER_STANDARD_COLUMNS)
+    if not required_sku_master_cols.issubset(sku_master_df.columns):
+        return df
+    if not set(join_keys + ["norm_memory"]).issubset(df.columns):
+        return df
+
+    left = df.copy()
+    right = sku_master_df[list(required_sku_master_cols)].copy()
+    right = right[right[join_keys].ne("").all(axis=1)]
+    right = right[right["standard_model"].fillna("").astype(str).str.strip().ne("")]
+    if right.empty:
+        return left
+
+    unique_models = []
+    for keys, group in right.groupby(join_keys, dropna=False):
+        standard_models = unique_nonblank(group["standard_model"])
+        if len(standard_models) != 1:
+            continue
+
+        standard_memories = unique_nonblank(group["standard_memory"])
+        row = dict(zip(join_keys, keys if isinstance(keys, tuple) else (keys,)))
+        row["standard_model_model_fallback"] = standard_models[0]
+        row["standard_memory_unique_model_fallback"] = (
+            standard_memories[0] if len(standard_memories) == 1 else ""
+        )
+        unique_models.append(row)
+
+    if not unique_models:
+        return left
+
+    unique_model_df = pd.DataFrame(unique_models)
+    matched = left.merge(unique_model_df, on=join_keys, how="left")
+    matched["standard_model"] = coalesce_text(
+        matched["standard_model_model_fallback"], matched["standard_model"]
+    )
+
+    memory_match_cols = join_keys + ["norm_memory"]
+    memory_matches = right[right["norm_memory"].fillna("").astype(str).str.strip().ne("")].copy()
+    memory_matches = memory_matches[memory_matches["standard_memory"].fillna("").astype(str).str.strip().ne("")]
+    exact_memory_matches = []
+    for keys, group in memory_matches.groupby(memory_match_cols, dropna=False):
+        standard_memories = unique_nonblank(group["standard_memory"])
+        if len(standard_memories) != 1:
+            continue
+        row = dict(zip(memory_match_cols, keys if isinstance(keys, tuple) else (keys,)))
+        row["standard_memory_memory_fallback"] = standard_memories[0]
+        exact_memory_matches.append(row)
+
+    if exact_memory_matches:
+        matched = matched.merge(pd.DataFrame(exact_memory_matches), on=memory_match_cols, how="left")
+    else:
+        matched["standard_memory_memory_fallback"] = ""
+
+    matched["standard_memory"] = coalesce_text(
+        matched["standard_memory_memory_fallback"], matched["standard_memory"]
+    )
+    matched["standard_memory"] = coalesce_text(
+        matched["standard_memory_unique_model_fallback"], matched["standard_memory"]
+    )
+    return matched.drop(
+        columns=[
+            "standard_model_model_fallback",
+            "standard_memory_memory_fallback",
+            "standard_memory_unique_model_fallback",
+        ],
+        errors="ignore",
+    )
+
+
+def unique_nonblank(series: pd.Series) -> list[str]:
+    values = series.fillna("").astype(str).str.strip()
+    return sorted(values[values.ne("")].unique().tolist())
 
 def add_normalized_join_keys(df: pd.DataFrame, join_keys: list[str]) -> list[str]:
     normalized_key_cols = []
@@ -1679,8 +1840,9 @@ def standard_mapping_debug_table(df: pd.DataFrame) -> pd.DataFrame:
         "standard_memory",
         "dashboard_model",
         "dashboard_memory",
-        "effective_price",
         "product_url",
+        "normalized_url",
+        "effective_price",
     ]
     if df.empty:
         return pd.DataFrame(columns=debug_columns)
