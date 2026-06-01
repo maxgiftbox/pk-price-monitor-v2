@@ -35,7 +35,6 @@ TABLE_COLUMNS = [
     "Daraz Effective Price",
     "Competitor Platform",
     "Competitor Effective Price",
-    "product_url",
 ]
 GAP_COLUMNS = [
     "crawl_time",
@@ -64,6 +63,13 @@ RAW_GAP_COLUMNS = [
     "Alert",
 ]
 INTERNAL_GAP_URL_COLUMNS = ["daraz_product_url", "competitor_product_url"]
+INTERNAL_TABLE_COLUMNS = ["product_url"]
+TABLE_HEADER_LABELS = {
+    "Daraz Effective Price": "Drz Price",
+    "Competitor Platform": "LC",
+    "Competitor Effective Price": "LCP SP",
+}
+LINKABLE_PLATFORM_COLUMNS = {"Competitor Platform", "LC"}
 PLATFORM_DISPLAY_NAMES = {
     "daraz": "daraz",
     "priceoye": "priceoye",
@@ -893,7 +899,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 def latest_price_table(gap_df: pd.DataFrame) -> pd.DataFrame:
     if gap_df.empty:
-        return pd.DataFrame(columns=TABLE_COLUMNS)
+        return pd.DataFrame(columns=TABLE_COLUMNS + INTERNAL_TABLE_COLUMNS)
 
     required = {
         "crawl_date",
@@ -906,7 +912,7 @@ def latest_price_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         "Competitor Price",
     }
     if not required.issubset(gap_df.columns):
-        return pd.DataFrame(columns=TABLE_COLUMNS)
+        return pd.DataFrame(columns=TABLE_COLUMNS + INTERNAL_TABLE_COLUMNS)
 
     display = pd.DataFrame(index=gap_df.index)
     display["crawl_time"] = gap_df["crawl_date"].apply(format_date)
@@ -929,7 +935,8 @@ def latest_price_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         display = display.sort_values(
             sort_display_cols, ascending=[False] + [True] * (len(sort_display_cols) - 1)
         )
-    return display[TABLE_COLUMNS]
+    return display[available_columns(TABLE_COLUMNS + INTERNAL_TABLE_COLUMNS, display)]
+
 
 def latest_platform_rows(
     df: pd.DataFrame,
@@ -1076,9 +1083,13 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         )
         formatted["Gap %"] = gap_df["Gap %"].apply(format_gap_pct) if "Gap %" in gap_df.columns else ""
         formatted["Alert"] = gap_df["Alert"] if "Alert" in gap_df.columns else ""
-        return formatted[available_columns(GAP_COLUMNS, formatted)]
+        formatted["product_url"] = coalesce_text(
+            gap_df.get("competitor_product_url", pd.Series("", index=gap_df.index)),
+            gap_df.get("daraz_product_url", pd.Series("", index=gap_df.index)),
+        )
+        return formatted[available_columns(GAP_COLUMNS + INTERNAL_TABLE_COLUMNS, formatted)]
     except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
-        return gap_df[available_columns(GAP_COLUMNS, gap_df)]
+        return gap_df[available_columns(GAP_COLUMNS + INTERNAL_TABLE_COLUMNS, gap_df)]
 
 
 def render_kpis(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
@@ -1183,9 +1194,13 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
     st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
     st.subheader(title)
-    display_df = df[available_columns(columns, df)] if columns else df
+    visible_columns = available_columns(columns, df) if columns else visible_table_columns(df)
+    display_columns = visible_columns + [
+        column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
+    ]
+    display_df = df[display_columns] if display_columns else df
     page_df = render_table_pagination_controls(title, display_df)
-    st.markdown(render_dashboard_table(page_df), unsafe_allow_html=True)
+    st.markdown(render_dashboard_table(page_df, visible_columns), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1251,14 +1266,22 @@ def section_state_key(title: str) -> str:
     return f"table_{normalized or 'section'}"
 
 
-def render_dashboard_table(df: pd.DataFrame) -> str:
+def visible_table_columns(df: pd.DataFrame) -> list[str]:
+    return [column for column in df.columns if column not in INTERNAL_TABLE_COLUMNS]
+
+
+def render_dashboard_table(
+    df: pd.DataFrame, visible_columns: list[str] | None = None
+) -> str:
+    visible_columns = visible_columns or visible_table_columns(df)
     header_cells = "".join(
-        f"<th scope='col'>{html.escape(str(column))}</th>" for column in df.columns
+        f"<th scope='col'>{html.escape(display_header_label(column))}</th>"
+        for column in visible_columns
     )
 
     if df.empty:
         empty_message = html.escape("No rows to display")
-        colspan = max(len(df.columns), 1)
+        colspan = max(len(visible_columns), 1)
         return (
             "<div class='pm-table-scroll'>"
             "<table class='pm-dashboard-table'>"
@@ -1271,8 +1294,9 @@ def render_dashboard_table(df: pd.DataFrame) -> str:
     body_rows = []
     for _, row in df.iterrows():
         cells = []
-        for column, value in row.items():
-            cell_html = format_table_cell(column, value)
+        for column in visible_columns:
+            value = row.get(column, "")
+            cell_html = format_table_cell(column, value, row)
             cells.append(f"<td>{cell_html}</td>")
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
@@ -1286,7 +1310,15 @@ def render_dashboard_table(df: pd.DataFrame) -> str:
     )
 
 
-def format_table_cell(column: str, value: object) -> str:
+def display_header_label(column: str) -> str:
+    if column in TABLE_HEADER_LABELS:
+        return TABLE_HEADER_LABELS[column]
+
+    words = str(column).replace("_", " ").split()
+    return " ".join(word[:1].upper() + word[1:] for word in words)
+
+
+def format_table_cell(column: str, value: object, row: pd.Series | None = None) -> str:
     if pd.isna(value):
         return ""
 
@@ -1301,7 +1333,27 @@ def format_table_cell(column: str, value: object) -> str:
             escaped_value = html.escape(value_text)
             return f"<span class='pm-alert-badge {badge_class}'>{escaped_value}</span>"
 
+    if column in LINKABLE_PLATFORM_COLUMNS and row is not None:
+        linked_value = linked_platform_cell(value_text, row.get("product_url", ""))
+        if linked_value:
+            return linked_value
+
     return html.escape(value_text)
+
+
+def linked_platform_cell(value_text: str, url: object) -> str:
+    if not value_text:
+        return ""
+    if pd.isna(url):
+        return ""
+
+    url_text = str(url).strip()
+    if not url_text or not url_text.casefold().startswith(("http://", "https://")):
+        return ""
+
+    escaped_value = html.escape(value_text)
+    escaped_url = html.escape(url_text, quote=True)
+    return f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_value}</a>'
 
 
 def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
@@ -1353,8 +1405,8 @@ def main() -> None:
     st.markdown("---")
     render_kpis(latest_df, gap_df)
 
-    render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
     render_data_section("Price Gap Analysis", formatted_gap_df, GAP_COLUMNS)
+    render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
     render_gap_chart(filtered)
 
     alert_df = (
