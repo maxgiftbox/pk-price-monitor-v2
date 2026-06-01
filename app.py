@@ -590,6 +590,87 @@ def inject_styles() -> None:
             color: #ffffff !important;
         }
 
+        section[data-testid="stSidebar"] .stDateInput [data-baseweb="input"],
+        section[data-testid="stSidebar"] .stDateInput [data-baseweb="input"] > div,
+        section[data-testid="stSidebar"] .stDateInput input {
+            background: #FFFFFF !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border-color: #DDD6FE !important;
+            border-radius: 16px !important;
+        }
+        div[data-baseweb="popover"]:has([data-baseweb="calendar"]),
+        div[data-baseweb="popover"]:has([role="grid"]) {
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+        div[data-baseweb="popover"] [data-baseweb="calendar"],
+        div[data-baseweb="popover"] [data-baseweb="calendar"] > div,
+        div[data-baseweb="popover"] div:has(> [role="grid"]) {
+            background: #FFFFFF !important;
+            color: #111827 !important;
+            border: 1px solid #E5E7EB !important;
+            border-radius: 20px !important;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12) !important;
+            overflow: hidden !important;
+        }
+        div[data-baseweb="popover"] [data-baseweb="calendar"] *,
+        div[data-baseweb="popover"] [role="grid"] *,
+        div[data-baseweb="popover"] [role="dialog"]:has([role="grid"]) * {
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+        }
+        div[data-baseweb="popover"] [data-baseweb="calendar"] header,
+        div[data-baseweb="popover"] [data-baseweb="calendar"] [data-baseweb="calendar-header"],
+        div[data-baseweb="popover"] [role="dialog"]:has([role="grid"]) header {
+            background: #F8FAFC !important;
+            color: #374151 !important;
+            -webkit-text-fill-color: #374151 !important;
+            border-bottom: 1px solid #E5E7EB !important;
+        }
+        div[data-baseweb="popover"] [role="columnheader"],
+        div[data-baseweb="popover"] [role="grid"] abbr,
+        div[data-baseweb="popover"] [role="grid"] th {
+            color: #6B7280 !important;
+            -webkit-text-fill-color: #6B7280 !important;
+            background: #FFFFFF !important;
+        }
+        div[data-baseweb="popover"] [role="gridcell"],
+        div[data-baseweb="popover"] [role="gridcell"] button,
+        div[data-baseweb="popover"] [role="grid"] td,
+        div[data-baseweb="popover"] [role="grid"] button {
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            background: transparent !important;
+            border-radius: 999px !important;
+        }
+        div[data-baseweb="popover"] [role="gridcell"]:hover,
+        div[data-baseweb="popover"] [role="gridcell"] button:hover,
+        div[data-baseweb="popover"] [role="grid"] td:hover,
+        div[data-baseweb="popover"] [role="grid"] button:hover {
+            background: #EEF2FF !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+        }
+        div[data-baseweb="popover"] [role="gridcell"][aria-selected="true"],
+        div[data-baseweb="popover"] [role="gridcell"][aria-selected="true"] button,
+        div[data-baseweb="popover"] [role="grid"] [aria-selected="true"],
+        div[data-baseweb="popover"] [role="grid"] [aria-pressed="true"] {
+            background: linear-gradient(135deg, #6366F1, #8B5CF6) !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+            border-radius: 999px !important;
+        }
+        div[data-baseweb="popover"] [data-baseweb="calendar"] input,
+        div[data-baseweb="popover"] [data-baseweb="calendar"] [data-baseweb="input"],
+        div[data-baseweb="popover"] [role="dialog"]:has([role="grid"]) input {
+            background: #FFFFFF !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border: 1px solid #DDD6FE !important;
+            border-radius: 16px !important;
+        }
+
         .pm-topbar {
             display: flex;
             justify-content: space-between;
@@ -672,15 +753,14 @@ def inject_styles() -> None:
             backdrop-filter: blur(18px) saturate(1.16);
             -webkit-backdrop-filter: blur(18px) saturate(1.16);
         }
-        div[data-testid="stMetricLabel"] p {
+        div[data-testid="stMetricLabel"],
+        div[data-testid="stMetricLabel"] p,
+        div[data-testid="stMetricLabel"] span {
             color: #5B6475 !important;
-            font-size: 0.84rem !important;
-            font-weight: 600 !important;
+            -webkit-text-fill-color: #5B6475 !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
             letter-spacing: 0.01em;
-            opacity: 1 !important;
-        }
-        div[data-testid="stMetricLabel"] {
-            color: #5B6475 !important;
             opacity: 1 !important;
         }
         div[data-testid="stMetricValue"] {
@@ -1169,10 +1249,10 @@ def render_kpis(gap_df: pd.DataFrame) -> None:
 
     metrics = [
         ("Total SKU", f"{total_skus:,}"),
-        ("Total Drz SKU", f"{daraz_skus:,}"),
-        ("Total LC SKU", f"{lc_skus:,}"),
-        ("SKU Count - Drz Win Price", f"{daraz_win_skus:,}"),
-        ("SKU Count - Drz Loss Price", f"{daraz_loss_skus:,}"),
+        ("Drz SKU", f"{daraz_skus:,}"),
+        ("LC SKU", f"{lc_skus:,}"),
+        ("Drz Wins", f"{daraz_win_skus:,}"),
+        ("Drz Losses", f"{daraz_loss_skus:,}"),
     ]
     for col, (label, value) in zip(cols, metrics, strict=False):
         col.metric(label, value)
