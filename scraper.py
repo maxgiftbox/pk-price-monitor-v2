@@ -68,7 +68,7 @@ def parse_price_to_int(value: Any) -> Any:
         return value
 
     cleaned = str(value).replace(" ", " ").replace("\xa0", " ")
-    cleaned = re.sub(r"(?i)(rs|tk|bdt)\.?", "", cleaned)
+    cleaned = re.sub(r"(?i)(rs|pkr|tk|bdt)\.?", "", cleaned)
     cleaned = cleaned.replace("৳", "")
     cleaned = cleaned.replace(",", "")
     cleaned = re.sub(r"\s+", "", cleaned)
@@ -867,16 +867,16 @@ def crawl_priceoye_page(
 
 
 DARAZ_PRICE_PATTERN = re.compile(r"(?i)(?:৳|rs\.?|pkr|tk|bdt)\s*[\d,]+")
+DARAZ_PRIMARY_PRICE_SELECTOR = ".pdp-price_type_normal"
 DARAZ_CURRENT_PRICE_SELECTORS = [
+    ".pdp-product-price .pdp-price_type_normal",
     ".pdp-price_type_normal",
-    "[class*='pdp-price_type_normal']",
     ".pdp-price",
-    ".pdp-product-price .pdp-price",
-    "[class*='sale-price']",
-    "[class*='current-price']",
+    "[class*='pdp-price_type_normal']",
     "[class*='product-price']",
-    "[class*='price']",
+    "[class*='sale-price']",
 ]
+DARAZ_PRICE_FAIL_ARTIFACT_SAVED = False
 DARAZ_ORIGINAL_PRICE_SELECTORS = [
     "del",
     "s",
@@ -959,27 +959,62 @@ def get_visible_daraz_texts(page: Any, selectors: List[str]) -> List[Dict[str, s
     return output
 
 
-def extract_daraz_product_price(page: Any, body_text: str) -> Any:
-    skipped_context_pattern = re.compile(
-        r"(?i)(deleted|original|old|regular|strike|discount|voucher|coupon|shipping|delivery|save|off)"
-    )
-    for item in get_visible_daraz_texts(page, DARAZ_CURRENT_PRICE_SELECTORS):
-        class_name = item.get("class_name", "")
-        tag_name = item.get("tag_name", "")
-        text = item.get("text", "")
-        if tag_name in {"del", "s"} or skipped_context_pattern.search(class_name):
-            continue
-        parsed = first_daraz_price_to_int(text)
-        if isinstance(parsed, int):
-            return parsed
+def read_daraz_selector_price(page: Any) -> str:
+    value = page.evaluate(
+        r"""
+        ({ primarySelector, selectors }) => {
+            const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
+            const primary = normalize(document.querySelector(primarySelector)?.innerText);
+            if (primary) return primary;
 
-    for line in [clean_price(line) for line in (body_text or "").splitlines()]:
-        if not line or skipped_context_pattern.search(line):
-            continue
-        parsed = first_daraz_price_to_int(line)
-        if isinstance(parsed, int):
-            return parsed
-    return ""
+            for (const selector of selectors) {
+                const nodes = Array.from(document.querySelectorAll(selector));
+                for (const el of nodes) {
+                    const text = normalize(el.innerText || el.textContent);
+                    if (text) return text;
+                }
+            }
+            return '';
+        }
+        """,
+        {"primarySelector": DARAZ_PRIMARY_PRICE_SELECTOR, "selectors": DARAZ_CURRENT_PRICE_SELECTORS},
+    )
+    return clean_price(str(value)) if value else ""
+
+
+def extract_daraz_product_price(page: Any) -> Tuple[str, Any]:
+    selector_price = ""
+    parsed_price: Any = ""
+
+    for attempt in range(3):
+        selector_price = read_daraz_selector_price(page)
+        parsed_price = first_daraz_price_to_int(selector_price)
+        if isinstance(parsed_price, int):
+            return selector_price, parsed_price
+        if attempt < 2:
+            page.wait_for_timeout(2000)
+
+    return selector_price, ""
+
+
+def save_first_daraz_price_failure_artifacts(page: Any) -> None:
+    global DARAZ_PRICE_FAIL_ARTIFACT_SAVED
+    if DARAZ_PRICE_FAIL_ARTIFACT_SAVED:
+        return
+
+    DARAZ_PRICE_FAIL_ARTIFACT_SAVED = True
+    try:
+        with open("daraz_price_fail.html", "w", encoding="utf-8") as handle:
+            handle.write(page.content())
+        print("[DARAZ PRICE DEBUG] Saved HTML: daraz_price_fail.html")
+    except Exception as exc:
+        print(f"[DARAZ PRICE DEBUG] Failed to save HTML daraz_price_fail.html: {exc}")
+
+    try:
+        page.screenshot(path="daraz_price_fail.png", full_page=True)
+        print("[DARAZ PRICE DEBUG] Saved screenshot: daraz_price_fail.png")
+    except Exception as exc:
+        print(f"[DARAZ PRICE DEBUG] Failed to save screenshot daraz_price_fail.png: {exc}")
 
 
 def extract_daraz_original_price(page: Any, product_price: Any) -> Any:
@@ -993,12 +1028,16 @@ def extract_daraz_original_price(page: Any, product_price: Any) -> Any:
 def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
     page = browser_context.new_page()
     try:
-        page.goto(product_url, wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_timeout(3000)
+        page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+
+        selector_price, product_price = extract_daraz_product_price(page)
+        print(
+            f"[DARAZ PRICE DEBUG] url={product_url} "
+            f"selector_price={selector_price} parsed_price={product_price}"
+        )
 
         raw_body_text = page.locator("body").inner_text()
         body_text = clean_price(raw_body_text)
-        product_price = extract_daraz_product_price(page, raw_body_text)
 
         stock_status = "unknown"
         if re.search(r"(?i)(out of stock|sold out|this item is no longer available)", body_text):
@@ -1007,10 +1046,11 @@ def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
             stock_status = "active"
 
         if not isinstance(product_price, int):
+            save_first_daraz_price_failure_artifacts(page)
             return {
                 "product_price": "",
                 "original_price": "",
-                "stock_status": stock_status,
+                "stock_status": "unknown",
                 "voucher_amount": 0,
                 "effective_price": "",
                 "error_message": "Product price not parsed",
@@ -1028,6 +1068,7 @@ def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
             "effective_price": product_price,
         }
     except PlaywrightTimeoutError:
+        print(f"[DARAZ PRICE DEBUG] url={product_url} selector_price= parsed_price=")
         return {
             "product_price": "",
             "original_price": "",
@@ -1037,6 +1078,7 @@ def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
             "error_message": "Timeout while loading page",
         }
     except Exception as exc:  # noqa: BLE001
+        print(f"[DARAZ PRICE DEBUG] url={product_url} selector_price= parsed_price=")
         return {
             "product_price": "",
             "original_price": "",
