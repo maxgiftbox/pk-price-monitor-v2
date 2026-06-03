@@ -2,7 +2,7 @@ import html
 import json
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 import gspread
 import pandas as pd
 import plotly.express as px
@@ -1227,6 +1227,16 @@ def render_dashboard_header() -> None:
     )
 
 
+def render_refresh_control() -> None:
+    if st.sidebar.button("🔄 Refresh Data"):
+        st.session_state["last_refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.cache_data.clear()
+        st.rerun()
+
+    if st.session_state.get("last_refreshed_at"):
+        st.sidebar.caption(f"Last refreshed: {st.session_state['last_refreshed_at']}")
+
+
 def available_columns(columns: list[str], df: pd.DataFrame) -> list[str]:
     return [col for col in columns if col in df.columns]
 
@@ -1876,6 +1886,8 @@ def main() -> None:
 
     if not require_password():
         st.stop()
+
+    render_refresh_control()
 
     try:
         df = load_price_data()
