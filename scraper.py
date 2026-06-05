@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import time
@@ -19,6 +20,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+logger = logging.getLogger(__name__)
+
 PRICE_DAILY_COLUMNS = [
     "crawl_date",
     "platform",
@@ -68,7 +71,7 @@ def parse_price_to_int(value: Any) -> Any:
         return value
 
     cleaned = str(value).replace(" ", " ").replace("\xa0", " ")
-    cleaned = re.sub(r"(?i)(rs|tk|bdt)\.?", "", cleaned)
+    cleaned = re.sub(r"(?i)(rs|pkr|tk|bdt)\.?", "", cleaned)
     cleaned = cleaned.replace("৳", "")
     cleaned = cleaned.replace(",", "")
     cleaned = re.sub(r"\s+", "", cleaned)
@@ -869,12 +872,12 @@ def crawl_priceoye_page(
 DARAZ_PRICE_PATTERN = re.compile(r"(?i)(?:৳|rs\.?|pkr|tk|bdt)\s*[\d,]+")
 DARAZ_CURRENT_PRICE_SELECTORS = [
     ".pdp-price_type_normal",
-    "[class*='pdp-price_type_normal']",
     ".pdp-price",
-    ".pdp-product-price .pdp-price",
-    "[class*='sale-price']",
-    "[class*='current-price']",
+    "[class*='pdp-price_type_normal']",
     "[class*='product-price']",
+    "[class*='sale-price']",
+    ".pdp-product-price .pdp-price",
+    "[class*='current-price']",
     "[class*='price']",
 ]
 DARAZ_ORIGINAL_PRICE_SELECTORS = [
@@ -963,15 +966,16 @@ def extract_daraz_product_price(page: Any, body_text: str) -> Any:
     skipped_context_pattern = re.compile(
         r"(?i)(deleted|original|old|regular|strike|discount|voucher|coupon|shipping|delivery|save|off)"
     )
-    for item in get_visible_daraz_texts(page, DARAZ_CURRENT_PRICE_SELECTORS):
-        class_name = item.get("class_name", "")
-        tag_name = item.get("tag_name", "")
-        text = item.get("text", "")
-        if tag_name in {"del", "s"} or skipped_context_pattern.search(class_name):
-            continue
-        parsed = first_daraz_price_to_int(text)
-        if isinstance(parsed, int):
-            return parsed
+    for selector in DARAZ_CURRENT_PRICE_SELECTORS:
+        for item in get_visible_daraz_texts(page, [selector]):
+            class_name = item.get("class_name", "")
+            tag_name = item.get("tag_name", "")
+            text = item.get("text", "")
+            if tag_name in {"del", "s"} or skipped_context_pattern.search(class_name):
+                continue
+            parsed = first_daraz_price_to_int(text)
+            if isinstance(parsed, int):
+                return parsed
 
     for line in [clean_price(line) for line in (body_text or "").splitlines()]:
         if not line or skipped_context_pattern.search(line):
@@ -994,11 +998,28 @@ def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
     page = browser_context.new_page()
     try:
         page.goto(product_url, wait_until="domcontentloaded", timeout=15000)
-        page.wait_for_timeout(3000)
+        try:
+            page.wait_for_selector(".pdp-price_type_normal", timeout=15000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(5000)
+
+        try:
+            debug_price = page.evaluate(
+                """
+                () => {
+                    return document.querySelector('.pdp-price_type_normal')?.innerText || null;
+                }
+                """
+            )
+        except Exception:  # noqa: BLE001
+            debug_price = None
+        logger.info(f"[DARAZ PRICE DEBUG] url={product_url} selector_price={debug_price}")
 
         raw_body_text = page.locator("body").inner_text()
         body_text = clean_price(raw_body_text)
         product_price = extract_daraz_product_price(page, raw_body_text)
+        logger.info(f"[DARAZ PRICE DEBUG] url={product_url} parsed_price={product_price}")
 
         stock_status = "unknown"
         if re.search(r"(?i)(out of stock|sold out|this item is no longer available)", body_text):
@@ -1007,6 +1028,10 @@ def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
             stock_status = "active"
 
         if not isinstance(product_price, int):
+            html = page.content()
+            with open("daraz_price_fail.html", "w", encoding="utf-8") as debug_file:
+                debug_file.write(html)
+            page.screenshot(path="daraz_price_fail.png", full_page=True)
             return {
                 "product_price": "",
                 "original_price": "",
