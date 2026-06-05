@@ -1359,7 +1359,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or not required.issubset(df.columns):
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
-    working = add_dashboard_join_fields(df.dropna(subset=["effective_price"]))
+    working = add_dashboard_join_fields(df)
     if working.empty:
         return pd.DataFrame(columns=RAW_GAP_COLUMNS)
 
@@ -1371,8 +1371,13 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     selected_cols = join_cols + display_key_cols + ["__platform_key", "effective_price"]
     selected_cols += available_columns(["crawl_datetime", "crawl_date", "product_url", "stock_status"], working)
 
+    # Price availability is the only row-level filter used for dashboard matching.
+    # Stock status is display-only and must not exclude active, out_of_stock,
+    # unknown, or blank Daraz/competitor rows from the matched tables.
+    priced_rows = working[working["effective_price"].notna()]
+
     daraz = latest_platform_rows(
-        working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
+        priced_rows[priced_rows["__platform_key"] == DARAZ_PLATFORM.casefold()],
         sku_cols,
         selected_cols,
     ).rename(
@@ -1386,7 +1391,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     competitors = latest_platform_rows(
-        working[working["__platform_key"].isin(competitor_keys)],
+        priced_rows[priced_rows["__platform_key"].isin(competitor_keys)],
         sku_cols,
         selected_cols,
     ).rename(
