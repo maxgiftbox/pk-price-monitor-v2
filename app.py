@@ -59,8 +59,10 @@ TABLE_COLUMNS = [
     "model",
     "memory",
     "Daraz Effective Price",
+    "Daraz Stock Status",
     "Competitor Platform",
     "Competitor Effective Price",
+    "LC Stock Status",
 ]
 GAP_COLUMNS = [
     "crawl_time",
@@ -69,8 +71,10 @@ GAP_COLUMNS = [
     "model",
     "memory",
     "Daraz Effective Price",
+    "Daraz Stock Status",
     "Competitor Platform",
     "Competitor Effective Price",
+    "LC Stock Status",
     "Gap Amount",
     "Gap %",
     "Alert",
@@ -82,14 +86,16 @@ RAW_GAP_COLUMNS = [
     "SKU",
     "Memory",
     "Daraz Price",
+    "Daraz Stock Status",
     "Competitor Platform",
     "Competitor Price",
+    "LC Stock Status",
     "Gap Amount",
     "Gap %",
     "Alert",
 ]
 INTERNAL_GAP_URL_COLUMNS = ["daraz_product_url", "competitor_product_url"]
-INTERNAL_TABLE_COLUMNS = ["product_url"]
+INTERNAL_TABLE_COLUMNS = ["product_url", "daraz_product_url", "competitor_product_url"]
 TABLE_HEADER_LABELS = {
     "Daraz Effective Price": "Drz Price",
     "Competitor Platform": "LC",
@@ -1302,11 +1308,16 @@ def latest_price_table(gap_df: pd.DataFrame) -> pd.DataFrame:
     display["model"] = gap_df["SKU"]
     display["memory"] = gap_df["Memory"]
     display["Daraz Effective Price"] = gap_df["Daraz Price"].apply(format_price).fillna("")
+    display["Daraz Stock Status"] = (
+        gap_df["Daraz Stock Status"] if "Daraz Stock Status" in gap_df.columns else ""
+    )
     display["Competitor Platform"] = gap_df["Competitor Platform"]
     display["Competitor Effective Price"] = gap_df["Competitor Price"].apply(format_price).fillna("")
-    display["product_url"] = coalesce_text(
-        gap_df.get("competitor_product_url", pd.Series("", index=gap_df.index)),
-        gap_df.get("daraz_product_url", pd.Series("", index=gap_df.index)),
+    display["LC Stock Status"] = gap_df["LC Stock Status"] if "LC Stock Status" in gap_df.columns else ""
+    display["product_url"] = gap_df.get("competitor_product_url", pd.Series("", index=gap_df.index))
+    display["daraz_product_url"] = gap_df.get("daraz_product_url", pd.Series("", index=gap_df.index))
+    display["competitor_product_url"] = gap_df.get(
+        "competitor_product_url", pd.Series("", index=gap_df.index)
     )
 
     sort_display_cols = available_columns(
@@ -1358,7 +1369,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     display_key_cols = ["country", "brand", "model", "memory"]
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
     selected_cols = join_cols + display_key_cols + ["__platform_key", "effective_price"]
-    selected_cols += available_columns(["crawl_datetime", "crawl_date", "product_url"], working)
+    selected_cols += available_columns(["crawl_datetime", "crawl_date", "product_url", "stock_status"], working)
 
     daraz = latest_platform_rows(
         working[working["__platform_key"] == DARAZ_PLATFORM.casefold()],
@@ -1368,6 +1379,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
         columns={
             "effective_price": "Daraz Price",
             "product_url": "daraz_product_url",
+            "stock_status": "Daraz Stock Status",
             "crawl_datetime": "daraz_crawl_datetime",
             "crawl_date": "daraz_crawl_date",
         }
@@ -1382,6 +1394,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
             "__platform_key": "Competitor Platform",
             "effective_price": "Competitor Price",
             "product_url": "competitor_product_url",
+            "stock_status": "LC Stock Status",
             "crawl_datetime": "competitor_crawl_datetime",
             "crawl_date": "competitor_crawl_date",
         }
@@ -1394,6 +1407,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
         gap = daraz.copy()
         gap["Competitor Platform"] = ""
         gap["Competitor Price"] = pd.NA
+        gap["LC Stock Status"] = ""
         gap["competitor_product_url"] = ""
         gap["competitor_crawl_datetime"] = pd.NaT
         gap["competitor_crawl_date"] = pd.NaT
@@ -1408,6 +1422,8 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     gap["crawl_datetime"] = gap.get(
         "daraz_crawl_datetime", pd.Series(pd.NaT, index=gap.index)
     )
+    gap["Daraz Stock Status"] = gap.get("Daraz Stock Status", pd.Series("", index=gap.index)).fillna("")
+    gap["LC Stock Status"] = gap.get("LC Stock Status", pd.Series("", index=gap.index)).fillna("")
     gap["Competitor Platform"] = gap["Competitor Platform"].fillna("")
     gap["competitor_product_url"] = gap["competitor_product_url"].fillna("")
     gap["Gap Amount"] = gap["Daraz Price"] - gap["Competitor Price"]
@@ -1465,6 +1481,9 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         formatted["Daraz Effective Price"] = (
             gap_df["Daraz Price"].apply(format_price) if "Daraz Price" in gap_df.columns else ""
         )
+        formatted["Daraz Stock Status"] = (
+            gap_df["Daraz Stock Status"] if "Daraz Stock Status" in gap_df.columns else ""
+        )
         formatted["Competitor Platform"] = (
             gap_df["Competitor Platform"] if "Competitor Platform" in gap_df.columns else ""
         )
@@ -1473,14 +1492,18 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
             if "Competitor Price" in gap_df.columns
             else ""
         )
+        formatted["LC Stock Status"] = (
+            gap_df["LC Stock Status"] if "LC Stock Status" in gap_df.columns else ""
+        )
         formatted["Gap Amount"] = (
             gap_df["Gap Amount"].apply(format_price) if "Gap Amount" in gap_df.columns else ""
         )
         formatted["Gap %"] = gap_df["Gap %"].apply(format_gap_pct) if "Gap %" in gap_df.columns else ""
         formatted["Alert"] = gap_df["Alert"] if "Alert" in gap_df.columns else ""
-        formatted["product_url"] = coalesce_text(
-            gap_df.get("competitor_product_url", pd.Series("", index=gap_df.index)),
-            gap_df.get("daraz_product_url", pd.Series("", index=gap_df.index)),
+        formatted["product_url"] = gap_df.get("competitor_product_url", pd.Series("", index=gap_df.index))
+        formatted["daraz_product_url"] = gap_df.get("daraz_product_url", pd.Series("", index=gap_df.index))
+        formatted["competitor_product_url"] = gap_df.get(
+            "competitor_product_url", pd.Series("", index=gap_df.index)
         )
         return formatted[available_columns(GAP_COLUMNS + INTERNAL_TABLE_COLUMNS, formatted)]
     except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
@@ -1833,6 +1856,11 @@ def format_table_cell(column: str, value: object, row: pd.Series | None = None) 
             escaped_value = html.escape(value_text)
             return f"<span class='pm-alert-badge {badge_class}'>{escaped_value}</span>"
 
+    if column == "model" and row is not None:
+        linked_value = linked_platform_cell(value_text, row.get("daraz_product_url", ""))
+        if linked_value:
+            return linked_value
+
     if column in LINKABLE_PLATFORM_COLUMNS and row is not None:
         linked_value = linked_platform_cell(value_text, row.get("product_url", ""))
         if linked_value:
@@ -1919,10 +1947,18 @@ def main() -> None:
     render_data_section("Alert Section — Red and Orange", alert_df, GAP_COLUMNS)
 
     out_of_stock_df = latest_df.copy()
-    if "stock_status" in out_of_stock_df.columns:
-        out_of_stock_df = out_of_stock_df[
-            out_of_stock_df["stock_status"].str.casefold().isin(OUT_OF_STOCK_STATUSES)
-        ]
+    stock_status_cols = available_columns(["Daraz Stock Status", "LC Stock Status"], out_of_stock_df)
+    if stock_status_cols:
+        out_of_stock_mask = pd.Series(False, index=out_of_stock_df.index)
+        for stock_status_col in stock_status_cols:
+            out_of_stock_mask |= (
+                out_of_stock_df[stock_status_col]
+                .fillna("")
+                .astype(str)
+                .str.casefold()
+                .isin(OUT_OF_STOCK_STATUSES)
+            )
+        out_of_stock_df = out_of_stock_df[out_of_stock_mask]
     else:
         out_of_stock_df = out_of_stock_df.iloc[0:0]
     render_data_section("Out of Stock Section", out_of_stock_df, TABLE_COLUMNS)
