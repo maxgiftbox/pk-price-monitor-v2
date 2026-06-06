@@ -5,7 +5,7 @@ import re
 from datetime import date, datetime
 import gspread
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
@@ -1085,9 +1085,13 @@ def inject_styles() -> None:
         }
         .pm-chart-card,
         .chart-card {
+            background: rgba(255, 255, 255, 0.86);
             border-radius: 24px;
-            background: #ffffff;
-            box-shadow: 0 18px 48px rgba(79, 96, 140, 0.10);
+            padding: 28px 30px;
+            box-shadow: 0 24px 70px rgba(111, 143, 190, 0.16);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.72);
         }
 
         .pm-table-scroll,
@@ -1191,11 +1195,14 @@ def inject_styles() -> None:
         }
 
         .stPlotlyChart {
-            padding: 0.35rem;
+            padding: 0;
             border-radius: 24px;
             border: 0;
-            background: #ffffff;
-            box-shadow: 0 10px 30px rgba(79, 96, 140, 0.08);
+            background: transparent;
+            box-shadow: none;
+        }
+        .stPlotlyChart .hoverlayer .hovertext {
+            filter: drop-shadow(0 14px 30px rgba(79, 96, 140, 0.18));
         }
         .stDownloadButton button, .stButton button {
             border: 0;
@@ -1618,44 +1625,118 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     st.markdown("<a id='trend-chart'></a>", unsafe_allow_html=True)
     st.markdown("<h2 class='pm-section-heading'>Price Trend Chart</h2>", unsafe_allow_html=True)
 
-    required = {"crawl_date", "effective_price", "platform"}
+    required = {"crawl_date", "effective_price", "model", "memory"}
     if not required.issubset(filtered.columns):
-        st.info("Trend chart requires crawl_date, effective_price, and platform columns.")
+        st.info("Trend chart requires crawl_date, effective_price, model, and memory columns.")
         return
 
-    chart_df = filtered.dropna(subset=["crawl_date", "effective_price"]).copy()
-    if chart_df.empty:
+    trend_df = filtered.copy()
+    trend_df["crawl_date"] = pd.to_datetime(trend_df["crawl_date"], errors="coerce")
+    trend_df["effective_price"] = pd.to_numeric(trend_df["effective_price"], errors="coerce")
+    trend_df = trend_df.dropna(subset=["crawl_date", "effective_price"])
+
+    if trend_df.empty:
         st.info("No numeric price data available for the selected filters.")
         return
 
-    chart_df["crawl_date_display"] = chart_df["crawl_date"].apply(format_date)
-    chart_df["platform_display"] = chart_df["platform"].apply(normalized_platform)
+    trend_df["sku_display"] = (
+        trend_df["model"].fillna("").astype(str).str.strip()
+        + " "
+        + trend_df["memory"].fillna("").astype(str).str.strip()
+    ).str.strip()
+    trend_df["sku_display"] = trend_df["sku_display"].where(
+        trend_df["sku_display"].ne(""),
+        "Unknown SKU",
+    )
 
-    fig = px.line(
-        chart_df.sort_values("crawl_date"),
-        x="crawl_date_display",
-        y="effective_price",
-        color="platform_display",
-        color_discrete_map=PLATFORM_COLORS,
-        markers=True,
-        hover_data=available_columns(["country", "brand", "model", "memory", "stock_status"], chart_df),
-        labels={
-            "crawl_date_display": "crawl_date",
-            "effective_price": "effective_price",
-            "platform_display": "platform",
-        },
-        template="plotly_white",
-    )
+    fig = go.Figure()
+
+    for sku_name, group in trend_df.groupby("sku_display"):
+        group = group.sort_values("crawl_date")
+
+        fig.add_trace(
+            go.Scatter(
+                x=group["crawl_date"],
+                y=group["effective_price"],
+                mode="lines+markers",
+                name=str(sku_name),
+                line=dict(
+                    shape="spline",
+                    width=3,
+                    smoothing=1.25,
+                ),
+                marker=dict(
+                    size=7,
+                    line=dict(width=1),
+                ),
+                hovertemplate=(
+                    "<b>%{text}</b><br>"
+                    "Date: %{x|%d-%b}<br>"
+                    "Price: %{y:,.0f}"
+                    "<extra></extra>"
+                ),
+                text=[str(sku_name)] * len(group),
+            )
+        )
+
     fig.update_layout(
-        plot_bgcolor="#ffffff",
-        paper_bgcolor="#ffffff",
-        font_color="#344054",
-        legend_title_text="Platform",
-        margin=dict(l=10, r=10, t=24, b=10),
-        xaxis=dict(gridcolor="rgba(148, 163, 184, 0.16)", zerolinecolor="rgba(148, 163, 184, 0.18)"),
-        yaxis=dict(gridcolor="rgba(148, 163, 184, 0.16)", zerolinecolor="rgba(148, 163, 184, 0.18)"),
+        height=520,
+        plot_bgcolor="rgba(255,255,255,0)",
+        paper_bgcolor="rgba(255,255,255,0)",
+        hovermode="closest",
+        margin=dict(l=40, r=30, t=30, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor="rgba(255,255,255,0)",
+            font=dict(size=13, color="#536073"),
+        ),
+        font=dict(
+            family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+            color="#243044",
+        ),
+        hoverlabel=dict(
+            bgcolor="#ffffff",
+            bordercolor="rgba(255,255,255,0)",
+            font=dict(color="#243044", size=13),
+        ),
     )
-    st.plotly_chart(fig, use_container_width=True)
+
+    fig.update_xaxes(
+        tickformat="%d-%b",
+        showgrid=True,
+        gridcolor="rgba(148,163,184,0.18)",
+        zeroline=False,
+        showline=False,
+        ticks="",
+        color="#7b8798",
+    )
+
+    fig.update_yaxes(
+        title="Price",
+        range=[0, 700000],
+        showgrid=True,
+        gridcolor="rgba(148,163,184,0.18)",
+        zeroline=False,
+        showline=False,
+        ticks="",
+        color="#7b8798",
+        tickformat=",",
+    )
+
+    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displayModeBar": False,
+            "responsive": True,
+        },
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
