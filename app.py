@@ -113,6 +113,11 @@ PLATFORM_COLORS = {
 }
 ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
 DEFAULT_ROWS_PER_PAGE = 20
+SECTION_ANCHORS = {
+    "Latest Price Table": "price-table",
+    "Price Gap Analysis": "gap-analysis",
+    "Price Trend Chart": "trend-chart",
+}
 
 
 def get_config_value(name: str) -> str:
@@ -708,13 +713,13 @@ def inject_styles() -> None:
         section[data-testid="stSidebar"] {
             width: 292px !important;
             background: transparent;
-            padding: 24px 0 24px 24px;
+            padding: 18px 0 18px 20px;
             overflow-y: auto;
         }
 
         section[data-testid="stSidebar"] > div {
             margin: 0;
-            padding: 24px 18px 20px;
+            padding: 18px 16px 18px;
             width: 268px;
             min-height: calc(100vh - 48px);
             border-radius: 32px;
@@ -745,7 +750,7 @@ def inject_styles() -> None:
             display: flex;
             align-items: center;
             gap: 0.8rem;
-            margin: 0.15rem 0 1.65rem;
+            margin: 0 0 1rem;
             padding: 0 0.25rem;
         }
         .pm-logo-orb {
@@ -756,20 +761,25 @@ def inject_styles() -> None:
             box-shadow: 0 14px 32px rgba(111, 124, 255, 0.32), inset 0 1px 10px rgba(255, 255, 255, 0.58);
         }
         .pm-brand-title { font-size: 1.05rem; font-weight: 780; letter-spacing: -0.035em; color: #111827; }
-        .pm-sidebar-menu { display: grid; gap: 0.42rem; margin-bottom: 1.65rem; }
-        .pm-menu-item {
-            border-radius: 18px;
-            padding: 0.82rem 0.9rem;
-            color: #667085;
-            font-size: 0.92rem;
-            font-weight: 650;
-            letter-spacing: -0.01em;
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin: 18px 0 24px 0;
         }
-        .pm-menu-item.is-active {
-            color: #25314a;
-            border: 0;
-            background: rgba(255, 255, 255, 0.74);
-            box-shadow: 0 14px 34px rgba(91, 119, 190, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.90);
+        .sidebar-nav-item {
+            display: block;
+            padding: 18px 28px;
+            border-radius: 28px;
+            text-decoration: none;
+            font-weight: 700;
+            color: #5f6b80;
+            transition: all 0.2s ease;
+        }
+        .sidebar-nav-item:hover {
+            background: rgba(255, 255, 255, 0.72);
+            color: #172033;
+            box-shadow: 0 16px 40px rgba(111, 143, 190, 0.18);
         }
         .pm-filter-title { color: #344054; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; margin: 0.3rem 0 0.2rem; }
         .pm-filter-caption { color: #7a8699; font-size: 0.8rem; line-height: 1.4; margin-bottom: 0.95rem; }
@@ -1207,12 +1217,10 @@ def render_sidebar_chrome() -> None:
             <span class="pm-logo-orb"></span>
             <span class="pm-brand-title">Mob Monitor</span>
         </div>
-        <div class="pm-sidebar-menu">
-            <div class="pm-menu-item is-active">Dashboard</div>
-            <div class="pm-menu-item">Price Table</div>
-            <div class="pm-menu-item">Gap Analysis</div>
-            <div class="pm-menu-item">Trend Chart</div>
-            <div class="pm-menu-item">Settings</div>
+        <div class="sidebar-nav">
+            <a href="#price-table" class="sidebar-nav-item">Price Table</a>
+            <a href="#gap-analysis" class="sidebar-nav-item">Gap Analysis</a>
+            <a href="#trend-chart" class="sidebar-nav-item">Trend Chart</a>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1595,6 +1603,7 @@ def count_distinct_gap_skus(
 
 
 def render_gap_chart(filtered: pd.DataFrame) -> None:
+    st.markdown("<a id='trend-chart'></a>", unsafe_allow_html=True)
     st.markdown("<div class='pm-card pm-chart-card chart-card'>", unsafe_allow_html=True)
     st.subheader("Price Trend Chart")
 
@@ -1642,6 +1651,8 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
 
 
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
+    if anchor_id := SECTION_ANCHORS.get(title):
+        st.markdown(f"<a id='{anchor_id}'></a>", unsafe_allow_html=True)
     st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
     st.subheader(title)
     visible_columns = available_columns(columns, df) if columns else visible_table_columns(df)
