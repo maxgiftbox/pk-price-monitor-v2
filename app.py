@@ -807,23 +807,29 @@ def inject_styles() -> None:
          */
         [data-testid="stSelectbox"] div[data-baseweb="select"],
         [data-testid="stMultiSelect"] div[data-baseweb="select"] {
+            width: 100% !important;
+            max-width: 100% !important;
             border: none !important;
             border-radius: 18px !important;
             background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
             box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
             color: #FFFFFF !important;
+            overflow: visible !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
         [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"],
         [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {
             min-height: 42px !important;
+            width: 100% !important;
+            max-width: 100% !important;
             border: none !important;
             border-radius: 18px !important;
             background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
             box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
             color: #FFFFFF !important;
             font-weight: 700 !important;
+            overflow: visible !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]),
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]) {
@@ -862,18 +868,55 @@ def inject_styles() -> None:
             color: #FFFFFF !important;
             fill: #FFFFFF !important;
         }
+        section[data-testid="stSidebar"] [data-testid="stMultiSelect"],
+        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] > div,
+        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] div[data-baseweb="select"] {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            gap: 0.25rem !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+        }
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] div:has(> div[data-baseweb="tag"]),
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] div:has(> input) {
+            min-width: 0 !important;
+            max-width: none !important;
+            overflow: visible !important;
+            flex-wrap: wrap !important;
+        }
+        div[data-baseweb="tag"],
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] {
+            flex: 0 1 auto !important;
+            min-width: 0 !important;
+            max-width: min(100%, 220px) !important;
+            margin-left: 0 !important;
             border: 1px solid rgba(255, 255, 255, 0.24) !important;
-            border-radius: 999px !important;
+            border-radius: 12px !important;
             background: rgba(255, 255, 255, 0.18) !important;
+            background-color: rgba(255, 255, 255, 0.18) !important;
             color: #FFFFFF !important;
             font-weight: 700 !important;
+            overflow: visible !important;
         }
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] span,
+        div[data-baseweb="tag"] span,
+        [data-testid="stMultiSelect"] div[data-baseweb="tag"] span {
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
+            max-width: none !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
+        div[data-baseweb="tag"] svg,
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg {
             color: #FFFFFF !important;
             fill: #FFFFFF !important;
             font-weight: 700 !important;
+            flex-shrink: 0 !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has([aria-disabled="true"]),
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has(input:disabled),
