@@ -799,97 +799,114 @@ def inject_styles() -> None:
             background: rgba(255, 255, 255, 0.58);
             box-shadow: 0 10px 26px rgba(91, 119, 190, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.82);
         }
-        section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
-        section[data-testid="stSidebar"] [data-baseweb="input"] {
-            min-height: 42px;
-            border: 1px solid rgba(99, 102, 241, 0.20) !important;
-            border-radius: 14px !important;
-            background-color: rgba(255, 255, 255, 0.88) !important;
-            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.90), 0 8px 18px rgba(91, 119, 190, 0.08);
-            color: #111827 !important;
-        }
-        section[data-testid="stSidebar"] div[data-baseweb="select"] input,
-        section[data-testid="stSidebar"] [data-baseweb="input"] input,
-        section[data-testid="stSidebar"] .stDateInput input,
-        section[data-testid="stSidebar"] .stDateInput input::placeholder,
-        section[data-testid="stSidebar"] div[data-baseweb="input"] input {
-            color: #111827 !important;
-            -webkit-text-fill-color: #111827 !important;
-            caret-color: #6366F1 !important;
-        }
-        section[data-testid="stSidebar"] div[data-baseweb="tag"] {
-            background: linear-gradient(135deg, #6366F1, #8B5CF6) !important;
-            color: #ffffff !important;
-            border-radius: 999px !important;
-        }
-        section[data-testid="stSidebar"] div[data-baseweb="tag"] span,
-        section[data-testid="stSidebar"] div[data-baseweb="tag"] svg {
-            color: #ffffff !important;
-            fill: #ffffff !important;
-        }
-
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] > div {
-            min-height: 42px;
-            background: linear-gradient(135deg, #5b8def 0%, #9b7bff 100%) !important;
-            color: #ffffff !important;
+        /*
+         * Streamlit 1.58 renders st.selectbox and st.multiselect as:
+         * [data-testid="stSelectbox"|"stMultiSelect"] div[data-baseweb="select"] > div.
+         * The visible closed control is that BaseWeb select root/inner control, while the
+         * opened dropdown is portaled into div[data-baseweb="popover"] [role="listbox"].
+         */
+        [data-testid="stSelectbox"] div[data-baseweb="select"],
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] {
             border: none !important;
-            border-radius: 16px !important;
-            font-weight: 700 !important;
-            box-shadow: 0 14px 30px rgba(91, 141, 239, 0.26) !important;
+            border-radius: 18px !important;
+            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
+            box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
+            color: #FFFFFF !important;
         }
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] > div:hover,
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] > div:focus-within {
-            background: linear-gradient(135deg, #5b8def 0%, #9b7bff 100%) !important;
-            color: #ffffff !important;
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
+        [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"],
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {
+            min-height: 42px !important;
             border: none !important;
-            box-shadow: var(--pm-card-shadow-hover) !important;
-        }
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] span,
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] input,
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] div {
-            color: #ffffff !important;
+            border-radius: 18px !important;
+            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
+            box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
+            color: #FFFFFF !important;
             font-weight: 700 !important;
         }
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] input,
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] input::placeholder {
-            -webkit-text-fill-color: #ffffff !important;
-            caret-color: #ffffff !important;
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]),
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]) {
+            background: transparent !important;
+            background-color: transparent !important;
         }
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] svg {
-            fill: #ffffff !important;
-            color: #ffffff !important;
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div:hover,
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div:focus-within,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:focus-within {
+            border: none !important;
+            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
+            box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
+            color: #FFFFFF !important;
         }
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] div[data-baseweb="tag"] {
-            background: rgba(255, 255, 255, 0.18) !important;
+        [data-testid="stSelectbox"] div[data-baseweb="select"] div,
+        [data-testid="stSelectbox"] div[data-baseweb="select"] span,
+        [data-testid="stSelectbox"] div[data-baseweb="select"] p,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] div,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] span,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] p {
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] input,
+        [data-testid="stSelectbox"] div[data-baseweb="select"] input::placeholder,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] input,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] input::placeholder {
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+            caret-color: #FFFFFF !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stSelectbox"] div[data-baseweb="select"] svg,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] svg {
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+        }
+        [data-testid="stMultiSelect"] div[data-baseweb="tag"] {
             border: 1px solid rgba(255, 255, 255, 0.24) !important;
             border-radius: 999px !important;
-            color: #ffffff !important;
+            background: rgba(255, 255, 255, 0.18) !important;
+            color: #FFFFFF !important;
             font-weight: 700 !important;
         }
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"]:has([aria-disabled="true"]) > div,
-        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"]:has(input:disabled) > div {
+        [data-testid="stMultiSelect"] div[data-baseweb="tag"] span,
+        [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg {
+            color: #FFFFFF !important;
+            fill: #FFFFFF !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stSelectbox"] div[data-baseweb="select"]:has([aria-disabled="true"]),
+        [data-testid="stSelectbox"] div[data-baseweb="select"]:has(input:disabled),
+        [data-testid="stMultiSelect"] div[data-baseweb="select"]:has([aria-disabled="true"]),
+        [data-testid="stMultiSelect"] div[data-baseweb="select"]:has(input:disabled) {
             opacity: 0.62;
         }
         div[data-baseweb="popover"] div[data-baseweb="menu"],
-        div[data-baseweb="popover"] ul,
+        div[data-baseweb="popover"] ul[role="listbox"],
         div[data-baseweb="popover"] [role="listbox"] {
-            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%) !important;
-            color: #ffffff !important;
+            background: #FFFFFF !important;
+            color: #111827 !important;
             border-radius: 16px !important;
-            border: 1px solid rgba(255, 255, 255, 0.24) !important;
-            box-shadow: 0 20px 45px rgba(99, 102, 241, 0.28) !important;
+            border: 1px solid #E5E7EB !important;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12) !important;
             overflow: hidden !important;
         }
+        div[data-baseweb="popover"] [role="listbox"] *,
+        div[data-baseweb="popover"] div[data-baseweb="menu"] * {
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+        }
         div[data-baseweb="popover"] [role="option"],
-        div[data-baseweb="popover"] li {
-            color: #ffffff !important;
-            background: transparent !important;
+        div[data-baseweb="popover"] li[role="option"] {
+            color: #111827 !important;
+            background: #FFFFFF !important;
+            font-weight: 600 !important;
         }
         div[data-baseweb="popover"] [role="option"]:hover,
-        div[data-baseweb="popover"] li:hover,
-        div[data-baseweb="popover"] [aria-selected="true"] {
-            background: rgba(255, 255, 255, 0.18) !important;
-            color: #ffffff !important;
+        div[data-baseweb="popover"] li[role="option"]:hover,
+        div[data-baseweb="popover"] [role="option"][aria-selected="true"] {
+            background: #EEF2FF !important;
+            color: #111827 !important;
         }
 
         section[data-testid="stSidebar"] .stDateInput [data-baseweb="input"],
