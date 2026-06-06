@@ -827,6 +827,49 @@ def inject_styles() -> None:
             color: #ffffff !important;
             fill: #ffffff !important;
         }
+
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] > div {
+            min-height: 42px;
+            background: linear-gradient(135deg, #5b8def 0%, #9b7bff 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 16px !important;
+            font-weight: 700 !important;
+            box-shadow: 0 14px 30px rgba(91, 141, 239, 0.26) !important;
+        }
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] > div:hover,
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] > div:focus-within {
+            background: linear-gradient(135deg, #5b8def 0%, #9b7bff 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+            box-shadow: var(--pm-card-shadow-hover) !important;
+        }
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] span,
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] input,
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] div {
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] input,
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] input::placeholder {
+            -webkit-text-fill-color: #ffffff !important;
+            caret-color: #ffffff !important;
+        }
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] svg {
+            fill: #ffffff !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"] div[data-baseweb="tag"] {
+            background: rgba(255, 255, 255, 0.18) !important;
+            border: 1px solid rgba(255, 255, 255, 0.24) !important;
+            border-radius: 999px !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"]:has([aria-disabled="true"]) > div,
+        [data-testid="stAppViewContainer"] > .main div[data-baseweb="select"]:has(input:disabled) > div {
+            opacity: 0.62;
+        }
         div[data-baseweb="popover"] div[data-baseweb="menu"],
         div[data-baseweb="popover"] ul,
         div[data-baseweb="popover"] [role="listbox"] {
