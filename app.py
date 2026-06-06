@@ -1659,8 +1659,43 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         "Unknown SKU",
     )
 
-    min_price = trend_df["effective_price"].min()
-    max_price = trend_df["effective_price"].max()
+    if "platform" not in trend_df.columns:
+        st.info("Trend chart requires platform data to compare prices by platform.")
+        return
+
+    trend_df["platform_display"] = trend_df["platform"].apply(normalized_platform)
+    platform_order = ["daraz", "priceoye", "pickaboo"]
+    available_platforms = [
+        platform
+        for platform in platform_order
+        if platform in set(trend_df["platform_display"].dropna().astype(str))
+    ]
+
+    if not available_platforms:
+        st.info("No Daraz, PriceOye, or Pickaboo price data available for the selected filters.")
+        return
+
+    platform_col, _ = st.columns([1.4, 3.6])
+    with platform_col:
+        selected_platforms = st.multiselect(
+            "Platform",
+            options=available_platforms,
+            default=available_platforms,
+            key="trend_chart_platforms",
+        )
+
+    if not selected_platforms:
+        st.info("Select at least one platform to display the Price Trend Chart.")
+        return
+
+    chart_df = trend_df[trend_df["platform_display"].isin(selected_platforms)].copy()
+
+    if chart_df.empty:
+        st.info("No price trend data available for the selected chart platforms.")
+        return
+
+    min_price = chart_df["effective_price"].min()
+    max_price = chart_df["effective_price"].max()
 
     if min_price == max_price:
         y_min = max(0, min_price * 0.9)
@@ -1672,23 +1707,33 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     if y_max <= y_min:
         y_max = y_min + 1
 
-    unique_dates = sorted(trend_df["crawl_date"].dropna().unique())
+    unique_dates = sorted(chart_df["crawl_date"].dropna().unique())
     xaxis_options = {}
     if len(unique_dates) <= 2:
         xaxis_options["tickvals"] = unique_dates
 
     fig = go.Figure()
+    trend_platform_colors = {
+        "daraz": "#2563eb",
+        "priceoye": "#16a34a",
+        "pickaboo": "#7c3aed",
+    }
 
-    for sku_name, group in trend_df.groupby("sku_display"):
+    for (platform_name, sku_name), group in chart_df.groupby(["platform_display", "sku_display"]):
         group = group.sort_values("crawl_date")
+        platform_name = str(platform_name)
+        sku_name = str(sku_name)
+        legend_name = f"{platform_name} - {sku_name}"
 
         fig.add_trace(
             go.Scatter(
                 x=group["crawl_date"],
                 y=group["effective_price"],
                 mode="lines+markers",
-                name=str(sku_name),
+                name=legend_name,
                 line=dict(
+                    color=trend_platform_colors.get(platform_name, "#64748b"),
+                    dash="solid" if platform_name == "daraz" else "dash",
                     shape="spline",
                     width=3,
                     smoothing=1.25,
@@ -1698,13 +1743,14 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
                     symbol="circle",
                     line=dict(width=1.5, color="#ffffff"),
                 ),
+                customdata=list(zip(group["platform_display"], group["sku_display"], strict=False)),
                 hovertemplate=(
-                    "<b>SKU:</b> %{text}<br>"
+                    "<b>Platform:</b> %{customdata[0]}<br>"
+                    "<b>SKU:</b> %{customdata[1]}<br>"
                     "<b>Date:</b> %{x|%d-%b}<br>"
                     "<b>Price:</b> %{y:,.0f}"
                     "<extra></extra>"
                 ),
-                text=[str(sku_name)] * len(group),
             )
         )
 
@@ -1713,7 +1759,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         plot_bgcolor="#ffffff",
         paper_bgcolor="#ffffff",
         hovermode="closest",
-        margin=dict(l=56, r=30, t=72, b=56),
+        margin=dict(l=70, r=40, t=50, b=85),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1722,7 +1768,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
             x=0,
             bgcolor="rgba(255,255,255,0)",
             font=dict(size=13, color="#111827"),
-            title=dict(text="SKU", font=dict(size=13, color="#111827")),
+            title=dict(text="Platform - SKU", font=dict(size=13, color="#111827")),
         ),
         font=dict(
             family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
@@ -1744,13 +1790,21 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         showline=False,
         ticks="",
         color="#111827",
-        title=dict(text="Date", font=dict(color="#111827", size=13)),
-        tickfont=dict(color="#111827", size=12),
+        title=dict(
+            text="<b>Date</b>",
+            font=dict(size=16, color="#1f2937", family="Inter, sans-serif"),
+            standoff=18,
+        ),
+        tickfont=dict(size=13, color="#334155"),
         **xaxis_options,
     )
 
     fig.update_yaxes(
-        title=dict(text="Price", font=dict(color="#111827", size=13)),
+        title=dict(
+            text="<b>Price</b>",
+            font=dict(size=16, color="#1f2937", family="Inter, sans-serif"),
+            standoff=14,
+        ),
         range=[y_min, y_max],
         showgrid=True,
         gridcolor="rgba(148,163,184,0.22)",
@@ -1758,7 +1812,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         showline=False,
         ticks="",
         color="#111827",
-        tickfont=dict(color="#111827", size=12),
+        tickfont=dict(size=13, color="#334155"),
         tickformat=",",
     )
 
