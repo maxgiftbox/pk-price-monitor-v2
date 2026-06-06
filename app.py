@@ -693,8 +693,8 @@ def inject_styles() -> None:
             max-width: 100%;
             padding-left: 32px;
             padding-right: 32px;
-            padding-top: 32px;
-            padding-bottom: 48px;
+            padding-top: 20px;
+            padding-bottom: 32px;
         }
 
         .block-container {
@@ -705,6 +705,10 @@ def inject_styles() -> None:
             box-shadow: none;
         }
 
+        .main [data-testid="stVerticalBlock"] {
+            gap: 0.75rem;
+        }
+
         h1, h2, h3, p { font-family: inherit; }
         h1, h2, h3 { color: var(--pm-heading); letter-spacing: -0.045em; }
         h2, h3, .stSubheader { font-weight: 760; }
@@ -713,15 +717,15 @@ def inject_styles() -> None:
         section[data-testid="stSidebar"] {
             width: 292px !important;
             background: transparent;
-            padding: 18px 0 18px 20px;
+            padding: 0 0 14px 14px;
             overflow-y: auto;
         }
 
         section[data-testid="stSidebar"] > div {
             margin: 0;
-            padding: 18px 16px 18px;
+            padding: 10px 14px 16px;
             width: 268px;
-            min-height: calc(100vh - 48px);
+            min-height: calc(100vh - 24px);
             border-radius: 32px;
             border: 1px solid rgba(255, 255, 255, 0.72);
             background:
@@ -750,7 +754,7 @@ def inject_styles() -> None:
             display: flex;
             align-items: center;
             gap: 0.8rem;
-            margin: 0 0 1rem;
+            margin: 0 0 24px;
             padding: 0 0.25rem;
         }
         .pm-logo-orb {
@@ -764,12 +768,12 @@ def inject_styles() -> None:
         .sidebar-nav {
             display: flex;
             flex-direction: column;
-            gap: 14px;
-            margin: 18px 0 24px 0;
+            gap: 10px;
+            margin: 0 0 20px 0;
         }
         .sidebar-nav-item {
             display: block;
-            padding: 18px 28px;
+            padding: 10px 18px;
             border-radius: 28px;
             text-decoration: none;
             font-weight: 700;
@@ -781,13 +785,15 @@ def inject_styles() -> None:
             color: #172033;
             box-shadow: 0 16px 40px rgba(111, 143, 190, 0.18);
         }
-        .pm-filter-title { color: #344054; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; margin: 0.3rem 0 0.2rem; }
-        .pm-filter-caption { color: #7a8699; font-size: 0.8rem; line-height: 1.4; margin-bottom: 0.95rem; }
+        .pm-filter-title { color: #344054; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; margin: 20px 0 0.2rem; }
+        .pm-filter-caption { color: #7a8699; font-size: 0.8rem; line-height: 1.4; margin-bottom: 0.7rem; }
+        section[data-testid="stSidebar"] .stButton { margin-bottom: 20px; }
+        section[data-testid="stSidebar"] .stButton button { min-height: 40px; }
 
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stMultiSelect),
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div:has(.stDateInput) {
-            margin: 0.58rem 0;
-            padding: 0.78rem 0.78rem 0.88rem;
+            margin: 0.42rem 0;
+            padding: 0.62rem 0.68rem 0.72rem;
             border: 0;
             border-radius: 20px;
             background: rgba(255, 255, 255, 0.58);
@@ -929,7 +935,7 @@ def inject_styles() -> None:
             justify-content: space-between;
             align-items: center;
             gap: 1.25rem;
-            margin-bottom: 2rem;
+            margin-bottom: 24px;
         }
         .pm-search-pill {
             width: min(520px, 100%);
@@ -963,8 +969,8 @@ def inject_styles() -> None:
         }
 
         .pm-hero {
-            margin: 0 0 2rem;
-            padding: 0.15rem 0 0;
+            margin: 0 0 24px;
+            padding: 0;
         }
         .pm-eyebrow { display: none; }
         .pm-title {
@@ -979,7 +985,7 @@ def inject_styles() -> None:
             color: #667085;
             font-size: clamp(1rem, 1.55vw, 1.22rem);
             font-weight: 520;
-            margin-top: 0.95rem;
+            margin-top: 24px;
         }
         .pm-overview { display: none; }
         .pm-hero-panel { display: none; }
@@ -989,7 +995,7 @@ def inject_styles() -> None:
             font-size: 0.76rem;
             font-weight: 800;
             letter-spacing: 0.14em;
-            margin: 0.25rem 0 1rem;
+            margin: 0 0 16px;
             text-transform: uppercase;
         }
 
@@ -1026,8 +1032,8 @@ def inject_styles() -> None:
         .metric-card,
         .table-card,
         .chart-card {
-            margin: 2rem 0 0;
-            padding: 1.65rem;
+            margin: 32px 0 0;
+            padding: 1.35rem;
             border: 0;
             border-radius: var(--pm-radius);
             background: var(--pm-card);
@@ -1036,6 +1042,14 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(18px) saturate(1.12);
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
+        .pm-section-heading {
+            color: #111827;
+            font-size: 1.45rem;
+            font-weight: 780;
+            letter-spacing: -0.04em;
+            line-height: 1.2;
+            margin: 32px 0 16px;
+        }
 
         .pm-sort-control-label {
             color: #5B6475;
@@ -1543,9 +1557,6 @@ def render_kpis(gap_df: pd.DataFrame) -> None:
         daraz_prices.notna() & competitor_prices.notna() & (daraz_prices > competitor_prices),
     )
 
-    cols = st.columns(5)
-    st.markdown("<div class='pm-section-label'>Overview</div>", unsafe_allow_html=True)
-
     metrics = [
         ("Total SKU", f"{total_skus:,}"),
         ("Drz SKU", f"{daraz_skus:,}"),
@@ -1571,6 +1582,7 @@ def render_kpis(gap_df: pd.DataFrame) -> None:
         "line-height:1;"
     )
     card_style = "margin:0 !important;"
+    cols = st.columns(5)
 
     for col, (label, value) in zip(cols, metrics, strict=False):
         col.markdown(
@@ -1604,19 +1616,16 @@ def count_distinct_gap_skus(
 
 def render_gap_chart(filtered: pd.DataFrame) -> None:
     st.markdown("<a id='trend-chart'></a>", unsafe_allow_html=True)
-    st.markdown("<div class='pm-card pm-chart-card chart-card'>", unsafe_allow_html=True)
-    st.subheader("Price Trend Chart")
+    st.markdown("<h2 class='pm-section-heading'>Price Trend Chart</h2>", unsafe_allow_html=True)
 
     required = {"crawl_date", "effective_price", "platform"}
     if not required.issubset(filtered.columns):
         st.info("Trend chart requires crawl_date, effective_price, and platform columns.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     chart_df = filtered.dropna(subset=["crawl_date", "effective_price"]).copy()
     if chart_df.empty:
         st.info("No numeric price data available for the selected filters.")
-        st.markdown("</div>", unsafe_allow_html=True)
         return
 
     chart_df["crawl_date_display"] = chart_df["crawl_date"].apply(format_date)
@@ -1647,14 +1656,12 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         yaxis=dict(gridcolor="rgba(148, 163, 184, 0.16)", zerolinecolor="rgba(148, 163, 184, 0.18)"),
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
     if anchor_id := SECTION_ANCHORS.get(title):
         st.markdown(f"<a id='{anchor_id}'></a>", unsafe_allow_html=True)
-    st.markdown("<div class='pm-card pm-table-card table-card'>", unsafe_allow_html=True)
-    st.subheader(title)
+    st.markdown(f"<h2 class='pm-section-heading'>{html.escape(title)}</h2>", unsafe_allow_html=True)
     visible_columns = available_columns(columns, df) if columns else visible_table_columns(df)
     display_columns = visible_columns + [
         column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
@@ -1664,14 +1671,12 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
         display_df = render_gap_sort_controls(display_df)
     page_df = render_table_pagination_controls(title, display_df)
     st.markdown(render_dashboard_table(page_df, visible_columns), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    st.markdown("<div class='pm-sort-control'>", unsafe_allow_html=True)
     sort_label_col, sort_field_col, sort_order_col, spacer_col = st.columns([1.15, 1.2, 1.25, 5.4])
     sort_label_col.markdown(
         "<div class='pm-sort-control-label'>Sort Price Gap Analysis</div>",
@@ -1692,7 +1697,6 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         label_visibility="collapsed",
     )
     spacer_col.empty()
-    st.markdown("</div>", unsafe_allow_html=True)
     return sort_gap_display_df(df, sort_field, sort_order)
 
 
@@ -1743,7 +1747,6 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
     if page_key not in st.session_state:
         st.session_state[page_key] = 1
 
-    st.markdown("<div class='pm-pagination-control'>", unsafe_allow_html=True)
     rows_label_col, rows_select_col, previous_col, page_col, next_col, showing_col = st.columns(
         [1.1, 0.8, 1.0, 1.15, 0.9, 2.25]
     )
@@ -1796,7 +1799,6 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
         f"<div class='pm-pagination-summary'>{showing_text}</div>",
         unsafe_allow_html=True,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
     return df.iloc[start_index:end_index]
 
 
@@ -1902,8 +1904,7 @@ def linked_platform_cell(value_text: str, url: object) -> str:
 
 
 def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
-    st.markdown("<div class='pm-card table-card'>", unsafe_allow_html=True)
-    st.subheader("Download")
+    st.markdown("<h2 class='pm-section-heading'>Download</h2>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     col1.download_button(
         label="Download latest price table CSV",
@@ -1919,7 +1920,6 @@ def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
         mime="text/csv",
         use_container_width=True,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def main() -> None:
@@ -1949,7 +1949,6 @@ def main() -> None:
     latest_df = latest_price_table(gap_df)
     formatted_gap_df = format_gap_table(gap_df)
 
-    st.markdown("---")
     render_kpis(gap_df)
 
     render_data_section("Price Gap Analysis", formatted_gap_df, GAP_COLUMNS)
