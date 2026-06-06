@@ -1195,11 +1195,12 @@ def inject_styles() -> None:
         }
 
         .stPlotlyChart {
-            padding: 0;
+            padding: 1.45rem 1.65rem;
             border-radius: 24px;
             border: 0;
-            background: transparent;
-            box-shadow: none;
+            background: #ffffff;
+            box-shadow: 0 24px 70px rgba(111, 143, 190, 0.16);
+            overflow: hidden;
         }
         .stPlotlyChart .hoverlayer .hovertext {
             filter: drop-shadow(0 14px 30px rgba(79, 96, 140, 0.18));
@@ -1625,13 +1626,18 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     st.markdown("<a id='trend-chart'></a>", unsafe_allow_html=True)
     st.markdown("<h2 class='pm-section-heading'>Price Trend Chart</h2>", unsafe_allow_html=True)
 
-    required = {"crawl_date", "effective_price", "model", "memory"}
-    if not required.issubset(filtered.columns):
-        st.info("Trend chart requires crawl_date, effective_price, model, and memory columns.")
+    has_standard_sku = "standard_model_memory" in filtered.columns
+    has_fallback_sku = {"model", "memory"}.issubset(filtered.columns)
+    required = {"crawl_date", "effective_price"}
+    if not required.issubset(filtered.columns) or not (has_standard_sku or has_fallback_sku):
+        st.info(
+            "Trend chart requires crawl_date, effective_price, and SKU columns "
+            "(standard_model_memory or model and memory)."
+        )
         return
 
     trend_df = filtered.copy()
-    trend_df["crawl_date"] = pd.to_datetime(trend_df["crawl_date"], errors="coerce")
+    trend_df["crawl_date"] = pd.to_datetime(trend_df["crawl_date"], errors="coerce").dt.normalize()
     trend_df["effective_price"] = pd.to_numeric(trend_df["effective_price"], errors="coerce")
     trend_df = trend_df.dropna(subset=["crawl_date", "effective_price"])
 
@@ -1639,15 +1645,37 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         st.info("No numeric price data available for the selected filters.")
         return
 
-    trend_df["sku_display"] = (
-        trend_df["model"].fillna("").astype(str).str.strip()
-        + " "
-        + trend_df["memory"].fillna("").astype(str).str.strip()
-    ).str.strip()
+    if has_standard_sku:
+        trend_df["sku_display"] = trend_df["standard_model_memory"].fillna("").astype(str).str.strip()
+    else:
+        trend_df["sku_display"] = (
+            trend_df["model"].fillna("").astype(str).str.strip()
+            + " "
+            + trend_df["memory"].fillna("").astype(str).str.strip()
+        ).str.strip()
+
     trend_df["sku_display"] = trend_df["sku_display"].where(
         trend_df["sku_display"].ne(""),
         "Unknown SKU",
     )
+
+    min_price = trend_df["effective_price"].min()
+    max_price = trend_df["effective_price"].max()
+
+    if min_price == max_price:
+        y_min = max(0, min_price * 0.9)
+        y_max = max_price * 1.1
+    else:
+        y_min = max(0, min_price * 0.95)
+        y_max = max_price * 1.05
+
+    if y_max <= y_min:
+        y_max = y_min + 1
+
+    unique_dates = sorted(trend_df["crawl_date"].dropna().unique())
+    xaxis_options = {}
+    if len(unique_dates) <= 2:
+        xaxis_options["tickvals"] = unique_dates
 
     fig = go.Figure()
 
@@ -1666,13 +1694,14 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
                     smoothing=1.25,
                 ),
                 marker=dict(
-                    size=7,
-                    line=dict(width=1),
+                    size=8,
+                    symbol="circle",
+                    line=dict(width=1.5, color="#ffffff"),
                 ),
                 hovertemplate=(
-                    "<b>%{text}</b><br>"
-                    "Date: %{x|%d-%b}<br>"
-                    "Price: %{y:,.0f}"
+                    "<b>SKU:</b> %{text}<br>"
+                    "<b>Date:</b> %{x|%d-%b}<br>"
+                    "<b>Price:</b> %{y:,.0f}"
                     "<extra></extra>"
                 ),
                 text=[str(sku_name)] * len(group),
@@ -1681,53 +1710,58 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
 
     fig.update_layout(
         height=520,
-        plot_bgcolor="rgba(255,255,255,0)",
-        paper_bgcolor="rgba(255,255,255,0)",
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
         hovermode="closest",
-        margin=dict(l=40, r=30, t=30, b=40),
+        margin=dict(l=56, r=30, t=72, b=56),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
+            y=1.08,
+            xanchor="left",
+            x=0,
             bgcolor="rgba(255,255,255,0)",
-            font=dict(size=13, color="#536073"),
+            font=dict(size=13, color="#111827"),
+            title=dict(text="SKU", font=dict(size=13, color="#111827")),
         ),
         font=dict(
             family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-            color="#243044",
+            color="#111827",
         ),
         hoverlabel=dict(
             bgcolor="#ffffff",
-            bordercolor="rgba(255,255,255,0)",
-            font=dict(color="#243044", size=13),
+            bordercolor="rgba(17,24,39,0.10)",
+            font=dict(color="#111827", size=13),
+            align="left",
         ),
     )
 
     fig.update_xaxes(
         tickformat="%d-%b",
         showgrid=True,
-        gridcolor="rgba(148,163,184,0.18)",
+        gridcolor="rgba(148,163,184,0.22)",
         zeroline=False,
         showline=False,
         ticks="",
-        color="#7b8798",
+        color="#111827",
+        title=dict(text="Date", font=dict(color="#111827", size=13)),
+        tickfont=dict(color="#111827", size=12),
+        **xaxis_options,
     )
 
     fig.update_yaxes(
-        title="Price",
-        range=[0, 700000],
+        title=dict(text="Price", font=dict(color="#111827", size=13)),
+        range=[y_min, y_max],
         showgrid=True,
-        gridcolor="rgba(148,163,184,0.18)",
+        gridcolor="rgba(148,163,184,0.22)",
         zeroline=False,
         showline=False,
         ticks="",
-        color="#7b8798",
+        color="#111827",
+        tickfont=dict(color="#111827", size=12),
         tickformat=",",
     )
 
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(
         fig,
         use_container_width=True,
@@ -1736,7 +1770,6 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
             "responsive": True,
         },
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
