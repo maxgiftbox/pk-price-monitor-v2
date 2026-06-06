@@ -51,7 +51,6 @@ SKU_MASTER_MODEL_FALLBACK_JOIN_COLUMNS = [
 SKU_MASTER_STANDARD_COLUMNS = ["standard_model", "standard_memory"]
 COMPETITOR_PLATFORMS = ["PriceOye", "Pickaboo"]
 DARAZ_PLATFORM = "Daraz"
-OUT_OF_STOCK_STATUSES = {"out_of_stock", "unavailable"}
 TABLE_COLUMNS = [
     "crawl_time",
     "country",
@@ -1945,30 +1944,6 @@ def main() -> None:
     render_data_section("Price Gap Analysis", formatted_gap_df, GAP_COLUMNS)
     render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
     render_gap_chart(filtered)
-
-    alert_df = (
-        formatted_gap_df[formatted_gap_df["Alert"].isin(["Red", "Orange"])]
-        if "Alert" in formatted_gap_df.columns
-        else formatted_gap_df
-    )
-    render_data_section("Alert Section — Red and Orange", alert_df, GAP_COLUMNS)
-
-    out_of_stock_df = latest_df.copy()
-    stock_status_cols = available_columns(["Daraz Stock Status", "LC Stock Status"], out_of_stock_df)
-    if stock_status_cols:
-        out_of_stock_mask = pd.Series(False, index=out_of_stock_df.index)
-        for stock_status_col in stock_status_cols:
-            out_of_stock_mask |= (
-                out_of_stock_df[stock_status_col]
-                .fillna("")
-                .astype(str)
-                .str.casefold()
-                .isin(OUT_OF_STOCK_STATUSES)
-            )
-        out_of_stock_df = out_of_stock_df[out_of_stock_mask]
-    else:
-        out_of_stock_df = out_of_stock_df.iloc[0:0]
-    render_data_section("Out of Stock Section", out_of_stock_df, TABLE_COLUMNS)
 
     render_downloads(latest_df, formatted_gap_df)
 
