@@ -1070,7 +1070,9 @@ def inject_styles() -> None:
         .pm-table-scroll,
         [data-testid="stDataFrame"] {
             width: 100%;
-            overflow: auto;
+            max-height: 720px;
+            overflow-x: auto;
+            overflow-y: auto;
             border-radius: 24px;
             border: 0;
             box-shadow: 0 10px 30px rgba(79, 96, 140, 0.08);
@@ -1089,7 +1091,7 @@ def inject_styles() -> None:
         .pm-dashboard-table thead th {
             position: sticky;
             top: 0;
-            z-index: 2;
+            z-index: 10;
             padding: 0.86rem 1rem;
             border-right: 0;
             border-bottom: 1px solid rgba(92, 102, 120, 0.08);
