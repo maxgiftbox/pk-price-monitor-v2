@@ -841,151 +841,7 @@ def inject_styles() -> None:
             background: rgba(255, 255, 255, 0.58);
             box-shadow: 0 10px 26px rgba(91, 119, 190, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.82);
         }
-        /* Clean Apple / Notion style for Streamlit selectors */
-        div[data-baseweb="select"] {
-            width: 100% !important;
-            max-width: 100% !important;
-            border: none !important;
-            background: transparent !important;
-            color: #1f2937 !important;
-            overflow: visible !important;
-        }
-
-        div[data-baseweb="select"] > div {
-            background: #ffffff !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.28) !important;
-            border-radius: 18px !important;
-            box-shadow: 0 10px 28px rgba(111, 143, 190, 0.12) !important;
-            min-height: 52px !important;
-            padding-left: 14px !important;
-            padding-right: 40px !important;
-            overflow: visible !important;
-        }
-
-        div[data-baseweb="select"] span,
-        div[data-baseweb="select"] input,
-        div[data-baseweb="select"] div {
-            color: #1f2937 !important;
-            -webkit-text-fill-color: #1f2937 !important;
-            font-weight: 600 !important;
-        }
-
-        div[data-baseweb="select"] input {
-            min-width: 160px !important;
-            caret-color: #1f2937 !important;
-            opacity: 1 !important;
-        }
-
-        div[data-baseweb="select"] input::placeholder {
-            color: #64748b !important;
-            -webkit-text-fill-color: #64748b !important;
-            opacity: 1 !important;
-        }
-
-        div[data-baseweb="select"] svg {
-            color: #64748b !important;
-            fill: #64748b !important;
-        }
-
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-            gap: 0.35rem !important;
-            align-items: center !important;
-            flex-wrap: wrap !important;
-        }
-
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] div:has(> div[data-baseweb="tag"]),
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] div:has(> input) {
-            min-width: 0 !important;
-            max-width: none !important;
-            overflow: visible !important;
-            flex-wrap: wrap !important;
-            padding-left: 0 !important;
-        }
-
-        section[data-testid="stSidebar"] [data-testid="stMultiSelect"],
-        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] > div,
-        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] div[data-baseweb="select"] {
-            width: 100% !important;
-            max-width: 100% !important;
-        }
-
-        /* Selected tags */
-        div[data-baseweb="tag"] {
-            background: #eef2f7 !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.22) !important;
-            border-radius: 10px !important;
-            font-weight: 700 !important;
-            max-width: 230px !important;
-            padding: 5px 9px !important;
-            box-shadow: none !important;
-            min-width: 48px !important;
-            overflow: hidden !important;
-        }
-
-        div[data-baseweb="tag"] span,
-        div[data-baseweb="tag"] div,
-        div[data-baseweb="tag"] p {
-            color: #1f2937 !important;
-            -webkit-text-fill-color: #1f2937 !important;
-            font-weight: 700 !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-        }
-
-        div[data-baseweb="tag"] svg,
-        div[data-baseweb="tag"] button svg {
-            color: #64748b !important;
-            fill: #64748b !important;
-        }
-
-        div[data-baseweb="tag"] button {
-            color: #64748b !important;
-            -webkit-text-fill-color: #64748b !important;
-        }
-
-        /* Remove any decorative overlay that covers selector text */
-        div[data-baseweb="select"] *::before,
-        div[data-baseweb="select"] *::after,
-        div[data-baseweb="select"]::before,
-        div[data-baseweb="select"]::after,
-        div[data-baseweb="select"] > div::before,
-        div[data-baseweb="select"] > div::after {
-            content: none !important;
-            display: none !important;
-            pointer-events: none !important;
-            background: none !important;
-        }
-
-        /* Table controls width */
-        .sort-control {
-            min-width: 170px !important;
-        }
-
-        .sort-direction-control {
-            min-width: 210px !important;
-        }
-
-        .rows-per-page-control {
-            min-width: 140px !important;
-        }
-
-        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(2),
-        [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2) {
-            min-width: 170px !important;
-        }
-
-        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(3),
-        [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3) {
-            min-width: 210px !important;
-        }
-
-        [data-testid="stHorizontalBlock"]:has(.pm-pagination-summary) [data-testid="column"]:nth-of-type(2),
-        [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2) {
-            min-width: 140px !important;
-        }
+        /* Selector styling is intentionally handled in the final CSS block at the end of this style tag. */
 
         .platform-toggle-control {
             margin: 8px 0 20px 0;
@@ -1432,84 +1288,191 @@ def inject_styles() -> None:
             .pm-card, .table-card, .chart-card { padding: 1.15rem; border-radius: 22px; }
         }
 
-        /* Ensure enough width for main controls */
+        /* Final selector fixes: scoped to explicit wrappers/markers so older Streamlit/BaseWeb styles cannot win. */
         .sort-control,
         .sort-direction-control,
         .rows-per-page-control {
             min-width: 180px !important;
         }
 
-        /* Final selector overrides: keep Streamlit dropdowns readable in sidebar and table controls. */
-        .stSelectbox div[data-baseweb="select"] > div,
-        .stMultiSelect div[data-baseweb="select"] > div {
-            background: #ffffff !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.35) !important;
-            border-radius: 18px !important;
-            min-height: 64px !important;
-            height: auto !important;
-            padding: 12px 44px 12px 16px !important;
-            box-shadow: 0 10px 26px rgba(111, 143, 190, 0.10) !important;
+        [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2),
+        [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3),
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2) {
+            min-width: 180px !important;
             overflow: visible !important;
         }
 
-        .stSelectbox div[data-baseweb="select"] span,
-        .stSelectbox div[data-baseweb="select"] input,
-        .stMultiSelect div[data-baseweb="select"] span,
-        .stMultiSelect div[data-baseweb="select"] input {
-            color: #1f2937 !important;
-            font-weight: 700 !important;
-            opacity: 1 !important;
-            line-height: 1.4 !important;
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper),
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper),
+        [data-testid="column"]:has(.selector-fix-wrapper),
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) {
+            overflow: visible !important;
         }
 
-        .stSelectbox input::placeholder,
-        .stMultiSelect input::placeholder {
+        .selector-fix-wrapper {
+            display: none !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-testid="stSelectbox"],
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-testid="stMultiSelect"],
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-testid="stSelectbox"],
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-testid="stSelectbox"],
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-testid="stMultiSelect"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: visible !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"],
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"],
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"],
+        .selector-fix-wrapper [data-baseweb="select"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            overflow: visible !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] > div,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] > div,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] > div,
+        .selector-fix-wrapper [data-baseweb="select"] > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: 46px !important;
+            height: auto !important;
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border: 1px solid rgba(148, 163, 184, 0.36) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 8px 22px rgba(111, 143, 190, 0.10) !important;
+            padding: 8px 38px 8px 12px !important;
+            overflow: visible !important;
+            opacity: 1 !important;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] > div {
+            min-height: 54px !important;
+            padding: 8px 34px 8px 10px !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 4px !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] span,
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input,
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] div,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] span,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] div,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] span,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] input,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] div,
+        .selector-fix-wrapper [data-baseweb="select"] span,
+        .selector-fix-wrapper [data-baseweb="select"] input,
+        .selector-fix-wrapper [data-baseweb="select"] div {
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
+            line-height: 1.35 !important;
+            text-shadow: none !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] input,
+        .selector-fix-wrapper [data-baseweb="select"] input {
+            min-width: 130px !important;
+            caret-color: #111827 !important;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input {
+            min-width: 150px !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input::placeholder,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] input::placeholder,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] input::placeholder,
+        .selector-fix-wrapper [data-baseweb="select"] input::placeholder {
             color: #64748b !important;
-            opacity: 1 !important;
+            -webkit-text-fill-color: #64748b !important;
             font-weight: 700 !important;
+            opacity: 1 !important;
         }
 
-        .stMultiSelect div[data-baseweb="tag"] {
-            background: #f1f5f9 !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.22) !important;
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"],
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"],
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="tag"],
+        .selector-fix-wrapper [data-baseweb="tag"] {
+            max-width: 214px !important;
+            min-width: 0 !important;
+            margin: 2px 4px 2px 0 !important;
+            padding: 5px 8px !important;
+            background: #f3f4f6 !important;
+            background-color: #f3f4f6 !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border: 1px solid rgba(148, 163, 184, 0.28) !important;
             border-radius: 10px !important;
             box-shadow: none !important;
-            padding: 6px 10px !important;
-            margin: 3px 5px 3px 0 !important;
-            max-width: 240px !important;
+            overflow: hidden !important;
+            opacity: 1 !important;
         }
 
-        .stMultiSelect div[data-baseweb="tag"] span,
-        .stMultiSelect div[data-baseweb="tag"] div,
-        .stMultiSelect div[data-baseweb="tag"] p {
-            color: #1f2937 !important;
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] span,
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] div,
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] p,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] span,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] div,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] p,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="tag"] span,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="tag"] div,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="tag"] p,
+        .selector-fix-wrapper [data-baseweb="tag"] span,
+        .selector-fix-wrapper [data-baseweb="tag"] div,
+        .selector-fix-wrapper [data-baseweb="tag"] p {
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
             font-weight: 800 !important;
-            line-height: 1.2 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
+            line-height: 1.2 !important;
         }
 
-        .stMultiSelect div[data-baseweb="tag"] svg,
-        .stMultiSelect div[data-baseweb="tag"] button svg {
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] svg,
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] svg,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] svg,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="tag"] svg,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] svg,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="tag"] svg,
+        .selector-fix-wrapper [data-baseweb="select"] svg,
+        .selector-fix-wrapper [data-baseweb="tag"] svg {
             color: #64748b !important;
             fill: #64748b !important;
         }
 
-        .stSelectbox div[data-baseweb="select"] svg,
-        .stMultiSelect div[data-baseweb="select"] svg {
-            color: #64748b !important;
-            fill: #64748b !important;
-        }
-
-        .stSelectbox div[data-baseweb="select"] *::before,
-        .stSelectbox div[data-baseweb="select"] *::after,
-        .stMultiSelect div[data-baseweb="select"] *::before,
-        .stMultiSelect div[data-baseweb="select"] *::after {
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] *::before,
+        [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] *::after,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] *::before,
+        [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper) [data-baseweb="select"] *::after,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] *::before,
+        [data-testid="column"]:has(.selector-fix-wrapper) [data-baseweb="select"] *::after,
+        .selector-fix-wrapper [data-baseweb="select"] *::before,
+        .selector-fix-wrapper [data-baseweb="select"] *::after {
+            content: none !important;
             display: none !important;
+            background: none !important;
+            box-shadow: none !important;
         }
+
         </style>
         """,
         unsafe_allow_html=True,
@@ -1582,6 +1545,10 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     for col, label in filter_specs:
         if col in filtered.columns:
             options = sorted([x for x in filtered[col].dropna().unique().tolist() if str(x).strip()])
+            st.sidebar.markdown(
+                f"<div class='selector-fix-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
+                unsafe_allow_html=True,
+            )
             selected = st.sidebar.multiselect(label, options=options)
             if selected:
                 filtered = filtered[filtered[col].isin(selected)]
@@ -2124,7 +2091,7 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         "<div class='pm-sort-control-label'>Sort Price Gap Analysis</div>",
         unsafe_allow_html=True,
     )
-    sort_field_col.markdown("<div class='sort-control'></div>", unsafe_allow_html=True)
+    sort_field_col.markdown("<div class='selector-fix-wrapper sort-control'></div>", unsafe_allow_html=True)
     sort_field = sort_field_col.selectbox(
         "Sort field",
         ["Gap %", "Alert"],
@@ -2132,7 +2099,7 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         key="price_gap_sort_field",
         label_visibility="collapsed",
     )
-    sort_order_col.markdown("<div class='sort-direction-control'></div>", unsafe_allow_html=True)
+    sort_order_col.markdown("<div class='selector-fix-wrapper sort-direction-control'></div>", unsafe_allow_html=True)
     sort_order = sort_order_col.selectbox(
         "Sort order",
         ["Descending", "Ascending"],
@@ -2198,7 +2165,7 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
         "<div class='pm-pagination-summary'>Rows per page</div>",
         unsafe_allow_html=True,
     )
-    rows_select_col.markdown("<div class='rows-per-page-control'></div>", unsafe_allow_html=True)
+    rows_select_col.markdown("<div class='selector-fix-wrapper rows-per-page-control'></div>", unsafe_allow_html=True)
     rows_per_page = rows_select_col.selectbox(
         "Rows per page",
         ROWS_PER_PAGE_OPTIONS,
