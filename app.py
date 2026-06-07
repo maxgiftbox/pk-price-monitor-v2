@@ -820,15 +820,17 @@ def inject_styles() -> None:
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
         [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"],
         [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {
-            min-height: 42px !important;
+            min-height: 56px !important;
             width: 100% !important;
             max-width: 100% !important;
+            padding-left: 14px !important;
+            padding-right: 44px !important;
             border: none !important;
             border-radius: 18px !important;
             background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
             box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
             color: #FFFFFF !important;
-            font-weight: 700 !important;
+            font-weight: 800 !important;
             overflow: visible !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]),
@@ -875,8 +877,8 @@ def inject_styles() -> None:
             max-width: 100% !important;
         }
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-            padding-left: 0.72rem !important;
-            padding-right: 0.5rem !important;
+            padding-left: 14px !important;
+            padding-right: 44px !important;
             gap: 0.35rem !important;
             align-items: center !important;
             flex-wrap: wrap !important;
@@ -889,26 +891,53 @@ def inject_styles() -> None:
             flex-wrap: wrap !important;
             padding-left: 0 !important;
         }
+        div[data-baseweb="select"] {
+            width: 100% !important;
+        }
+        div[data-baseweb="select"] > div {
+            min-height: 56px !important;
+            padding-left: 14px !important;
+            padding-right: 44px !important;
+            overflow: visible !important;
+        }
+        div[data-baseweb="select"] input {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            font-weight: 800 !important;
+            min-width: 160px !important;
+        }
+        div[data-baseweb="select"] span {
+            color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+        div[data-baseweb="select"]::before,
+        div[data-baseweb="select"]::after,
+        div[data-baseweb="select"] > div::before,
+        div[data-baseweb="select"] > div::after {
+            content: none !important;
+            display: none !important;
+            pointer-events: none !important;
+            z-index: 0 !important;
+        }
         div[data-baseweb="tag"],
         [data-testid="stMultiSelect"] div[data-baseweb="tag"],
         [data-testid="stMultiSelect"] div[data-baseweb="select"] div[data-baseweb="tag"] {
             position: relative !important;
             z-index: 2 !important;
             flex: 0 1 auto !important;
-            min-width: auto !important;
             width: auto !important;
-            max-width: 240px !important;
-            margin-left: 0 !important;
-            padding-left: 10px !important;
-            padding-right: 8px !important;
-            border: 1px solid rgba(255,255,255,0.24) !important;
-            border-radius: 12px !important;
-            background: rgba(255, 255, 255, 0.22) !important;
-            background-color: rgba(255, 255, 255, 0.22) !important;
+            background: rgba(255,255,255,0.16) !important;
+            background-color: rgba(255,255,255,0.16) !important;
+            border: none !important;
+            box-shadow: none !important;
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
-            font-weight: 700 !important;
-            box-shadow: none !important;
+            font-weight: 800 !important;
+            max-width: 260px !important;
+            min-width: fit-content !important;
+            padding: 6px 10px !important;
+            margin-left: 0 !important;
+            border-radius: 12px !important;
             overflow: hidden !important;
         }
         div[data-baseweb="tag"] span,
@@ -919,7 +948,7 @@ def inject_styles() -> None:
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] p {
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
-            font-weight: 700 !important;
+            font-weight: 800 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
@@ -937,10 +966,12 @@ def inject_styles() -> None:
             max-width: none !important;
         }
         div[data-baseweb="tag"] svg,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg {
+        div[data-baseweb="tag"] button svg,
+        [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg,
+        [data-testid="stMultiSelect"] div[data-baseweb="tag"] button svg {
             color: #ffffff !important;
             fill: #ffffff !important;
-            font-weight: 700 !important;
+            font-weight: 800 !important;
             flex-shrink: 0 !important;
         }
         div[data-baseweb="tag"] button,
@@ -957,8 +988,20 @@ def inject_styles() -> None:
             flex: 0 1 220px !important;
         }
         [data-testid="stHorizontalBlock"]:has(.pm-pagination-summary) [data-testid="column"]:nth-of-type(2) {
-            min-width: 140px !important;
-            flex: 0 1 140px !important;
+            min-width: 150px !important;
+            flex: 0 1 150px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2),
+        .sort-control {
+            min-width: 180px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3),
+        .sort-direction-control {
+            min-width: 220px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2),
+        .rows-per-page-control {
+            min-width: 150px !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has([aria-disabled="true"]),
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has(input:disabled),
@@ -1995,6 +2038,7 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         "<div class='pm-sort-control-label'>Sort Price Gap Analysis</div>",
         unsafe_allow_html=True,
     )
+    sort_field_col.markdown("<div class='sort-control'></div>", unsafe_allow_html=True)
     sort_field = sort_field_col.selectbox(
         "Sort field",
         ["Gap %", "Alert"],
@@ -2002,6 +2046,7 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         key="price_gap_sort_field",
         label_visibility="collapsed",
     )
+    sort_order_col.markdown("<div class='sort-direction-control'></div>", unsafe_allow_html=True)
     sort_order = sort_order_col.selectbox(
         "Sort order",
         ["Descending", "Ascending"],
@@ -2067,6 +2112,7 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
         "<div class='pm-pagination-summary'>Rows per page</div>",
         unsafe_allow_html=True,
     )
+    rows_select_col.markdown("<div class='rows-per-page-control'></div>", unsafe_allow_html=True)
     rows_per_page = rows_select_col.selectbox(
         "Rows per page",
         ROWS_PER_PAGE_OPTIONS,
