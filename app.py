@@ -806,46 +806,58 @@ def inject_styles() -> None:
          * opened dropdown is portaled into div[data-baseweb="popover"] [role="listbox"].
          */
         [data-testid="stSelectbox"] div[data-baseweb="select"],
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] {
+        [data-testid="stMultiSelect"] div[data-baseweb="select"],
+        div[data-baseweb="select"] {
             width: 100% !important;
             max-width: 100% !important;
             border: none !important;
             border-radius: 18px !important;
-            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
-            box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
-            color: #FFFFFF !important;
+            background: transparent !important;
+            color: #1f2937 !important;
+            overflow: visible !important;
+        }
+        div[data-baseweb="select"] > div {
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            border: 1px solid rgba(148, 163, 184, 0.25) !important;
+            border-radius: 18px !important;
+            box-shadow: 0 12px 32px rgba(111,143,190,0.12) !important;
+            min-height: 52px !important;
+            padding-left: 14px !important;
+            padding-right: 40px !important;
             overflow: visible !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
         [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"],
         [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {
-            min-height: 56px !important;
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            border: 1px solid rgba(148, 163, 184, 0.25) !important;
+            border-radius: 18px !important;
+            box-shadow: 0 12px 32px rgba(111,143,190,0.12) !important;
+            min-height: 52px !important;
             width: 100% !important;
             max-width: 100% !important;
             padding-left: 14px !important;
-            padding-right: 44px !important;
-            border: none !important;
-            border-radius: 18px !important;
-            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
-            box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
-            color: #FFFFFF !important;
-            font-weight: 800 !important;
+            padding-right: 40px !important;
+            font-weight: 600 !important;
             overflow: visible !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]),
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div div:not([data-baseweb="tag"]) {
-            background: transparent !important;
-            background-color: transparent !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div:hover,
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div:focus-within,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:focus-within {
-            border: none !important;
-            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
-            box-shadow: 0 8px 24px rgba(99,102,241,0.25) !important;
-            color: #FFFFFF !important;
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
+            box-shadow: 0 12px 32px rgba(111,143,190,0.12) !important;
+        }
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] input,
+        div[data-baseweb="select"] div {
+            color: #1f2937 !important;
+            font-weight: 600 !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] div,
         [data-testid="stSelectbox"] div[data-baseweb="select"] span,
@@ -853,22 +865,28 @@ def inject_styles() -> None:
         [data-testid="stMultiSelect"] div[data-baseweb="select"] div,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] span,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] p {
-            color: #FFFFFF !important;
-            font-weight: 700 !important;
+            color: #1f2937 !important;
+            font-weight: 600 !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] input,
         [data-testid="stSelectbox"] div[data-baseweb="select"] input::placeholder,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] input,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] input::placeholder {
-            color: #FFFFFF !important;
-            -webkit-text-fill-color: #FFFFFF !important;
-            caret-color: #FFFFFF !important;
-            font-weight: 700 !important;
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            caret-color: #1f2937 !important;
+            font-weight: 600 !important;
+            min-width: 160px !important;
+            opacity: 1 !important;
+        }
+        div[data-baseweb="select"] svg {
+            color: #64748b !important;
+            fill: #64748b !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"] svg,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] svg {
-            color: #FFFFFF !important;
-            fill: #FFFFFF !important;
+            color: #64748b !important;
+            fill: #64748b !important;
         }
         section[data-testid="stSidebar"] [data-testid="stMultiSelect"],
         section[data-testid="stSidebar"] [data-testid="stMultiSelect"] > div,
@@ -877,8 +895,6 @@ def inject_styles() -> None:
             max-width: 100% !important;
         }
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
-            padding-left: 14px !important;
-            padding-right: 44px !important;
             gap: 0.35rem !important;
             align-items: center !important;
             flex-wrap: wrap !important;
@@ -891,25 +907,6 @@ def inject_styles() -> None:
             flex-wrap: wrap !important;
             padding-left: 0 !important;
         }
-        div[data-baseweb="select"] {
-            width: 100% !important;
-        }
-        div[data-baseweb="select"] > div {
-            min-height: 56px !important;
-            padding-left: 14px !important;
-            padding-right: 44px !important;
-            overflow: visible !important;
-        }
-        div[data-baseweb="select"] input {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            font-weight: 800 !important;
-            min-width: 160px !important;
-        }
-        div[data-baseweb="select"] span {
-            color: #ffffff !important;
-            font-weight: 800 !important;
-        }
         div[data-baseweb="select"]::before,
         div[data-baseweb="select"]::after,
         div[data-baseweb="select"] > div::before,
@@ -918,6 +915,18 @@ def inject_styles() -> None:
             display: none !important;
             pointer-events: none !important;
             z-index: 0 !important;
+            background: none !important;
+            width: 0 !important;
+        }
+        div[data-baseweb="tag"] {
+            background: rgba(91, 140, 255, 0.12) !important;
+            color: #1f2937 !important;
+            border: none !important;
+            border-radius: 10px !important;
+            font-weight: 700 !important;
+            max-width: 240px !important;
+            padding: 5px 9px !important;
+            box-shadow: none !important;
         }
         div[data-baseweb="tag"],
         [data-testid="stMultiSelect"] div[data-baseweb="tag"],
@@ -926,19 +935,26 @@ def inject_styles() -> None:
             z-index: 2 !important;
             flex: 0 1 auto !important;
             width: auto !important;
-            background: rgba(255,255,255,0.16) !important;
-            background-color: rgba(255,255,255,0.16) !important;
-            border: none !important;
-            box-shadow: none !important;
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            font-weight: 800 !important;
-            max-width: 260px !important;
             min-width: fit-content !important;
-            padding: 6px 10px !important;
             margin-left: 0 !important;
-            border-radius: 12px !important;
             overflow: hidden !important;
+            background: rgba(91, 140, 255, 0.12) !important;
+            color: #1f2937 !important;
+            border: none !important;
+            border-radius: 10px !important;
+            font-weight: 700 !important;
+            max-width: 240px !important;
+            padding: 5px 9px !important;
+            box-shadow: none !important;
+        }
+        div[data-baseweb="tag"] span,
+        div[data-baseweb="tag"] div,
+        div[data-baseweb="tag"] p {
+            color: #1f2937 !important;
+            font-weight: 700 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
         }
         div[data-baseweb="tag"] span,
         div[data-baseweb="tag"] div,
@@ -946,62 +962,50 @@ def inject_styles() -> None:
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] span,
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] div,
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] p {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            font-weight: 800 !important;
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            font-weight: 700 !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
         }
-        div[data-baseweb="tag"] span[title="pk"],
-        div[data-baseweb="tag"] span[title="bd"],
-        div[data-baseweb="tag"] span[title="daraz"],
-        div[data-baseweb="tag"] span[title="priceoye"],
-        div[data-baseweb="tag"] span[title="pickaboo"],
-        div[data-baseweb="tag"] span[title="4/64"],
-        div[data-baseweb="tag"] span[title="8/128"],
-        div[data-baseweb="tag"] span[title="8/256"] {
-            overflow: visible !important;
-            text-overflow: clip !important;
-            max-width: none !important;
+        div[data-baseweb="tag"] svg,
+        div[data-baseweb="tag"] button svg {
+            color: #64748b !important;
+            fill: #64748b !important;
         }
         div[data-baseweb="tag"] svg,
         div[data-baseweb="tag"] button svg,
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg,
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] button svg {
-            color: #ffffff !important;
-            fill: #ffffff !important;
-            font-weight: 800 !important;
+            color: #64748b !important;
+            fill: #64748b !important;
+            font-weight: 700 !important;
             flex-shrink: 0 !important;
         }
         div[data-baseweb="tag"] button,
         [data-testid="stMultiSelect"] div[data-baseweb="tag"] button {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
+            color: #64748b !important;
+            -webkit-text-fill-color: #64748b !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(2) {
-            min-width: 180px !important;
-            flex: 0 1 180px !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(3) {
-            min-width: 220px !important;
-            flex: 0 1 220px !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pm-pagination-summary) [data-testid="column"]:nth-of-type(2) {
-            min-width: 150px !important;
-            flex: 0 1 150px !important;
-        }
+        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(2),
         [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2),
         .sort-control {
-            min-width: 180px !important;
+            min-width: 160px !important;
         }
+        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(3),
         [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3),
         .sort-direction-control {
-            min-width: 220px !important;
+            min-width: 200px !important;
         }
+        [data-testid="stHorizontalBlock"]:has(.pm-pagination-summary) [data-testid="column"]:nth-of-type(2),
         [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2),
         .rows-per-page-control {
-            min-width: 150px !important;
+            min-width: 130px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.platform-select-control) [data-testid="column"]:nth-of-type(1),
+        .platform-select-control {
+            min-width: 320px !important;
         }
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has([aria-disabled="true"]),
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has(input:disabled),
@@ -1865,6 +1869,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
 
     platform_col, _ = st.columns([1.4, 3.6])
     with platform_col:
+        st.markdown("<div class='platform-select-control'></div>", unsafe_allow_html=True)
         selected_platforms = st.multiselect(
             "Platform",
             options=available_platforms,
