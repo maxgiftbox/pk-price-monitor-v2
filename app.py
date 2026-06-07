@@ -3,7 +3,6 @@ import json
 import os
 import re
 from datetime import date, datetime
-from urllib.parse import urlencode
 import gspread
 import pandas as pd
 import plotly.graph_objects as go
@@ -1533,6 +1532,126 @@ def inject_styles() -> None:
         }
 
 
+        /* Streamlit-safe table header sort buttons replace URL-based header links. */
+        .pm-header-sort-bar {
+            display: none !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) {
+            gap: 0 !important;
+            overflow-x: auto !important;
+            border-radius: 18px 18px 0 0;
+            background: #f4f7fb;
+            box-shadow: 0 10px 30px rgba(79, 96, 140, 0.06);
+        }
+        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) [data-testid="column"] {
+            min-width: 118px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) .stButton button {
+            min-height: 44px !important;
+            justify-content: flex-start !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: #f4f7fb !important;
+            box-shadow: none !important;
+            color: #5c6678 !important;
+            -webkit-text-fill-color: #5c6678 !important;
+            font-size: 0.82rem !important;
+            font-weight: 800 !important;
+            line-height: 1.2 !important;
+            padding: 0.62rem 0.8rem !important;
+            text-align: left !important;
+            white-space: nowrap !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) .stButton button:hover {
+            background: #eaf0f8 !important;
+            color: #374151 !important;
+            -webkit-text-fill-color: #374151 !important;
+            transform: none !important;
+        }
+
+        /* Keep pagination controls on one aligned line and keep select values readable. */
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) {
+            align-items: center !important;
+            gap: 0.55rem !important;
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) [data-testid="column"] {
+            display: flex !important;
+            align-items: center !important;
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton,
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stSelectbox {
+            width: 100% !important;
+            margin: 0 !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton button {
+            min-height: 46px !important;
+            margin: 0 !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] > div {
+            min-height: 46px !important;
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 8px 22px rgba(111, 143, 190, 0.10) !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] span,
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] div,
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] input {
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            font-weight: 800 !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] svg {
+            color: #64748b !important;
+            fill: #64748b !important;
+        }
+
+        /* Sidebar filters: blank empty state, visible arrow, light-gray readable selected tags. */
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="select"] input {
+            min-width: 1px !important;
+            width: 1px !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="select"] input::placeholder,
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="select"] [class*="placeholder"],
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="select"] div[aria-label="Choose options"] {
+            color: transparent !important;
+            -webkit-text-fill-color: transparent !important;
+            opacity: 0 !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="select"] svg {
+            color: #64748b !important;
+            fill: #64748b !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] {
+            max-width: 184px !important;
+            background: #f3f4f6 !important;
+            background-color: #f3f4f6 !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border-color: rgba(148, 163, 184, 0.30) !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] span,
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] div,
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] p {
+            max-width: 150px !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            font-weight: 800 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+
+
         </style>
         """,
         unsafe_allow_html=True,
@@ -1609,7 +1728,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
                 f"<div class='selector-fix-wrapper sidebar-filter-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
                 unsafe_allow_html=True,
             )
-            selected = st.sidebar.multiselect(label, options=options, placeholder="")
+            selected = st.sidebar.multiselect(label, options=options, placeholder=" ")
             if selected:
                 filtered = filtered[filtered[col].isin(selected)]
 
@@ -2137,6 +2256,8 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     ]
     display_df = df[display_columns] if display_columns else df
     sort_column, sort_direction = table_sort_state(title, visible_columns)
+    render_table_header_sort_buttons(title, visible_columns, sort_column, sort_direction)
+    sort_column, sort_direction = table_sort_state(title, visible_columns)
     display_df = sort_table_display_df(display_df, sort_column, sort_direction)
     page_df = render_table_pagination_controls(title, display_df)
     st.markdown(
@@ -2146,26 +2267,65 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
 
 
 def table_sort_state(title: str, visible_columns: list[str]) -> tuple[str | None, str | None]:
-    section_key = section_state_key(title)
-    sort_column = get_query_param_value(f"{section_key}_sort_col")
-    sort_direction = get_query_param_value(f"{section_key}_sort_dir")
+    sort_column_key, sort_direction_key = table_sort_session_keys(title)
+    sort_column = st.session_state.get(sort_column_key)
+    sort_direction = st.session_state.get(sort_direction_key)
 
     if sort_column not in visible_columns or sort_direction not in {"asc", "desc"}:
+        st.session_state[sort_column_key] = None
+        st.session_state[sort_direction_key] = None
         return None, None
-    return sort_column, sort_direction
+    return str(sort_column), str(sort_direction)
 
 
-def get_query_param_value(key: str) -> str | None:
-    try:
-        value = st.query_params.get(key)
-    except Exception:  # noqa: BLE001 - missing query param support should disable header sorting gracefully.
-        return None
+def table_sort_session_keys(title: str) -> tuple[str, str]:
+    if title == "Price Gap Analysis":
+        return "gap_sort_column", "gap_sort_direction"
+    if title == "Latest Price Table":
+        return "latest_sort_column", "latest_sort_direction"
 
-    if isinstance(value, list):
-        return str(value[0]) if value else None
-    if value is None:
-        return None
-    return str(value)
+    section_key = section_state_key(title)
+    return f"{section_key}_sort_column", f"{section_key}_sort_direction"
+
+
+def render_table_header_sort_buttons(
+    title: str,
+    visible_columns: list[str],
+    sort_column: str | None,
+    sort_direction: str | None,
+) -> None:
+    if not visible_columns:
+        return
+
+    sort_column_key, sort_direction_key = table_sort_session_keys(title)
+    header_columns = st.columns([max(len(display_header_label(column)), 5) for column in visible_columns])
+    header_columns[0].markdown("<span class='pm-header-sort-bar'></span>", unsafe_allow_html=True)
+
+    for header_col, column in zip(header_columns, visible_columns):
+        indicator = ""
+        if column == sort_column:
+            indicator = " ↑" if sort_direction == "asc" else " ↓" if sort_direction == "desc" else ""
+        label = f"{display_header_label(column)}{indicator}"
+        if header_col.button(
+            label,
+            key=f"{section_state_key(title)}_sort_{safe_widget_key(column)}",
+            help=f"Sort {title} by {display_header_label(column)}",
+            use_container_width=True,
+        ):
+            next_direction = next_table_sort_direction(column, sort_column, sort_direction)
+            if next_direction is None:
+                st.session_state[sort_column_key] = None
+                st.session_state[sort_direction_key] = None
+            else:
+                st.session_state[sort_column_key] = column
+                st.session_state[sort_direction_key] = next_direction
+            st.session_state[f"{section_state_key(title)}_page"] = 1
+            st.rerun()
+
+
+def safe_widget_key(value: str) -> str:
+    normalized = "".join(char.casefold() if char.isalnum() else "_" for char in value)
+    return "_".join(part for part in normalized.split("_") if part) or "column"
 
 
 def sort_table_display_df(
@@ -2231,7 +2391,7 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
         [1.1, 1.4, 1.0, 1.15, 0.9, 1.65]
     )
     rows_label_col.markdown(
-        "<div class='pm-pagination-summary'>Rows per page</div>",
+        "<div class='pagination-controls-fix pm-pagination-summary'>Rows per page</div>",
         unsafe_allow_html=True,
     )
     rows_control_classes = "selector-fix-wrapper rows-per-page-control"
@@ -2304,18 +2464,12 @@ def render_dashboard_table(
     sort_direction: str | None = None,
 ) -> str:
     visible_columns = visible_columns or visible_table_columns(df)
-    header_cells = "".join(
-        render_sortable_header_cell(title, column, sort_column, sort_direction)
-        for column in visible_columns
-    )
-
     if df.empty:
         empty_message = html.escape("No rows to display")
         colspan = max(len(visible_columns), 1)
         return (
             "<div class='pm-table-scroll'>"
             "<table class='pm-dashboard-table'>"
-            f"<thead><tr>{header_cells}</tr></thead>"
             f"<tbody><tr><td colspan='{colspan}'>{empty_message}</td></tr></tbody>"
             "</table>"
             "</div>"
@@ -2333,56 +2487,11 @@ def render_dashboard_table(
     return (
         "<div class='pm-table-scroll'>"
         "<table class='pm-dashboard-table'>"
-        f"<thead><tr>{header_cells}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody>"
         "</table>"
         "</div>"
     )
 
-
-
-def render_sortable_header_cell(
-    title: str | None, column: str, sort_column: str | None, sort_direction: str | None
-) -> str:
-    label = html.escape(display_header_label(column))
-    indicator = ""
-    if column == sort_column:
-        indicator = "↑" if sort_direction == "asc" else "↓" if sort_direction == "desc" else ""
-    indicator_html = f"<span class='pm-sort-indicator'>{indicator}</span>"
-
-    if not title:
-        return f"<th scope='col'>{label}{indicator_html}</th>"
-
-    href = html.escape(table_sort_href(title, column, sort_column, sort_direction), quote=True)
-    return (
-        "<th scope='col'>"
-        f"<a class='pm-sortable-header' href='{href}'>{label}{indicator_html}</a>"
-        "</th>"
-    )
-
-
-def table_sort_href(
-    title: str, column: str, sort_column: str | None, sort_direction: str | None
-) -> str:
-    section_key = section_state_key(title)
-    sort_column_key = f"{section_key}_sort_col"
-    sort_direction_key = f"{section_key}_sort_dir"
-    next_direction = next_table_sort_direction(column, sort_column, sort_direction)
-    params = current_query_params()
-
-    if next_direction is None:
-        params.pop(sort_column_key, None)
-        params.pop(sort_direction_key, None)
-    else:
-        params[sort_column_key] = column
-        params[sort_direction_key] = next_direction
-
-    query_string = urlencode(params, doseq=True)
-    anchor = SECTION_ANCHORS.get(title, "")
-    href = f"?{query_string}" if query_string else "?"
-    if anchor:
-        href += f"#{anchor}"
-    return href
 
 
 def next_table_sort_direction(
@@ -2395,14 +2504,6 @@ def next_table_sort_direction(
     return None
 
 
-def current_query_params() -> dict[str, str | list[str]]:
-    try:
-        query_params = st.query_params
-        if hasattr(query_params, "to_dict"):
-            return dict(query_params.to_dict())
-        return {key: query_params[key] for key in query_params}
-    except Exception:  # noqa: BLE001 - header links should still work if existing params are unreadable.
-        return {}
 
 def display_header_label(column: str) -> str:
     if column in TABLE_HEADER_LABELS:
