@@ -1473,6 +1473,63 @@ def inject_styles() -> None:
             box-shadow: none !important;
         }
 
+        /* Hide sidebar placeholder only */
+        .sidebar-filter-wrapper input::placeholder,
+        .sidebar-filter-wrapper [data-baseweb="select"] input::placeholder,
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) input::placeholder,
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="select"] input::placeholder {
+            color: transparent !important;
+            -webkit-text-fill-color: transparent !important;
+            opacity: 0 !important;
+        }
+
+        /* Price Gap Analysis select value visibility fix */
+        .gap-controls-fix div[data-baseweb="select"] > div,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] > div,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] > div {
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
+            border-radius: 18px !important;
+            min-height: 56px !important;
+            padding: 10px 44px 10px 16px !important;
+            overflow: visible !important;
+        }
+
+        .gap-controls-fix div[data-baseweb="select"] span,
+        .gap-controls-fix div[data-baseweb="select"] div,
+        .gap-controls-fix div[data-baseweb="select"] input,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] span,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] div,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] input,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] span,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] div,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] input {
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+
+        .gap-controls-fix div[data-baseweb="select"] svg,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] svg,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] svg {
+            color: #64748b !important;
+            fill: #64748b !important;
+        }
+
+        .gap-controls-fix .stSelectbox,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) .stSelectbox,
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) .stSelectbox {
+            min-width: 180px !important;
+        }
+
+        .gap-controls-fix .stSelectbox:nth-of-type(2),
+        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.sort-direction-control) .stSelectbox {
+            min-width: 220px !important;
+        }
+
         </style>
         """,
         unsafe_allow_html=True,
@@ -1546,10 +1603,10 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         if col in filtered.columns:
             options = sorted([x for x in filtered[col].dropna().unique().tolist() if str(x).strip()])
             st.sidebar.markdown(
-                f"<div class='selector-fix-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
+                f"<div class='selector-fix-wrapper sidebar-filter-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
                 unsafe_allow_html=True,
             )
-            selected = st.sidebar.multiselect(label, options=options)
+            selected = st.sidebar.multiselect(label, options=options, placeholder="")
             if selected:
                 filtered = filtered[filtered[col].isin(selected)]
 
@@ -2091,7 +2148,7 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         "<div class='pm-sort-control-label'>Sort Price Gap Analysis</div>",
         unsafe_allow_html=True,
     )
-    sort_field_col.markdown("<div class='selector-fix-wrapper sort-control'></div>", unsafe_allow_html=True)
+    sort_field_col.markdown("<div class='selector-fix-wrapper gap-controls-fix sort-control'></div>", unsafe_allow_html=True)
     sort_field = sort_field_col.selectbox(
         "Sort field",
         ["Gap %", "Alert"],
@@ -2099,7 +2156,7 @@ def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
         key="price_gap_sort_field",
         label_visibility="collapsed",
     )
-    sort_order_col.markdown("<div class='selector-fix-wrapper sort-direction-control'></div>", unsafe_allow_html=True)
+    sort_order_col.markdown("<div class='selector-fix-wrapper gap-controls-fix sort-direction-control'></div>", unsafe_allow_html=True)
     sort_order = sort_order_col.selectbox(
         "Sort order",
         ["Descending", "Ascending"],
@@ -2165,7 +2222,10 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
         "<div class='pm-pagination-summary'>Rows per page</div>",
         unsafe_allow_html=True,
     )
-    rows_select_col.markdown("<div class='selector-fix-wrapper rows-per-page-control'></div>", unsafe_allow_html=True)
+    rows_control_classes = "selector-fix-wrapper rows-per-page-control"
+    if title == "Price Gap Analysis":
+        rows_control_classes += " gap-controls-fix"
+    rows_select_col.markdown(f"<div class='{rows_control_classes}'></div>", unsafe_allow_html=True)
     rows_per_page = rows_select_col.selectbox(
         "Rows per page",
         ROWS_PER_PAGE_OPTIONS,
