@@ -1432,21 +1432,27 @@ def inject_styles() -> None:
             .pm-card, .table-card, .chart-card { padding: 1.15rem; border-radius: 22px; }
         }
 
-        /* Reset Streamlit selector containers */
+        /* Ensure enough width for main controls */
+        .sort-control,
+        .sort-direction-control,
+        .rows-per-page-control {
+            min-width: 180px !important;
+        }
+
+        /* Final selector overrides: keep Streamlit dropdowns readable in sidebar and table controls. */
         .stSelectbox div[data-baseweb="select"] > div,
         .stMultiSelect div[data-baseweb="select"] > div {
             background: #ffffff !important;
             color: #1f2937 !important;
             border: 1px solid rgba(148, 163, 184, 0.35) !important;
             border-radius: 18px !important;
-            min-height: 56px !important;
+            min-height: 64px !important;
             height: auto !important;
-            padding: 8px 44px 8px 14px !important;
+            padding: 12px 44px 12px 16px !important;
             box-shadow: 0 10px 26px rgba(111, 143, 190, 0.10) !important;
             overflow: visible !important;
         }
 
-        /* Fix placeholder and selected text */
         .stSelectbox div[data-baseweb="select"] span,
         .stSelectbox div[data-baseweb="select"] input,
         .stMultiSelect div[data-baseweb="select"] span,
@@ -1457,26 +1463,24 @@ def inject_styles() -> None:
             line-height: 1.4 !important;
         }
 
-        /* Placeholder */
         .stSelectbox input::placeholder,
         .stMultiSelect input::placeholder {
             color: #64748b !important;
             opacity: 1 !important;
+            font-weight: 700 !important;
         }
 
-        /* Remove red selected tags */
         .stMultiSelect div[data-baseweb="tag"] {
             background: #f1f5f9 !important;
             color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.25) !important;
+            border: 1px solid rgba(148, 163, 184, 0.22) !important;
             border-radius: 10px !important;
             box-shadow: none !important;
             padding: 6px 10px !important;
-            margin: 2px 4px 2px 0 !important;
-            max-width: 260px !important;
+            margin: 3px 5px 3px 0 !important;
+            max-width: 240px !important;
         }
 
-        /* Selected tag text */
         .stMultiSelect div[data-baseweb="tag"] span,
         .stMultiSelect div[data-baseweb="tag"] div,
         .stMultiSelect div[data-baseweb="tag"] p {
@@ -1488,32 +1492,23 @@ def inject_styles() -> None:
             text-overflow: ellipsis !important;
         }
 
-        /* Selected tag close icon */
-        .stMultiSelect div[data-baseweb="tag"] svg {
+        .stMultiSelect div[data-baseweb="tag"] svg,
+        .stMultiSelect div[data-baseweb="tag"] button svg {
             color: #64748b !important;
             fill: #64748b !important;
         }
 
-        /* Dropdown arrow */
         .stSelectbox div[data-baseweb="select"] svg,
         .stMultiSelect div[data-baseweb="select"] svg {
             color: #64748b !important;
             fill: #64748b !important;
         }
 
-        /* Remove any broken overlay covering text */
         .stSelectbox div[data-baseweb="select"] *::before,
         .stSelectbox div[data-baseweb="select"] *::after,
         .stMultiSelect div[data-baseweb="select"] *::before,
         .stMultiSelect div[data-baseweb="select"] *::after {
             display: none !important;
-        }
-
-        /* Ensure enough width for main controls */
-        .sort-control,
-        .sort-direction-control,
-        .rows-per-page-control {
-            min-width: 180px !important;
         }
         </style>
         """,
