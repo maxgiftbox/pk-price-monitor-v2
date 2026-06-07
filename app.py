@@ -3,6 +3,7 @@ import json
 import os
 import re
 from datetime import date, datetime
+from urllib.parse import urlencode
 import gspread
 import pandas as pd
 import plotly.graph_objects as go
@@ -1112,14 +1113,6 @@ def inject_styles() -> None:
             margin: 32px 0 16px;
         }
 
-        .pm-sort-control-label {
-            color: #5B6475;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-            margin: 0 0 0.18rem;
-        }
-        .pm-sort-control .stSelectbox,
         .pm-pagination-control .stSelectbox {
             margin-bottom: 0 !important;
         }
@@ -1191,6 +1184,24 @@ def inject_styles() -> None:
         }
         .pm-dashboard-table thead th:first-child { border-top-left-radius: 18px; }
         .pm-dashboard-table thead th:last-child { border-top-right-radius: 18px; }
+        .pm-sortable-header {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            color: inherit !important;
+            text-decoration: none !important;
+            cursor: pointer;
+        }
+        .pm-sortable-header:hover {
+            color: #374151 !important;
+        }
+        .pm-sort-indicator {
+            display: inline-block;
+            min-width: 0.7rem;
+            color: #111827;
+            font-weight: 800;
+            text-align: center;
+        }
         .pm-dashboard-table tbody td {
             padding: 0.86rem 1rem;
             border-right: 0;
@@ -1289,14 +1300,10 @@ def inject_styles() -> None:
         }
 
         /* Final selector fixes: scoped to explicit wrappers/markers so older Streamlit/BaseWeb styles cannot win. */
-        .sort-control,
-        .sort-direction-control,
         .rows-per-page-control {
             min-width: 180px !important;
         }
 
-        [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2),
-        [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3),
         [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2) {
             min-width: 180px !important;
             overflow: visible !important;
@@ -1525,10 +1532,6 @@ def inject_styles() -> None:
             min-width: 180px !important;
         }
 
-        .gap-controls-fix .stSelectbox:nth-of-type(2),
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.sort-direction-control) .stSelectbox {
-            min-width: 220px !important;
-        }
 
         </style>
         """,
@@ -2133,69 +2136,78 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
         column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
     ]
     display_df = df[display_columns] if display_columns else df
-    if title == "Price Gap Analysis":
-        display_df = render_gap_sort_controls(display_df)
+    sort_column, sort_direction = table_sort_state(title, visible_columns)
+    display_df = sort_table_display_df(display_df, sort_column, sort_direction)
     page_df = render_table_pagination_controls(title, display_df)
-    st.markdown(render_dashboard_table(page_df, visible_columns), unsafe_allow_html=True)
-
-
-def render_gap_sort_controls(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-
-    sort_label_col, sort_field_col, sort_order_col, spacer_col = st.columns([1.15, 1.8, 2.2, 4.0])
-    sort_label_col.markdown(
-        "<div class='pm-sort-control-label'>Sort Price Gap Analysis</div>",
+    st.markdown(
+        render_dashboard_table(page_df, visible_columns, title, sort_column, sort_direction),
         unsafe_allow_html=True,
     )
-    sort_field_col.markdown("<div class='selector-fix-wrapper gap-controls-fix sort-control'></div>", unsafe_allow_html=True)
-    sort_field = sort_field_col.selectbox(
-        "Sort field",
-        ["Gap %", "Alert"],
-        index=0,
-        key="price_gap_sort_field",
-        label_visibility="collapsed",
-    )
-    sort_order_col.markdown("<div class='selector-fix-wrapper gap-controls-fix sort-direction-control'></div>", unsafe_allow_html=True)
-    sort_order = sort_order_col.selectbox(
-        "Sort order",
-        ["Descending", "Ascending"],
-        index=0,
-        key="price_gap_sort_order",
-        label_visibility="collapsed",
-    )
-    spacer_col.empty()
-    return sort_gap_display_df(df, sort_field, sort_order)
 
 
-def sort_gap_display_df(df: pd.DataFrame, sort_field: str, sort_order: str) -> pd.DataFrame:
-    if df.empty or sort_field not in df.columns:
+def table_sort_state(title: str, visible_columns: list[str]) -> tuple[str | None, str | None]:
+    section_key = section_state_key(title)
+    sort_column = get_query_param_value(f"{section_key}_sort_col")
+    sort_direction = get_query_param_value(f"{section_key}_sort_dir")
+
+    if sort_column not in visible_columns or sort_direction not in {"asc", "desc"}:
+        return None, None
+    return sort_column, sort_direction
+
+
+def get_query_param_value(key: str) -> str | None:
+    try:
+        value = st.query_params.get(key)
+    except Exception:  # noqa: BLE001 - missing query param support should disable header sorting gracefully.
+        return None
+
+    if isinstance(value, list):
+        return str(value[0]) if value else None
+    if value is None:
+        return None
+    return str(value)
+
+
+def sort_table_display_df(
+    df: pd.DataFrame, sort_column: str | None, sort_direction: str | None
+) -> pd.DataFrame:
+    if df.empty or not sort_column or sort_column not in df.columns or sort_direction not in {"asc", "desc"}:
         return df
 
     sorted_df = df.copy()
-    ascending = sort_order == "Ascending"
-    if sort_field == "Alert":
-        alert_rank = {"Green": 0, "Orange": 1, "Red": 2}
-        sorted_df["__alert_display_sort"] = (
-            sorted_df["Alert"].map(alert_rank).fillna(len(alert_rank)).astype(int)
-        )
-        sorted_df = sorted_df.sort_values(
-            ["__alert_display_sort"],
-            ascending=[ascending],
-            kind="mergesort",
-            na_position="last",
-        ).drop(columns=["__alert_display_sort"], errors="ignore")
-    else:
-        sort_values = parse_gap_percent_series(sorted_df["Gap %"])
-        sorted_df["__gap_pct_display_sort"] = sort_values
-        sorted_df = sorted_df.sort_values(
-            ["__gap_pct_display_sort"],
-            ascending=[ascending],
-            kind="mergesort",
-            na_position="last",
-        ).drop(columns=["__gap_pct_display_sort"], errors="ignore")
+    sort_key = table_sort_key(sorted_df[sort_column], sort_column)
+    helper_column = "__header_sort_key"
+    while helper_column in sorted_df.columns:
+        helper_column = f"_{helper_column}"
+    sorted_df[helper_column] = sort_key
+    return sorted_df.sort_values(
+        helper_column,
+        ascending=sort_direction == "asc",
+        kind="mergesort",
+        na_position="last",
+    ).drop(columns=[helper_column], errors="ignore")
 
-    return sorted_df
+
+def table_sort_key(series: pd.Series, column: str) -> pd.Series:
+    if column == "Gap %":
+        return parse_gap_percent_series(series)
+    if column in {"Gap Amount", "Daraz Effective Price", "Competitor Effective Price"}:
+        return parse_price_display_series(series)
+    if column == "crawl_time":
+        parsed_dates = pd.to_datetime(series, errors="coerce")
+        if parsed_dates.notna().any():
+            return parsed_dates
+    if column == "Alert":
+        alert_rank = {"Green": 0, "Orange": 1, "Red": 2}
+        return series.map(alert_rank)
+    return series.fillna("").astype(str).str.casefold()
+
+
+def parse_price_display_series(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(
+        series.fillna("").astype(str).str.replace(",", "", regex=False),
+        errors="coerce",
+    )
 
 
 def parse_gap_percent_series(series: pd.Series) -> pd.Series:
@@ -2285,11 +2297,15 @@ def visible_table_columns(df: pd.DataFrame) -> list[str]:
 
 
 def render_dashboard_table(
-    df: pd.DataFrame, visible_columns: list[str] | None = None
+    df: pd.DataFrame,
+    visible_columns: list[str] | None = None,
+    title: str | None = None,
+    sort_column: str | None = None,
+    sort_direction: str | None = None,
 ) -> str:
     visible_columns = visible_columns or visible_table_columns(df)
     header_cells = "".join(
-        f"<th scope='col'>{html.escape(display_header_label(column))}</th>"
+        render_sortable_header_cell(title, column, sort_column, sort_direction)
         for column in visible_columns
     )
 
@@ -2323,6 +2339,70 @@ def render_dashboard_table(
         "</div>"
     )
 
+
+
+def render_sortable_header_cell(
+    title: str | None, column: str, sort_column: str | None, sort_direction: str | None
+) -> str:
+    label = html.escape(display_header_label(column))
+    indicator = ""
+    if column == sort_column:
+        indicator = "↑" if sort_direction == "asc" else "↓" if sort_direction == "desc" else ""
+    indicator_html = f"<span class='pm-sort-indicator'>{indicator}</span>"
+
+    if not title:
+        return f"<th scope='col'>{label}{indicator_html}</th>"
+
+    href = html.escape(table_sort_href(title, column, sort_column, sort_direction), quote=True)
+    return (
+        "<th scope='col'>"
+        f"<a class='pm-sortable-header' href='{href}'>{label}{indicator_html}</a>"
+        "</th>"
+    )
+
+
+def table_sort_href(
+    title: str, column: str, sort_column: str | None, sort_direction: str | None
+) -> str:
+    section_key = section_state_key(title)
+    sort_column_key = f"{section_key}_sort_col"
+    sort_direction_key = f"{section_key}_sort_dir"
+    next_direction = next_table_sort_direction(column, sort_column, sort_direction)
+    params = current_query_params()
+
+    if next_direction is None:
+        params.pop(sort_column_key, None)
+        params.pop(sort_direction_key, None)
+    else:
+        params[sort_column_key] = column
+        params[sort_direction_key] = next_direction
+
+    query_string = urlencode(params, doseq=True)
+    anchor = SECTION_ANCHORS.get(title, "")
+    href = f"?{query_string}" if query_string else "?"
+    if anchor:
+        href += f"#{anchor}"
+    return href
+
+
+def next_table_sort_direction(
+    column: str, sort_column: str | None, sort_direction: str | None
+) -> str | None:
+    if column != sort_column:
+        return "asc"
+    if sort_direction == "asc":
+        return "desc"
+    return None
+
+
+def current_query_params() -> dict[str, str | list[str]]:
+    try:
+        query_params = st.query_params
+        if hasattr(query_params, "to_dict"):
+            return dict(query_params.to_dict())
+        return {key: query_params[key] for key in query_params}
+    except Exception:  # noqa: BLE001 - header links should still work if existing params are unreadable.
+        return {}
 
 def display_header_label(column: str) -> str:
     if column in TABLE_HEADER_LABELS:
