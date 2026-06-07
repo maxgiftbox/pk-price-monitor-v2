@@ -613,6 +613,48 @@ def normalized_platform(value: object) -> str:
     return PLATFORM_DISPLAY_NAMES.get(platform_key, platform_key)
 
 
+def platform_toggle_label(platform: str) -> str:
+    return {
+        "daraz": "Daraz",
+        "priceoye": "Priceoye",
+        "pickaboo": "Pickaboo",
+    }.get(platform, platform.title())
+
+
+def render_platform_toggles(available_platforms: list[str]) -> list[str]:
+    state_key = "trend_chart_platforms"
+    stored_platforms = st.session_state.get(state_key, available_platforms)
+    if not isinstance(stored_platforms, list):
+        stored_platforms = available_platforms
+
+    selected_platforms = [platform for platform in available_platforms if platform in stored_platforms]
+    if not selected_platforms:
+        selected_platforms = available_platforms.copy()
+    st.session_state[state_key] = selected_platforms
+
+    st.markdown("<div class='platform-toggle-control'></div>", unsafe_allow_html=True)
+    toggle_cols = st.columns(len(available_platforms))
+    for platform, col in zip(available_platforms, toggle_cols, strict=False):
+        active_class = " active" if platform in selected_platforms else ""
+        col.markdown(f"<div class='platform-toggle-btn{active_class}'></div>", unsafe_allow_html=True)
+        if col.button(
+            platform_toggle_label(platform),
+            key=f"trend_platform_toggle_{platform}",
+            use_container_width=True,
+        ):
+            updated_platforms = st.session_state[state_key].copy()
+            if platform in updated_platforms:
+                if len(updated_platforms) > 1:
+                    updated_platforms.remove(platform)
+            else:
+                updated_platforms.append(platform)
+                updated_platforms = [item for item in available_platforms if item in updated_platforms]
+            st.session_state[state_key] = updated_platforms
+            st.rerun()
+
+    return st.session_state[state_key]
+
+
 def require_password() -> bool:
     password = get_config_value("STREAMLIT_DASHBOARD_PASSWORD")
     if not password:
@@ -799,106 +841,59 @@ def inject_styles() -> None:
             background: rgba(255, 255, 255, 0.58);
             box-shadow: 0 10px 26px rgba(91, 119, 190, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.82);
         }
-        /*
-         * Streamlit 1.58 renders st.selectbox and st.multiselect as:
-         * [data-testid="stSelectbox"|"stMultiSelect"] div[data-baseweb="select"] > div.
-         * The visible closed control is that BaseWeb select root/inner control, while the
-         * opened dropdown is portaled into div[data-baseweb="popover"] [role="listbox"].
-         */
-        [data-testid="stSelectbox"] div[data-baseweb="select"],
-        [data-testid="stMultiSelect"] div[data-baseweb="select"],
+        /* Clean Apple / Notion style for Streamlit selectors */
         div[data-baseweb="select"] {
             width: 100% !important;
             max-width: 100% !important;
             border: none !important;
-            border-radius: 18px !important;
             background: transparent !important;
             color: #1f2937 !important;
             overflow: visible !important;
         }
+
         div[data-baseweb="select"] > div {
             background: #ffffff !important;
             color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.25) !important;
+            border: 1px solid rgba(148, 163, 184, 0.28) !important;
             border-radius: 18px !important;
-            box-shadow: 0 12px 32px rgba(111,143,190,0.12) !important;
+            box-shadow: 0 10px 28px rgba(111, 143, 190, 0.12) !important;
             min-height: 52px !important;
             padding-left: 14px !important;
             padding-right: 40px !important;
             overflow: visible !important;
         }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] [role="combobox"],
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] [role="combobox"] {
-            background: #ffffff !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.25) !important;
-            border-radius: 18px !important;
-            box-shadow: 0 12px 32px rgba(111,143,190,0.12) !important;
-            min-height: 52px !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            padding-left: 14px !important;
-            padding-right: 40px !important;
-            font-weight: 600 !important;
-            overflow: visible !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div:hover,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] > div:focus-within,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:focus-within {
-            background: #ffffff !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.35) !important;
-            box-shadow: 0 12px 32px rgba(111,143,190,0.12) !important;
-        }
+
         div[data-baseweb="select"] span,
         div[data-baseweb="select"] input,
         div[data-baseweb="select"] div {
             color: #1f2937 !important;
-            font-weight: 600 !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] div,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] span,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] p,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] div,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] span,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] p {
-            color: #1f2937 !important;
-            font-weight: 600 !important;
-        }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] input,
-        [data-testid="stSelectbox"] div[data-baseweb="select"] input::placeholder,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] input,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] input::placeholder {
-            color: #1f2937 !important;
             -webkit-text-fill-color: #1f2937 !important;
-            caret-color: #1f2937 !important;
             font-weight: 600 !important;
+        }
+
+        div[data-baseweb="select"] input {
             min-width: 160px !important;
+            caret-color: #1f2937 !important;
             opacity: 1 !important;
         }
+
+        div[data-baseweb="select"] input::placeholder {
+            color: #64748b !important;
+            -webkit-text-fill-color: #64748b !important;
+            opacity: 1 !important;
+        }
+
         div[data-baseweb="select"] svg {
             color: #64748b !important;
             fill: #64748b !important;
         }
-        [data-testid="stSelectbox"] div[data-baseweb="select"] svg,
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] svg {
-            color: #64748b !important;
-            fill: #64748b !important;
-        }
-        section[data-testid="stSidebar"] [data-testid="stMultiSelect"],
-        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] > div,
-        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] div[data-baseweb="select"] {
-            width: 100% !important;
-            max-width: 100% !important;
-        }
+
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
             gap: 0.35rem !important;
             align-items: center !important;
             flex-wrap: wrap !important;
         }
+
         [data-testid="stMultiSelect"] div[data-baseweb="select"] div:has(> div[data-baseweb="tag"]),
         [data-testid="stMultiSelect"] div[data-baseweb="select"] div:has(> input) {
             min-width: 0 !important;
@@ -907,61 +902,31 @@ def inject_styles() -> None:
             flex-wrap: wrap !important;
             padding-left: 0 !important;
         }
-        div[data-baseweb="select"]::before,
-        div[data-baseweb="select"]::after,
-        div[data-baseweb="select"] > div::before,
-        div[data-baseweb="select"] > div::after {
-            content: none !important;
-            display: none !important;
-            pointer-events: none !important;
-            z-index: 0 !important;
-            background: none !important;
-            width: 0 !important;
+
+        section[data-testid="stSidebar"] [data-testid="stMultiSelect"],
+        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] > div,
+        section[data-testid="stSidebar"] [data-testid="stMultiSelect"] div[data-baseweb="select"] {
+            width: 100% !important;
+            max-width: 100% !important;
         }
+
+        /* Selected tags */
         div[data-baseweb="tag"] {
-            background: rgba(91, 140, 255, 0.12) !important;
+            background: #eef2f7 !important;
             color: #1f2937 !important;
-            border: none !important;
+            border: 1px solid rgba(148, 163, 184, 0.22) !important;
             border-radius: 10px !important;
             font-weight: 700 !important;
-            max-width: 240px !important;
+            max-width: 230px !important;
             padding: 5px 9px !important;
             box-shadow: none !important;
-        }
-        div[data-baseweb="tag"],
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"],
-        [data-testid="stMultiSelect"] div[data-baseweb="select"] div[data-baseweb="tag"] {
-            position: relative !important;
-            z-index: 2 !important;
-            flex: 0 1 auto !important;
-            width: auto !important;
-            min-width: fit-content !important;
-            margin-left: 0 !important;
+            min-width: 48px !important;
             overflow: hidden !important;
-            background: rgba(91, 140, 255, 0.12) !important;
-            color: #1f2937 !important;
-            border: none !important;
-            border-radius: 10px !important;
-            font-weight: 700 !important;
-            max-width: 240px !important;
-            padding: 5px 9px !important;
-            box-shadow: none !important;
         }
+
         div[data-baseweb="tag"] span,
         div[data-baseweb="tag"] div,
         div[data-baseweb="tag"] p {
-            color: #1f2937 !important;
-            font-weight: 700 !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-        }
-        div[data-baseweb="tag"] span,
-        div[data-baseweb="tag"] div,
-        div[data-baseweb="tag"] p,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] span,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] div,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] p {
             color: #1f2937 !important;
             -webkit-text-fill-color: #1f2937 !important;
             font-weight: 700 !important;
@@ -969,44 +934,92 @@ def inject_styles() -> None:
             overflow: hidden !important;
             text-overflow: ellipsis !important;
         }
+
         div[data-baseweb="tag"] svg,
         div[data-baseweb="tag"] button svg {
             color: #64748b !important;
             fill: #64748b !important;
         }
-        div[data-baseweb="tag"] svg,
-        div[data-baseweb="tag"] button svg,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] button svg {
-            color: #64748b !important;
-            fill: #64748b !important;
-            font-weight: 700 !important;
-            flex-shrink: 0 !important;
-        }
-        div[data-baseweb="tag"] button,
-        [data-testid="stMultiSelect"] div[data-baseweb="tag"] button {
+
+        div[data-baseweb="tag"] button {
             color: #64748b !important;
             -webkit-text-fill-color: #64748b !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(2),
-        [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2),
+
+        /* Remove any decorative overlay that covers selector text */
+        div[data-baseweb="select"] *::before,
+        div[data-baseweb="select"] *::after,
+        div[data-baseweb="select"]::before,
+        div[data-baseweb="select"]::after,
+        div[data-baseweb="select"] > div::before,
+        div[data-baseweb="select"] > div::after {
+            content: none !important;
+            display: none !important;
+            pointer-events: none !important;
+            background: none !important;
+        }
+
+        /* Table controls width */
         .sort-control {
-            min-width: 160px !important;
+            min-width: 170px !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(3),
-        [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3),
+
         .sort-direction-control {
-            min-width: 200px !important;
+            min-width: 210px !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pm-pagination-summary) [data-testid="column"]:nth-of-type(2),
-        [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2),
+
         .rows-per-page-control {
-            min-width: 130px !important;
+            min-width: 140px !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.platform-select-control) [data-testid="column"]:nth-of-type(1),
-        .platform-select-control {
-            min-width: 320px !important;
+
+        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(2),
+        [data-testid="stHorizontalBlock"]:has(.sort-control) [data-testid="column"]:nth-of-type(2) {
+            min-width: 170px !important;
         }
+
+        [data-testid="stHorizontalBlock"]:has(.pm-sort-control-label) [data-testid="column"]:nth-of-type(3),
+        [data-testid="stHorizontalBlock"]:has(.sort-direction-control) [data-testid="column"]:nth-of-type(3) {
+            min-width: 210px !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.pm-pagination-summary) [data-testid="column"]:nth-of-type(2),
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2) {
+            min-width: 140px !important;
+        }
+
+        .platform-toggle-control {
+            margin: 8px 0 20px 0;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.platform-toggle-control) {
+            gap: 10px !important;
+            align-items: center !important;
+            margin: 8px 0 20px 0 !important;
+        }
+
+        [data-testid="stHorizontalBlock"]:has(.platform-toggle-control) [data-testid="column"] {
+            flex: 0 0 auto !important;
+            min-width: 112px !important;
+        }
+
+        [data-testid="column"]:has(.platform-toggle-btn) .stButton button {
+            border-radius: 999px !important;
+            padding: 10px 18px !important;
+            min-height: 44px !important;
+            font-weight: 700 !important;
+            border: 1px solid rgba(148,163,184,0.28) !important;
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            box-shadow: 0 10px 26px rgba(111,143,190,0.10) !important;
+        }
+
+        [data-testid="column"]:has(.platform-toggle-btn.active) .stButton button {
+            background: #eef2f7 !important;
+            border-color: rgba(148,163,184,0.42) !important;
+            color: #1f2937 !important;
+            font-weight: 800 !important;
+        }
+
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has([aria-disabled="true"]),
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has(input:disabled),
         [data-testid="stMultiSelect"] div[data-baseweb="select"]:has([aria-disabled="true"]),
@@ -1867,19 +1880,8 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         st.info("No Daraz, PriceOye, or Pickaboo price data available for the selected filters.")
         return
 
-    platform_col, _ = st.columns([1.4, 3.6])
-    with platform_col:
-        st.markdown("<div class='platform-select-control'></div>", unsafe_allow_html=True)
-        selected_platforms = st.multiselect(
-            "Platform",
-            options=available_platforms,
-            default=available_platforms,
-            key="trend_chart_platforms",
-        )
-
-    if not selected_platforms:
-        st.info("Select at least one platform to display the Price Trend Chart.")
-        return
+    st.markdown("<div class='pm-filter-caption'>Platform</div>", unsafe_allow_html=True)
+    selected_platforms = render_platform_toggles(available_platforms)
 
     chart_df = trend_df[trend_df["platform_display"].isin(selected_platforms)].copy()
 
