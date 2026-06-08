@@ -112,7 +112,7 @@ PLATFORM_COLORS = {
     "priceoye": "#5b8def",
     "pickaboo": "#34c7a0",
 }
-ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
+ROWS_PER_PAGE_OPTIONS = [10, 20, 40, 50, 100]
 DEFAULT_ROWS_PER_PAGE = 20
 SECTION_ANCHORS = {
     "Latest Price Table": "price-table",
@@ -1537,6 +1537,97 @@ def inject_styles() -> None:
         """,
         unsafe_allow_html=True,
     )
+    st.markdown(
+        """
+        <style>
+        .rows-per-page-fix,
+        .rows-per-page-fix .stSelectbox {
+            min-width: 180px !important;
+            width: 180px !important;
+        }
+
+        .rows-per-page-fix div[data-baseweb="select"] {
+            min-width: 180px !important;
+            width: 180px !important;
+        }
+
+        .rows-per-page-fix div[data-baseweb="select"] > div {
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            min-width: 180px !important;
+            width: 180px !important;
+            min-height: 56px !important;
+            padding: 10px 44px 10px 20px !important;
+            overflow: visible !important;
+        }
+
+        .rows-per-page-fix div[data-baseweb="select"] span,
+        .rows-per-page-fix div[data-baseweb="select"] div,
+        .rows-per-page-fix div[data-baseweb="select"] input {
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            white-space: nowrap !important;
+        }
+
+        .rows-per-page-fix div[data-baseweb="select"] svg {
+            color: #64748b !important;
+            fill: #64748b !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) [data-testid="stSelectbox"],
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) [data-testid="stSelectbox"],
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) .stSelectbox {
+            min-width: 180px !important;
+            width: 180px !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) div[data-baseweb="select"],
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) div[data-baseweb="select"] {
+            min-width: 180px !important;
+            width: 180px !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) div[data-baseweb="select"] > div,
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) div[data-baseweb="select"] > div {
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            min-width: 180px !important;
+            width: 180px !important;
+            min-height: 56px !important;
+            padding: 10px 44px 10px 20px !important;
+            overflow: visible !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) div[data-baseweb="select"] span,
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) div[data-baseweb="select"] div,
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) div[data-baseweb="select"] input,
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) div[data-baseweb="select"] span,
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) div[data-baseweb="select"] div,
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) div[data-baseweb="select"] input {
+            color: #1f2937 !important;
+            -webkit-text-fill-color: #1f2937 !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            white-space: nowrap !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.rows-per-page-fix) div[data-baseweb="select"] svg,
+        [data-testid="stHorizontalBlock"]:has(.rows-per-page-fix) [data-testid="column"]:has(.rows-per-page-fix) div[data-baseweb="select"] svg {
+            color: #64748b !important;
+            fill: #64748b !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_sidebar_chrome() -> None:
@@ -2234,7 +2325,7 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
         "<div class='pm-pagination-summary'>Rows per page</div>",
         unsafe_allow_html=True,
     )
-    rows_control_classes = "selector-fix-wrapper rows-per-page-control"
+    rows_control_classes = "selector-fix-wrapper rows-per-page-control rows-per-page-fix"
     if title == "Price Gap Analysis":
         rows_control_classes += " gap-controls-fix"
     rows_select_col.markdown(f"<div class='{rows_control_classes}'></div>", unsafe_allow_html=True)
