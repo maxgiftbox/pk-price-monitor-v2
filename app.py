@@ -111,8 +111,7 @@ PLATFORM_COLORS = {
     "priceoye": "#5b8def",
     "pickaboo": "#34c7a0",
 }
-ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100]
-DEFAULT_ROWS_PER_PAGE = 20
+PAGE_SIZE = 100
 SECTION_ANCHORS = {
     "Latest Price Table": "price-table",
     "Price Gap Analysis": "gap-analysis",
@@ -1112,9 +1111,6 @@ def inject_styles() -> None:
             margin: 32px 0 16px;
         }
 
-        .pm-pagination-control .stSelectbox {
-            margin-bottom: 0 !important;
-        }
         .pm-pagination-summary {
             color: #5B6475;
             font-size: 0.86rem;
@@ -1183,24 +1179,6 @@ def inject_styles() -> None:
         }
         .pm-dashboard-table thead th:first-child { border-top-left-radius: 18px; }
         .pm-dashboard-table thead th:last-child { border-top-right-radius: 18px; }
-        .pm-sortable-header {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.28rem;
-            color: inherit !important;
-            text-decoration: none !important;
-            cursor: pointer;
-        }
-        .pm-sortable-header:hover {
-            color: #374151 !important;
-        }
-        .pm-sort-indicator {
-            display: inline-block;
-            min-width: 0.7rem;
-            color: #111827;
-            font-weight: 800;
-            text-align: center;
-        }
         .pm-dashboard-table tbody td {
             padding: 0.86rem 1rem;
             border-right: 0;
@@ -1299,15 +1277,6 @@ def inject_styles() -> None:
         }
 
         /* Final selector fixes: scoped to explicit wrappers/markers so older Streamlit/BaseWeb styles cannot win. */
-        .rows-per-page-control {
-            min-width: 180px !important;
-        }
-
-        [data-testid="stHorizontalBlock"]:has(.rows-per-page-control) [data-testid="column"]:nth-of-type(2) {
-            min-width: 180px !important;
-            overflow: visible !important;
-        }
-
         [data-testid="stVerticalBlock"]:has(.selector-fix-wrapper),
         [data-testid="stHorizontalBlock"]:has(.selector-fix-wrapper),
         [data-testid="column"]:has(.selector-fix-wrapper),
@@ -1489,87 +1458,7 @@ def inject_styles() -> None:
             opacity: 0 !important;
         }
 
-        /* Price Gap Analysis select value visibility fix */
-        .gap-controls-fix div[data-baseweb="select"] > div,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] > div,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] > div {
-            background: #ffffff !important;
-            color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.35) !important;
-            border-radius: 18px !important;
-            min-height: 56px !important;
-            padding: 10px 44px 10px 16px !important;
-            overflow: visible !important;
-        }
-
-        .gap-controls-fix div[data-baseweb="select"] span,
-        .gap-controls-fix div[data-baseweb="select"] div,
-        .gap-controls-fix div[data-baseweb="select"] input,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] span,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] div,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] input,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] span,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] div,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] input {
-            color: #1f2937 !important;
-            -webkit-text-fill-color: #1f2937 !important;
-            font-weight: 700 !important;
-            opacity: 1 !important;
-            visibility: visible !important;
-        }
-
-        .gap-controls-fix div[data-baseweb="select"] svg,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) div[data-baseweb="select"] svg,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) div[data-baseweb="select"] svg {
-            color: #64748b !important;
-            fill: #64748b !important;
-        }
-
-        .gap-controls-fix .stSelectbox,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.gap-controls-fix) .stSelectbox,
-        [data-testid="stHorizontalBlock"]:has(.gap-controls-fix) [data-testid="column"]:has(.rows-per-page-control) .stSelectbox {
-            min-width: 180px !important;
-        }
-
-
-        /* Streamlit-safe table header sort buttons replace URL-based header links. */
-        .pm-header-sort-bar {
-            display: none !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) {
-            gap: 0 !important;
-            overflow-x: auto !important;
-            border-radius: 18px 18px 0 0;
-            background: #f4f7fb;
-            box-shadow: 0 10px 30px rgba(79, 96, 140, 0.06);
-        }
-        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) [data-testid="column"] {
-            min-width: 118px !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) .stButton button {
-            min-height: 44px !important;
-            justify-content: flex-start !important;
-            border: 0 !important;
-            border-radius: 0 !important;
-            background: #f4f7fb !important;
-            box-shadow: none !important;
-            color: #5c6678 !important;
-            -webkit-text-fill-color: #5c6678 !important;
-            font-size: 0.82rem !important;
-            font-weight: 800 !important;
-            line-height: 1.2 !important;
-            padding: 0.62rem 0.8rem !important;
-            text-align: left !important;
-            white-space: nowrap !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pm-header-sort-bar) .stButton button:hover {
-            background: #eaf0f8 !important;
-            color: #374151 !important;
-            -webkit-text-fill-color: #374151 !important;
-            transform: none !important;
-        }
-
-        /* Keep pagination controls on one aligned line and keep select values readable. */
+        /* Keep pagination controls on one aligned line. */
         [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) {
             align-items: center !important;
             gap: 0.55rem !important;
@@ -1580,37 +1469,13 @@ def inject_styles() -> None:
             align-items: center !important;
             overflow: visible !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton,
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stSelectbox {
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton {
             width: 100% !important;
             margin: 0 !important;
         }
         [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton button {
             min-height: 46px !important;
             margin: 0 !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] > div {
-            min-height: 46px !important;
-            background: #ffffff !important;
-            background-color: #ffffff !important;
-            color: #1f2937 !important;
-            -webkit-text-fill-color: #1f2937 !important;
-            border: 1px solid rgba(148, 163, 184, 0.35) !important;
-            border-radius: 16px !important;
-            box-shadow: 0 8px 22px rgba(111, 143, 190, 0.10) !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] span,
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] div,
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] input {
-            color: #1f2937 !important;
-            -webkit-text-fill-color: #1f2937 !important;
-            font-weight: 800 !important;
-            opacity: 1 !important;
-            visibility: visible !important;
-        }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) div[data-baseweb="select"] svg {
-            color: #64748b !important;
-            fill: #64748b !important;
         }
 
         /* Sidebar filters: blank empty state, visible arrow, light-gray readable selected tags. */
@@ -2255,159 +2120,26 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
         column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
     ]
     display_df = df[display_columns] if display_columns else df
-    sort_column, sort_direction = table_sort_state(title, visible_columns)
-    render_table_header_sort_buttons(title, visible_columns, sort_column, sort_direction)
-    sort_column, sort_direction = table_sort_state(title, visible_columns)
-    display_df = sort_table_display_df(display_df, sort_column, sort_direction)
     page_df = render_table_pagination_controls(title, display_df)
     st.markdown(
-        render_dashboard_table(page_df, visible_columns, title, sort_column, sort_direction),
+        render_dashboard_table(page_df, visible_columns, title),
         unsafe_allow_html=True,
-    )
-
-
-def table_sort_state(title: str, visible_columns: list[str]) -> tuple[str | None, str | None]:
-    sort_column_key, sort_direction_key = table_sort_session_keys(title)
-    sort_column = st.session_state.get(sort_column_key)
-    sort_direction = st.session_state.get(sort_direction_key)
-
-    if sort_column not in visible_columns or sort_direction not in {"asc", "desc"}:
-        st.session_state[sort_column_key] = None
-        st.session_state[sort_direction_key] = None
-        return None, None
-    return str(sort_column), str(sort_direction)
-
-
-def table_sort_session_keys(title: str) -> tuple[str, str]:
-    if title == "Price Gap Analysis":
-        return "gap_sort_column", "gap_sort_direction"
-    if title == "Latest Price Table":
-        return "latest_sort_column", "latest_sort_direction"
-
-    section_key = section_state_key(title)
-    return f"{section_key}_sort_column", f"{section_key}_sort_direction"
-
-
-def render_table_header_sort_buttons(
-    title: str,
-    visible_columns: list[str],
-    sort_column: str | None,
-    sort_direction: str | None,
-) -> None:
-    if not visible_columns:
-        return
-
-    sort_column_key, sort_direction_key = table_sort_session_keys(title)
-    header_columns = st.columns([max(len(display_header_label(column)), 5) for column in visible_columns])
-    header_columns[0].markdown("<span class='pm-header-sort-bar'></span>", unsafe_allow_html=True)
-
-    for header_col, column in zip(header_columns, visible_columns):
-        indicator = ""
-        if column == sort_column:
-            indicator = " ↑" if sort_direction == "asc" else " ↓" if sort_direction == "desc" else ""
-        label = f"{display_header_label(column)}{indicator}"
-        if header_col.button(
-            label,
-            key=f"{section_state_key(title)}_sort_{safe_widget_key(column)}",
-            help=f"Sort {title} by {display_header_label(column)}",
-            use_container_width=True,
-        ):
-            next_direction = next_table_sort_direction(column, sort_column, sort_direction)
-            if next_direction is None:
-                st.session_state[sort_column_key] = None
-                st.session_state[sort_direction_key] = None
-            else:
-                st.session_state[sort_column_key] = column
-                st.session_state[sort_direction_key] = next_direction
-            st.session_state[f"{section_state_key(title)}_page"] = 1
-            st.rerun()
-
-
-def safe_widget_key(value: str) -> str:
-    normalized = "".join(char.casefold() if char.isalnum() else "_" for char in value)
-    return "_".join(part for part in normalized.split("_") if part) or "column"
-
-
-def sort_table_display_df(
-    df: pd.DataFrame, sort_column: str | None, sort_direction: str | None
-) -> pd.DataFrame:
-    if df.empty or not sort_column or sort_column not in df.columns or sort_direction not in {"asc", "desc"}:
-        return df
-
-    sorted_df = df.copy()
-    sort_key = table_sort_key(sorted_df[sort_column], sort_column)
-    helper_column = "__header_sort_key"
-    while helper_column in sorted_df.columns:
-        helper_column = f"_{helper_column}"
-    sorted_df[helper_column] = sort_key
-    return sorted_df.sort_values(
-        helper_column,
-        ascending=sort_direction == "asc",
-        kind="mergesort",
-        na_position="last",
-    ).drop(columns=[helper_column], errors="ignore")
-
-
-def table_sort_key(series: pd.Series, column: str) -> pd.Series:
-    if column == "Gap %":
-        return parse_gap_percent_series(series)
-    if column in {"Gap Amount", "Daraz Effective Price", "Competitor Effective Price"}:
-        return parse_price_display_series(series)
-    if column == "crawl_time":
-        parsed_dates = pd.to_datetime(series, errors="coerce")
-        if parsed_dates.notna().any():
-            return parsed_dates
-    if column == "Alert":
-        alert_rank = {"Green": 0, "Orange": 1, "Red": 2}
-        return series.map(alert_rank)
-    return series.fillna("").astype(str).str.casefold()
-
-
-def parse_price_display_series(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(
-        series.fillna("").astype(str).str.replace(",", "", regex=False),
-        errors="coerce",
-    )
-
-
-def parse_gap_percent_series(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(
-        series.fillna("").astype(str).str.replace("%", "", regex=False),
-        errors="coerce",
     )
 
 
 def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFrame:
     section_key = section_state_key(title)
-    rows_key = f"{section_key}_rows_per_page"
     page_key = f"{section_key}_page"
+    page_size = PAGE_SIZE
 
-    if rows_key not in st.session_state:
-        st.session_state[rows_key] = DEFAULT_ROWS_PER_PAGE
     if page_key not in st.session_state:
         st.session_state[page_key] = 1
 
-    rows_label_col, rows_select_col, previous_col, page_col, next_col, showing_col = st.columns(
-        [1.1, 1.4, 1.0, 1.15, 0.9, 1.65]
-    )
-    rows_label_col.markdown(
-        "<div class='pagination-controls-fix pm-pagination-summary'>Rows per page</div>",
-        unsafe_allow_html=True,
-    )
-    rows_control_classes = "selector-fix-wrapper rows-per-page-control"
-    if title == "Price Gap Analysis":
-        rows_control_classes += " gap-controls-fix"
-    rows_select_col.markdown(f"<div class='{rows_control_classes}'></div>", unsafe_allow_html=True)
-    rows_per_page = rows_select_col.selectbox(
-        "Rows per page",
-        ROWS_PER_PAGE_OPTIONS,
-        index=ROWS_PER_PAGE_OPTIONS.index(st.session_state[rows_key]),
-        key=rows_key,
-        label_visibility="collapsed",
-    )
     total_rows = len(df)
-    total_pages = max((total_rows + rows_per_page - 1) // rows_per_page, 1)
+    total_pages = max((total_rows + page_size - 1) // page_size, 1)
     st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
+
+    previous_col, page_col, next_col, showing_col = st.columns([1.0, 1.15, 0.9, 4.1])
 
     previous_clicked = previous_col.button(
         "Previous",
@@ -2428,8 +2160,8 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
     st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
 
     current_page = min(max(int(st.session_state[page_key]), 1), total_pages)
-    start_index = (current_page - 1) * rows_per_page
-    end_index = min(start_index + rows_per_page, total_rows)
+    start_index = (current_page - 1) * page_size
+    end_index = min(start_index + page_size, total_rows)
 
     page_col.markdown(
         f"<div class='pm-page-indicator'>Page {current_page} / {total_pages}</div>",
@@ -2440,7 +2172,7 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
     else:
         showing_text = "Showing 0–0 of 0 rows"
     showing_col.markdown(
-        f"<div class='pm-pagination-summary'>{showing_text}</div>",
+        f"<div class='pagination-controls-fix pm-pagination-summary'>{showing_text}</div>",
         unsafe_allow_html=True,
     )
     return df.iloc[start_index:end_index]
@@ -2464,13 +2196,18 @@ def render_dashboard_table(
     sort_direction: str | None = None,
 ) -> str:
     visible_columns = visible_columns or visible_table_columns(df)
+    header_cells = "".join(
+        f"<th>{html.escape(display_header_label(column))}</th>" for column in visible_columns
+    )
+    table_head = f"<thead><tr>{header_cells}</tr></thead>" if header_cells else ""
+
     if df.empty:
         empty_message = html.escape("No rows to display")
         colspan = max(len(visible_columns), 1)
         return (
             "<div class='pm-table-scroll'>"
             "<table class='pm-dashboard-table'>"
-            f"<tbody><tr><td colspan='{colspan}'>{empty_message}</td></tr></tbody>"
+            f"{table_head}<tbody><tr><td colspan='{colspan}'>{empty_message}</td></tr></tbody>"
             "</table>"
             "</div>"
         )
@@ -2487,22 +2224,10 @@ def render_dashboard_table(
     return (
         "<div class='pm-table-scroll'>"
         "<table class='pm-dashboard-table'>"
-        f"<tbody>{''.join(body_rows)}</tbody>"
+        f"{table_head}<tbody>{''.join(body_rows)}</tbody>"
         "</table>"
         "</div>"
     )
-
-
-
-def next_table_sort_direction(
-    column: str, sort_column: str | None, sort_direction: str | None
-) -> str | None:
-    if column != sort_column:
-        return "asc"
-    if sort_direction == "asc":
-        return "desc"
-    return None
-
 
 
 def display_header_label(column: str) -> str:
