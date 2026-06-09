@@ -1112,17 +1112,20 @@ def inject_styles() -> None:
         }
 
         .pm-pagination-summary {
-            color: #5B6475;
-            font-size: 0.86rem;
-            font-weight: 650;
-            padding-top: 0.56rem;
+            color: #6b7280;
+            font-size: 14px;
+            font-weight: 500;
+            margin: 14px 0 10px;
+            padding-top: 0;
+            text-align: center;
             white-space: nowrap;
         }
         .pm-page-indicator {
             color: #374151;
             font-size: 0.88rem;
             font-weight: 700;
-            padding-top: 0.56rem;
+            line-height: 46px;
+            padding-top: 0;
             text-align: center;
             white-space: nowrap;
         }
@@ -1458,15 +1461,17 @@ def inject_styles() -> None:
             opacity: 0 !important;
         }
 
-        /* Keep pagination controls on one aligned line. */
+        /* Keep pagination controls centered on one aligned line below tables. */
         [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) {
             align-items: center !important;
-            gap: 0.55rem !important;
+            justify-content: center !important;
+            gap: 24px !important;
             overflow: visible !important;
         }
         [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) [data-testid="column"] {
             display: flex !important;
             align-items: center !important;
+            justify-content: center !important;
             overflow: visible !important;
         }
         [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton {
@@ -2181,14 +2186,15 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
         column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
     ]
     display_df = df[display_columns] if display_columns else df
-    page_df = render_table_pagination_controls(title, display_df)
+    page_df, pagination_state = paginate_table(title, display_df)
     st.markdown(
         render_dashboard_table(page_df, visible_columns, title),
         unsafe_allow_html=True,
     )
+    render_table_pagination_controls(pagination_state)
 
 
-def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFrame:
+def paginate_table(title: str, df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int | str]]:
     section_key = section_state_key(title)
     page_key = f"{section_key}_page"
     page_size = PAGE_SIZE
@@ -2200,43 +2206,68 @@ def render_table_pagination_controls(title: str, df: pd.DataFrame) -> pd.DataFra
     total_pages = max((total_rows + page_size - 1) // page_size, 1)
     st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
 
-    previous_col, page_col, next_col, showing_col = st.columns([1.0, 1.15, 0.9, 4.1])
-
-    previous_clicked = previous_col.button(
-        "Previous",
-        key=f"{section_key}_previous_page",
-        disabled=st.session_state[page_key] <= 1,
-        use_container_width=True,
-    )
-    next_clicked = next_col.button(
-        "Next",
-        key=f"{section_key}_next_page",
-        disabled=st.session_state[page_key] >= total_pages,
-        use_container_width=True,
-    )
-    if previous_clicked:
-        st.session_state[page_key] -= 1
-    if next_clicked:
-        st.session_state[page_key] += 1
-    st.session_state[page_key] = min(max(int(st.session_state[page_key]), 1), total_pages)
-
     current_page = min(max(int(st.session_state[page_key]), 1), total_pages)
     start_index = (current_page - 1) * page_size
     end_index = min(start_index + page_size, total_rows)
+    pagination_state = {
+        "section_key": section_key,
+        "page_key": page_key,
+        "current_page": current_page,
+        "total_pages": total_pages,
+        "total_rows": total_rows,
+        "start_index": start_index,
+        "end_index": end_index,
+    }
+    return df.iloc[start_index:end_index], pagination_state
 
-    page_col.markdown(
-        f"<div class='pm-page-indicator'>Page {current_page} / {total_pages}</div>",
-        unsafe_allow_html=True,
-    )
+
+def render_table_pagination_controls(pagination_state: dict[str, int | str]) -> None:
+    section_key = str(pagination_state["section_key"])
+    page_key = str(pagination_state["page_key"])
+    current_page = int(pagination_state["current_page"])
+    total_pages = int(pagination_state["total_pages"])
+    total_rows = int(pagination_state["total_rows"])
+    start_index = int(pagination_state["start_index"])
+    end_index = int(pagination_state["end_index"])
+
     if total_rows:
         showing_text = f"Showing {start_index + 1}–{end_index} of {total_rows} rows"
     else:
         showing_text = "Showing 0–0 of 0 rows"
-    showing_col.markdown(
-        f"<div class='pagination-controls-fix pm-pagination-summary'>{showing_text}</div>",
+
+    st.markdown(
+        f"<div class='pm-pagination-summary'>{showing_text}</div>",
         unsafe_allow_html=True,
     )
-    return df.iloc[start_index:end_index]
+
+    spacer_left, previous_col, page_col, next_col, spacer_right = st.columns([1.6, 0.9, 1.1, 0.9, 1.6])
+    spacer_left.empty()
+    previous_col.button(
+        "Previous",
+        key=f"{section_key}_previous_page",
+        disabled=current_page <= 1,
+        use_container_width=True,
+        on_click=change_table_page,
+        args=(page_key, total_pages, -1),
+    )
+    page_col.markdown(
+        f"<div class='pagination-controls-fix pm-page-indicator'>Page {current_page} / {total_pages}</div>",
+        unsafe_allow_html=True,
+    )
+    next_col.button(
+        "Next",
+        key=f"{section_key}_next_page",
+        disabled=current_page >= total_pages,
+        use_container_width=True,
+        on_click=change_table_page,
+        args=(page_key, total_pages, 1),
+    )
+    spacer_right.empty()
+
+
+def change_table_page(page_key: str, total_pages: int, delta: int) -> None:
+    current_page = int(st.session_state.get(page_key, 1))
+    st.session_state[page_key] = min(max(current_page + delta, 1), total_pages)
 
 
 def section_state_key(title: str) -> str:
