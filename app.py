@@ -1932,7 +1932,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         return
 
     trend_df = filtered.copy()
-    trend_df["crawl_date"] = pd.to_datetime(trend_df["crawl_date"], errors="coerce").dt.normalize()
+    trend_df["crawl_date"] = pd.to_datetime(trend_df["crawl_date"], errors="coerce").dt.date
     trend_df["effective_price"] = pd.to_numeric(trend_df["effective_price"], errors="coerce")
     trend_df = trend_df.dropna(subset=["crawl_date", "effective_price"])
 
@@ -1940,17 +1940,18 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         st.info("No numeric price data available for the selected filters.")
         return
 
+    sku_key = "standard_model_memory" if has_standard_sku else "sku_display"
     if has_standard_sku:
-        trend_df["sku_display"] = trend_df["standard_model_memory"].fillna("").astype(str).str.strip()
+        trend_df[sku_key] = trend_df[sku_key].fillna("").astype(str).str.strip()
     else:
-        trend_df["sku_display"] = (
+        trend_df[sku_key] = (
             trend_df["model"].fillna("").astype(str).str.strip()
             + " "
             + trend_df["memory"].fillna("").astype(str).str.strip()
         ).str.strip()
 
-    trend_df["sku_display"] = trend_df["sku_display"].where(
-        trend_df["sku_display"].ne(""),
+    trend_df[sku_key] = trend_df[sku_key].where(
+        trend_df[sku_key].ne(""),
         "Unknown SKU",
     )
 
@@ -1974,6 +1975,12 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     selected_platforms = render_platform_toggles(available_platforms)
 
     chart_df = trend_df[trend_df["platform_display"].isin(selected_platforms)].copy()
+    chart_df = (
+        chart_df
+        .sort_values(["crawl_date", "platform_display", sku_key])
+        .groupby(["crawl_date", "platform_display", sku_key], as_index=False)
+        .agg({"effective_price": "last"})
+    )
 
     if chart_df.empty:
         st.info("No price trend data available for the selected chart platforms.")
@@ -1993,18 +2000,34 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
         y_max = y_min + 1
 
     unique_dates = sorted(chart_df["crawl_date"].dropna().unique())
-    xaxis_options = {}
-    if len(unique_dates) <= 2:
-        xaxis_options["tickvals"] = unique_dates
-
-    fig = go.Figure()
-    trend_platform_colors = {
-        "daraz": "#2563eb",
-        "priceoye": "#16a34a",
-        "pickaboo": "#7c3aed",
+    xaxis_options = {
+        "tickmode": "array",
+        "tickvals": unique_dates,
+        "ticktext": [date.strftime("%d-%b") for date in unique_dates],
     }
 
-    for (platform_name, sku_name), group in chart_df.groupby(["platform_display", "sku_display"]):
+    fig = go.Figure()
+    sku_colors = [
+        "#2563eb",
+        "#f97316",
+        "#8b5cf6",
+        "#14b8a6",
+        "#ec4899",
+        "#84cc16",
+        "#f59e0b",
+        "#06b6d4",
+    ]
+    sku_color_map = {
+        sku: sku_colors[index % len(sku_colors)]
+        for index, sku in enumerate(sorted(chart_df[sku_key].dropna().astype(str).unique()))
+    }
+    platform_dash_map = {
+        "daraz": "solid",
+        "priceoye": "dash",
+        "pickaboo": "dash",
+    }
+
+    for (platform_name, sku_name), group in chart_df.groupby(["platform_display", sku_key]):
         group = group.sort_values("crawl_date")
         platform_name = str(platform_name)
         sku_name = str(sku_name)
@@ -2017,8 +2040,8 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
                 mode="lines+markers",
                 name=legend_name,
                 line=dict(
-                    color=trend_platform_colors.get(platform_name, "#64748b"),
-                    dash="solid" if platform_name == "daraz" else "dash",
+                    color=sku_color_map.get(sku_name, "#64748b"),
+                    dash=platform_dash_map.get(platform_name, "solid"),
                     shape="spline",
                     width=3,
                     smoothing=1.25,
@@ -2028,7 +2051,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
                     symbol="circle",
                     line=dict(width=1.5, color="#ffffff"),
                 ),
-                customdata=list(zip(group["platform_display"], group["sku_display"], strict=False)),
+                customdata=list(zip(group["platform_display"], group[sku_key], strict=False)),
                 hovertemplate=(
                     "<b>Platform:</b> %{customdata[0]}<br>"
                     "<b>SKU:</b> %{customdata[1]}<br>"
