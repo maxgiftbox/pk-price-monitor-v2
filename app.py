@@ -1917,6 +1917,23 @@ def count_distinct_gap_skus(
     return selected.drop_duplicates(sku_cols).shape[0] if sku_cols else len(selected)
 
 
+def chart_platform_label(platform: object) -> str:
+    platform_key = str(platform).strip().casefold()
+    return {
+        "daraz": "Daraz",
+        "priceoye": "PriceOye",
+        "pickaboo": "Pickaboo",
+    }.get(platform_key, str(platform).strip().title())
+
+
+def chart_legend_sku_label(sku: object, brand: object = "") -> str:
+    sku_label = str(sku).strip()
+    brand_label = "" if pd.isna(brand) else str(brand).strip()
+    if brand_label and sku_label.casefold().startswith(f"{brand_label.casefold()} "):
+        return sku_label[len(brand_label) :].strip()
+    return sku_label
+
+
 def render_gap_chart(filtered: pd.DataFrame) -> None:
     st.markdown("<a id='trend-chart'></a>", unsafe_allow_html=True)
     st.markdown("<h2 class='pm-section-heading'>Price Trend Chart</h2>", unsafe_allow_html=True)
@@ -1975,11 +1992,21 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     selected_platforms = render_platform_toggles(available_platforms)
 
     chart_df = trend_df[trend_df["platform_display"].isin(selected_platforms)].copy()
+    brand_series = (
+        chart_df["brand"] if "brand" in chart_df.columns else pd.Series("", index=chart_df.index)
+    )
+    chart_df["legend_sku"] = [
+        chart_legend_sku_label(sku, brand)
+        for sku, brand in zip(chart_df[sku_key], brand_series, strict=False)
+    ]
     chart_df = (
         chart_df
         .sort_values(["crawl_date", "platform_display", sku_key])
         .groupby(["crawl_date", "platform_display", sku_key], as_index=False)
-        .agg({"effective_price": "last"})
+        .agg({"effective_price": "last", "legend_sku": "last"})
+    )
+    chart_df["series_key"] = (
+        chart_df["platform_display"].astype(str) + "|" + chart_df[sku_key].astype(str)
     )
 
     if chart_df.empty:
@@ -2007,31 +2034,36 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     }
 
     fig = go.Figure()
-    sku_colors = [
-        "#2563eb",
-        "#f97316",
-        "#8b5cf6",
-        "#14b8a6",
-        "#ec4899",
-        "#84cc16",
-        "#f59e0b",
-        "#06b6d4",
+    series_palette = [
+        "#2563eb",  # blue
+        "#f97316",  # orange
+        "#10b981",  # emerald
+        "#8b5cf6",  # purple
+        "#ec4899",  # pink
+        "#06b6d4",  # cyan
+        "#84cc16",  # lime
+        "#f59e0b",  # amber
+        "#ef4444",  # red
+        "#14b8a6",  # teal
     ]
-    sku_color_map = {
-        sku: sku_colors[index % len(sku_colors)]
-        for index, sku in enumerate(sorted(chart_df[sku_key].dropna().astype(str).unique()))
+    series_keys = sorted(chart_df["series_key"].dropna().astype(str).unique())
+    series_color_map = {
+        key: series_palette[index % len(series_palette)]
+        for index, key in enumerate(series_keys)
     }
     platform_dash_map = {
         "daraz": "solid",
         "priceoye": "dash",
-        "pickaboo": "dash",
+        "pickaboo": "dot",
     }
 
     for (platform_name, sku_name), group in chart_df.groupby(["platform_display", sku_key]):
         group = group.sort_values("crawl_date")
         platform_name = str(platform_name)
         sku_name = str(sku_name)
-        legend_name = f"{platform_name} - {sku_name}"
+        series_key = f"{platform_name}|{sku_name}"
+        legend_sku = str(group["legend_sku"].iloc[-1]) if "legend_sku" in group else sku_name
+        legend_name = f"{chart_platform_label(platform_name)} | {legend_sku}"
 
         fig.add_trace(
             go.Scatter(
@@ -2040,7 +2072,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
                 mode="lines+markers",
                 name=legend_name,
                 line=dict(
-                    color=sku_color_map.get(sku_name, "#64748b"),
+                    color=series_color_map.get(series_key, "#64748b"),
                     dash=platform_dash_map.get(platform_name, "solid"),
                     shape="spline",
                     width=3,
@@ -2051,7 +2083,13 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
                     symbol="circle",
                     line=dict(width=1.5, color="#ffffff"),
                 ),
-                customdata=list(zip(group["platform_display"], group[sku_key], strict=False)),
+                customdata=list(
+                    zip(
+                        group["platform_display"].apply(chart_platform_label),
+                        group["legend_sku"],
+                        strict=False,
+                    )
+                ),
                 hovertemplate=(
                     "<b>Platform:</b> %{customdata[0]}<br>"
                     "<b>SKU:</b> %{customdata[1]}<br>"
@@ -2076,7 +2114,7 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
             x=0,
             bgcolor="rgba(255,255,255,0)",
             font=dict(size=13, color="#111827"),
-            title=dict(text="Platform - SKU", font=dict(size=13, color="#111827")),
+            title=dict(text="Platform | SKU", font=dict(size=13, color="#111827")),
         ),
         font=dict(
             family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
