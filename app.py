@@ -96,9 +96,16 @@ RAW_GAP_COLUMNS = [
 INTERNAL_GAP_URL_COLUMNS = ["daraz_product_url", "competitor_product_url"]
 INTERNAL_TABLE_COLUMNS = ["product_url", "daraz_product_url", "competitor_product_url"]
 TABLE_HEADER_LABELS = {
+    "crawl_time": "Date",
+    "crawl_date": "Date",
     "Daraz Effective Price": "Drz Price",
+    "Daraz Price": "Drz Price",
+    "Daraz Stock Status": "Stock",
     "Competitor Platform": "LC",
-    "Competitor Effective Price": "LCP SP",
+    "Competitor Effective Price": "LC Price",
+    "Competitor Price": "LC Price",
+    "LC Stock Status": "LC Stock",
+    "Gap Amount": "Gap",
 }
 LINKABLE_PLATFORM_COLUMNS = {"Competitor Platform", "LC"}
 PLATFORM_DISPLAY_NAMES = {
@@ -1461,26 +1468,39 @@ def inject_styles() -> None:
             opacity: 0 !important;
         }
 
-        /* Keep pagination controls centered on one aligned line below tables. */
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) {
+        /* Keep pagination controls centered as one compact flex group below tables. */
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix),
+        [class*="pagination_controls_fix"] [data-testid="stHorizontalBlock"],
+        [class*="pagination-controls-fix"] [data-testid="stHorizontalBlock"] {
+            display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 24px !important;
+            gap: 32px !important;
             overflow: visible !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) [data-testid="column"] {
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) > [data-testid="stVerticalBlock"],
+        [class*="pagination_controls_fix"] [data-testid="stHorizontalBlock"] > [data-testid="stVerticalBlock"],
+        [class*="pagination-controls-fix"] [data-testid="stHorizontalBlock"] > [data-testid="stVerticalBlock"] {
+            flex: 0 0 auto !important;
+            width: auto !important;
+            min-width: fit-content !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             overflow: visible !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton {
-            width: 100% !important;
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton,
+        [class*="pagination_controls_fix"] .stButton,
+        [class*="pagination-controls-fix"] .stButton {
+            width: auto !important;
             margin: 0 !important;
         }
-        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton button {
+        [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix) .stButton button,
+        [class*="pagination_controls_fix"] .stButton button,
+        [class*="pagination-controls-fix"] .stButton button {
             min-height: 46px !important;
             margin: 0 !important;
+            white-space: nowrap !important;
         }
 
         /* Sidebar filters: blank empty state, visible arrow, light-gray readable selected tags. */
@@ -2240,29 +2260,31 @@ def render_table_pagination_controls(pagination_state: dict[str, int | str]) -> 
         unsafe_allow_html=True,
     )
 
-    spacer_left, previous_col, page_col, next_col, spacer_right = st.columns([1.6, 0.9, 1.1, 0.9, 1.6])
-    spacer_left.empty()
-    previous_col.button(
-        "Previous",
-        key=f"{section_key}_previous_page",
-        disabled=current_page <= 1,
-        use_container_width=True,
-        on_click=change_table_page,
-        args=(page_key, total_pages, -1),
-    )
-    page_col.markdown(
-        f"<div class='pagination-controls-fix pm-page-indicator'>Page {current_page} / {total_pages}</div>",
-        unsafe_allow_html=True,
-    )
-    next_col.button(
-        "Next",
-        key=f"{section_key}_next_page",
-        disabled=current_page >= total_pages,
-        use_container_width=True,
-        on_click=change_table_page,
-        args=(page_key, total_pages, 1),
-    )
-    spacer_right.empty()
+    with st.container(
+        horizontal=True,
+        horizontal_alignment="center",
+        vertical_alignment="center",
+        gap="medium",
+        key=f"{section_key}_pagination_controls_fix",
+    ):
+        st.button(
+            "Previous",
+            key=f"{section_key}_previous_page",
+            disabled=current_page <= 1,
+            on_click=change_table_page,
+            args=(page_key, total_pages, -1),
+        )
+        st.markdown(
+            f"<div class='pagination-controls-fix pm-page-indicator'>Page {current_page} / {total_pages}</div>",
+            unsafe_allow_html=True,
+        )
+        st.button(
+            "Next",
+            key=f"{section_key}_next_page",
+            disabled=current_page >= total_pages,
+            on_click=change_table_page,
+            args=(page_key, total_pages, 1),
+        )
 
 
 def change_table_page(page_key: str, total_pages: int, delta: int) -> None:
