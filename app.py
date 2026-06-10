@@ -125,6 +125,12 @@ SECTION_ANCHORS = {
     "Price Trend Chart": "trend-chart",
 }
 
+ALERT_FILTERS = {
+    "Red": {"key": "gap_alert_filter_red", "label": "🔴 Red"},
+    "Orange": {"key": "gap_alert_filter_orange", "label": "🟠 Orange"},
+    "Green": {"key": "gap_alert_filter_green", "label": "🟢 Green"},
+}
+
 
 def get_config_value(name: str) -> str:
     """Read a configuration value from Streamlit secrets or the environment."""
@@ -1468,6 +1474,52 @@ def inject_styles() -> None:
             opacity: 0 !important;
         }
 
+        .pm-alert-filter-row {
+            margin: -2px 0 16px;
+        }
+        [class*="gap_alert_filter_"] .stButton button,
+        [class*="gap-alert-filter-"] .stButton button {
+            min-height: 42px !important;
+            padding: 0.42rem 1.05rem !important;
+            border-radius: 999px !important;
+            border: 1px solid #d1d5db !important;
+            background: #ffffff !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            font-weight: 700 !important;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+            white-space: nowrap !important;
+        }
+        [class*="gap_alert_filter_"] .stButton button:hover,
+        [class*="gap-alert-filter-"] .stButton button:hover {
+            border-color: #9ca3af !important;
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.10) !important;
+        }
+        [class*="gap_alert_filter_red_is_selected"] .stButton button,
+        [class*="gap-alert-filter-red-is-selected"] .stButton button {
+            background: #dc2626 !important;
+            border-color: #dc2626 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+        [class*="gap_alert_filter_orange_is_selected"] .stButton button,
+        [class*="gap-alert-filter-orange-is-selected"] .stButton button {
+            background: #f97316 !important;
+            border-color: #f97316 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+        [class*="gap_alert_filter_green_is_selected"] .stButton button,
+        [class*="gap-alert-filter-green-is-selected"] .stButton button {
+            background: #16a34a !important;
+            border-color: #16a34a !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            font-weight: 800 !important;
+        }
+
         /* Keep pagination controls centered as one compact flex group below tables. */
         [data-testid="stHorizontalBlock"]:has(.pagination-controls-fix),
         [class*="pagination_controls_fix"] [data-testid="stHorizontalBlock"],
@@ -2214,6 +2266,81 @@ def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None 
     render_table_pagination_controls(pagination_state)
 
 
+def render_gap_analysis_section(gap_df: pd.DataFrame) -> pd.DataFrame:
+    title = "Price Gap Analysis"
+    if anchor_id := SECTION_ANCHORS.get(title):
+        st.markdown(f"<a id='{anchor_id}'></a>", unsafe_allow_html=True)
+    st.markdown(f"<h2 class='pm-section-heading'>{html.escape(title)}</h2>", unsafe_allow_html=True)
+    render_gap_alert_filters()
+
+    display_gap_df = prepare_gap_analysis_display(gap_df)
+    visible_columns = available_columns(GAP_COLUMNS, display_gap_df)
+    display_columns = visible_columns + [
+        column
+        for column in INTERNAL_TABLE_COLUMNS
+        if column in display_gap_df.columns and column not in visible_columns
+    ]
+    display_df = display_gap_df[display_columns] if display_columns else display_gap_df
+    page_df, pagination_state = paginate_table(title, display_df)
+    st.markdown(
+        render_dashboard_table(page_df, visible_columns, title),
+        unsafe_allow_html=True,
+    )
+    render_table_pagination_controls(pagination_state)
+    return display_gap_df
+
+
+def prepare_gap_analysis_display(gap_df: pd.DataFrame) -> pd.DataFrame:
+    sorted_gap_df = gap_df.copy()
+    if "crawl_date" in sorted_gap_df.columns:
+        sorted_gap_df["crawl_date"] = pd.to_datetime(sorted_gap_df["crawl_date"], errors="coerce")
+        sorted_gap_df = sorted_gap_df.sort_values("crawl_date", ascending=True)
+
+    selected_alerts = selected_gap_alert_filters()
+    if selected_alerts and len(selected_alerts) < len(ALERT_FILTERS) and "Alert" in sorted_gap_df.columns:
+        sorted_gap_df = sorted_gap_df[sorted_gap_df["Alert"].isin(selected_alerts)]
+
+    return format_gap_table(sorted_gap_df)
+
+
+def render_gap_alert_filters() -> None:
+    initialize_gap_alert_filters()
+    st.markdown("<div class='pm-alert-filter-row'></div>", unsafe_allow_html=True)
+    columns = st.columns([0.12, 0.15, 0.13, 0.60], gap="small")
+    for column, alert_name in zip(columns[:3], ALERT_FILTERS, strict=False):
+        filter_config = ALERT_FILTERS[alert_name]
+        is_selected = bool(st.session_state.get(filter_config["key"], True))
+        selected_class = "is_selected" if is_selected else "is_unselected"
+        container_key = f"{filter_config['key']}_{selected_class}"
+        with column.container(key=container_key):
+            st.button(
+                filter_config["label"],
+                key=f"{filter_config['key']}_button",
+                on_click=toggle_gap_alert_filter,
+                args=(filter_config["key"],),
+                use_container_width=True,
+            )
+
+
+def initialize_gap_alert_filters() -> None:
+    for filter_config in ALERT_FILTERS.values():
+        st.session_state.setdefault(filter_config["key"], True)
+
+
+def selected_gap_alert_filters() -> list[str]:
+    initialize_gap_alert_filters()
+    return [
+        alert_name
+        for alert_name, filter_config in ALERT_FILTERS.items()
+        if st.session_state.get(filter_config["key"], True)
+    ]
+
+
+def toggle_gap_alert_filter(filter_key: str) -> None:
+    st.session_state[filter_key] = not bool(st.session_state.get(filter_key, True))
+    st.session_state["table_price_gap_analysis_page"] = 1
+
+
 def paginate_table(title: str, df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int | str]]:
     section_key = section_state_key(title)
     page_key = f"{section_key}_page"
@@ -2439,11 +2566,9 @@ def main() -> None:
     filtered = apply_filters(df)
     gap_df = calculate_gap_table(filtered)
     latest_df = latest_price_table(gap_df)
-    formatted_gap_df = format_gap_table(gap_df)
-
     render_kpis(gap_df)
 
-    render_data_section("Price Gap Analysis", formatted_gap_df, GAP_COLUMNS)
+    formatted_gap_df = render_gap_analysis_section(gap_df)
     render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
     render_gap_chart(filtered)
 
