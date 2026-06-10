@@ -779,7 +779,8 @@ def inject_styles() -> None:
             margin: 0;
             padding: 10px 14px 16px;
             width: 268px;
-            min-height: calc(100vh - 24px);
+            height: fit-content;
+            min-height: 0;
             border-radius: 32px;
             border: 1px solid rgba(255, 255, 255, 0.72);
             background:
