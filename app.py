@@ -120,7 +120,6 @@ PLATFORM_COLORS = {
 }
 PAGE_SIZE = 100
 SECTION_ANCHORS = {
-    "Latest Price Table": "price-table",
     "Price Gap Analysis": "gap-analysis",
     "Price Trend Chart": "trend-chart",
 }
@@ -1609,7 +1608,6 @@ def render_sidebar_chrome() -> None:
             <span class="pm-brand-title">Mob Monitor</span>
         </div>
         <div class="sidebar-nav">
-            <a href="#price-table" class="sidebar-nav-item">Price Table</a>
             <a href="#gap-analysis" class="sidebar-nav-item">Gap Analysis</a>
             <a href="#trend-chart" class="sidebar-nav-item">Trend Chart</a>
         </div>
@@ -1647,6 +1645,37 @@ def available_columns(columns: list[str], df: pd.DataFrame) -> list[str]:
     return [col for col in columns if col in df.columns]
 
 
+def short_sku_label(value):
+    if not value:
+        return value
+
+    v = str(value).strip()
+
+    brand_prefixes = [
+        "Apple ",
+        "Samsung ",
+        "Xiaomi ",
+        "Redmi ",
+        "TECNO ",
+        "Tecno ",
+        "Infinix ",
+        "Realme ",
+        "realme ",
+        "OPPO ",
+        "Vivo ",
+        "vivo ",
+        "HONOR ",
+        "Honor ",
+        "OnePlus ",
+    ]
+
+    for prefix in brand_prefixes:
+        if v.startswith(prefix):
+            return v[len(prefix):].strip()
+
+    return v
+
+
 def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
     st.sidebar.markdown(
@@ -1671,7 +1700,10 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
                 f"<div class='selector-fix-wrapper sidebar-filter-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
                 unsafe_allow_html=True,
             )
-            selected = st.sidebar.multiselect(label, options=options, placeholder=" ")
+            multiselect_kwargs = {"placeholder": " "}
+            if col == "model":
+                multiselect_kwargs["format_func"] = short_sku_label
+            selected = st.sidebar.multiselect(label, options=options, **multiselect_kwargs)
             if selected:
                 filtered = filtered[filtered[col].isin(selected)]
 
@@ -1686,52 +1718,6 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
             ]
 
     return filtered
-
-
-def latest_price_table(gap_df: pd.DataFrame) -> pd.DataFrame:
-    if gap_df.empty:
-        return pd.DataFrame(columns=TABLE_COLUMNS + INTERNAL_TABLE_COLUMNS)
-
-    required = {
-        "crawl_date",
-        "Country",
-        "Brand",
-        "SKU",
-        "Memory",
-        "Daraz Price",
-        "Competitor Platform",
-        "Competitor Price",
-    }
-    if not required.issubset(gap_df.columns):
-        return pd.DataFrame(columns=TABLE_COLUMNS + INTERNAL_TABLE_COLUMNS)
-
-    display = pd.DataFrame(index=gap_df.index)
-    display["crawl_time"] = gap_df["crawl_date"].apply(format_date)
-    display["country"] = gap_df["Country"]
-    display["brand"] = gap_df["Brand"]
-    display["model"] = gap_df["SKU"]
-    display["memory"] = gap_df["Memory"]
-    display["Daraz Effective Price"] = gap_df["Daraz Price"].apply(format_price).fillna("")
-    display["Daraz Stock Status"] = (
-        gap_df["Daraz Stock Status"] if "Daraz Stock Status" in gap_df.columns else ""
-    )
-    display["Competitor Platform"] = gap_df["Competitor Platform"]
-    display["Competitor Effective Price"] = gap_df["Competitor Price"].apply(format_price).fillna("")
-    display["LC Stock Status"] = gap_df["LC Stock Status"] if "LC Stock Status" in gap_df.columns else ""
-    display["product_url"] = gap_df.get("competitor_product_url", pd.Series("", index=gap_df.index))
-    display["daraz_product_url"] = gap_df.get("daraz_product_url", pd.Series("", index=gap_df.index))
-    display["competitor_product_url"] = gap_df.get(
-        "competitor_product_url", pd.Series("", index=gap_df.index)
-    )
-
-    sort_display_cols = available_columns(
-        ["crawl_time", "country", "brand", "model", "memory", "Competitor Platform"], display
-    )
-    if sort_display_cols:
-        display = display.sort_values(
-            sort_display_cols, ascending=[False] + [True] * (len(sort_display_cols) - 1)
-        )
-    return display[available_columns(TABLE_COLUMNS + INTERNAL_TABLE_COLUMNS, display)]
 
 
 def latest_platform_rows(
@@ -2523,17 +2509,9 @@ def linked_platform_cell(value_text: str, url: object) -> str:
     return f'<a href="{escaped_url}" target="_blank" rel="noopener noreferrer">{escaped_value}</a>'
 
 
-def render_downloads(latest_df: pd.DataFrame, gap_df: pd.DataFrame) -> None:
+def render_downloads(gap_df: pd.DataFrame) -> None:
     st.markdown("<h2 class='pm-section-heading'>Download</h2>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    col1.download_button(
-        label="Download latest price table CSV",
-        data=latest_df.to_csv(index=False).encode("utf-8"),
-        file_name="latest_price_table.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-    col2.download_button(
+    st.download_button(
         label="Download price gap analysis CSV",
         data=gap_df.to_csv(index=False).encode("utf-8"),
         file_name="price_gap_analysis.csv",
@@ -2566,14 +2544,12 @@ def main() -> None:
 
     filtered = apply_filters(df)
     gap_df = calculate_gap_table(filtered)
-    latest_df = latest_price_table(gap_df)
     render_kpis(gap_df)
 
     formatted_gap_df = render_gap_analysis_section(gap_df)
-    render_data_section("Latest Price Table", latest_df, TABLE_COLUMNS)
     render_gap_chart(filtered)
 
-    render_downloads(latest_df, formatted_gap_df)
+    render_downloads(formatted_gap_df)
 
 
 if __name__ == "__main__":
