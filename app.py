@@ -714,10 +714,6 @@ def inject_styles() -> None:
             font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
         }
 
-        #MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"] {
-            visibility: hidden;
-            height: 0;
-        }
 
         html, body, .stApp, [data-testid="stAppViewContainer"] {
             min-height: 100%;
@@ -1655,7 +1651,6 @@ def short_sku_label(value):
         "Apple ",
         "Samsung ",
         "Xiaomi ",
-        "Redmi ",
         "TECNO ",
         "Tecno ",
         "Infinix ",
@@ -1700,10 +1695,10 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
                 f"<div class='selector-fix-wrapper sidebar-filter-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
                 unsafe_allow_html=True,
             )
-            multiselect_kwargs = {"placeholder": " "}
+            multiselect_kwargs = {"placeholder": " ", "key": f"sidebar_filter_{col}"}
             if col == "model":
                 multiselect_kwargs["format_func"] = short_sku_label
-            selected = st.sidebar.multiselect(label, options=options, **multiselect_kwargs)
+            selected = st.sidebar.multiselect(label, options=options, default=[], **multiselect_kwargs)
             if selected:
                 filtered = filtered[filtered[col].isin(selected)]
 
@@ -2234,23 +2229,6 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
             "responsive": True,
         },
     )
-
-
-def render_data_section(title: str, df: pd.DataFrame, columns: list[str] | None = None) -> None:
-    if anchor_id := SECTION_ANCHORS.get(title):
-        st.markdown(f"<a id='{anchor_id}'></a>", unsafe_allow_html=True)
-    st.markdown(f"<h2 class='pm-section-heading'>{html.escape(title)}</h2>", unsafe_allow_html=True)
-    visible_columns = available_columns(columns, df) if columns else visible_table_columns(df)
-    display_columns = visible_columns + [
-        column for column in INTERNAL_TABLE_COLUMNS if column in df.columns and column not in visible_columns
-    ]
-    display_df = df[display_columns] if display_columns else df
-    page_df, pagination_state = paginate_table(title, display_df)
-    st.markdown(
-        render_dashboard_table(page_df, visible_columns, title),
-        unsafe_allow_html=True,
-    )
-    render_table_pagination_controls(pagination_state)
 
 
 def render_gap_analysis_section(gap_df: pd.DataFrame) -> pd.DataFrame:
