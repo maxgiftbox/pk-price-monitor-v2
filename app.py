@@ -619,12 +619,13 @@ def normalized_platform(value: object) -> str:
     return PLATFORM_DISPLAY_NAMES.get(platform_key, platform_key)
 
 
-def platform_toggle_label(platform: str) -> str:
-    return {
+def platform_toggle_label(platform: str, selected: bool = False) -> str:
+    label = {
         "daraz": "Daraz",
         "priceoye": "Priceoye",
         "pickaboo": "Pickaboo",
     }.get(platform, platform.title())
+    return f"✓ {label}" if selected else label
 
 
 def render_platform_toggles(available_platforms: list[str]) -> list[str]:
@@ -644,7 +645,7 @@ def render_platform_toggles(available_platforms: list[str]) -> list[str]:
         active_class = " active" if platform in selected_platforms else ""
         col.markdown(f"<div class='platform-toggle-btn{active_class}'></div>", unsafe_allow_html=True)
         if col.button(
-            platform_toggle_label(platform),
+            platform_toggle_label(platform, platform in selected_platforms),
             key=f"trend_platform_toggle_{platform}",
             use_container_width=True,
         ):
@@ -830,15 +831,16 @@ def inject_styles() -> None:
             margin: 8px 0 20px 0;
         }
 
-        [data-testid="stHorizontalBlock"]:has(.platform-toggle-control) {
-            gap: 10px !important;
+        [data-testid="stHorizontalBlock"]:has(.platform-toggle-btn) {
+            gap: 16px !important;
             align-items: center !important;
             margin: 8px 0 20px 0 !important;
         }
 
-        [data-testid="stHorizontalBlock"]:has(.platform-toggle-control) [data-testid="column"] {
-            flex: 0 0 auto !important;
+        [data-testid="stHorizontalBlock"]:has(.platform-toggle-btn) [data-testid="column"] {
+            flex: 0 1 auto !important;
             min-width: 112px !important;
+            max-width: 220px !important;
         }
 
         [data-testid="column"]:has(.platform-toggle-btn) .stButton button {
@@ -846,17 +848,18 @@ def inject_styles() -> None:
             padding: 10px 18px !important;
             min-height: 44px !important;
             font-weight: 700 !important;
-            border: 1px solid rgba(148,163,184,0.28) !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
             background: #ffffff !important;
             color: #1f2937 !important;
-            box-shadow: 0 10px 26px rgba(111,143,190,0.10) !important;
+            box-shadow: none !important;
         }
 
         [data-testid="column"]:has(.platform-toggle-btn.active) .stButton button {
-            background: #eef2f7 !important;
-            border-color: rgba(148,163,184,0.42) !important;
-            color: #1f2937 !important;
+            background: linear-gradient(135deg, #5B8CFF 0%, #8B5CF6 100%) !important;
+            border: none !important;
+            color: #ffffff !important;
             font-weight: 800 !important;
+            box-shadow: 0 12px 28px rgba(99, 102, 241, 0.28) !important;
         }
 
         [data-testid="stSelectbox"] div[data-baseweb="select"]:has([aria-disabled="true"]),
