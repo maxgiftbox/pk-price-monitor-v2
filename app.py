@@ -119,11 +119,6 @@ PLATFORM_COLORS = {
     "pickaboo": "#34c7a0",
 }
 PAGE_SIZE = 100
-SECTION_ANCHORS = {
-    "Price Gap Analysis": "gap-analysis",
-    "Price Trend Chart": "trend-chart",
-}
-
 ALERT_FILTERS = {
     "Red": {"key": "gap_alert_filter_red", "label": "🔴 Red"},
     "Orange": {"key": "gap_alert_filter_orange", "label": "🟠 Orange"},
@@ -815,26 +810,6 @@ def inject_styles() -> None:
             box-shadow: 0 14px 32px rgba(111, 124, 255, 0.32), inset 0 1px 10px rgba(255, 255, 255, 0.58);
         }
         .pm-brand-title { font-size: 1.05rem; font-weight: 780; letter-spacing: -0.035em; color: #111827; }
-        .sidebar-nav {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin: 0 0 20px 0;
-        }
-        .sidebar-nav-item {
-            display: block;
-            padding: 10px 18px;
-            border-radius: 28px;
-            text-decoration: none;
-            font-weight: 700;
-            color: #5f6b80;
-            transition: all 0.2s ease;
-        }
-        .sidebar-nav-item:hover {
-            background: rgba(255, 255, 255, 0.72);
-            color: #172033;
-            box-shadow: 0 16px 40px rgba(111, 143, 190, 0.18);
-        }
         .pm-filter-title { color: #344054; font-size: 0.76rem; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; margin: 20px 0 0.2rem; }
         .pm-filter-caption { color: #7a8699; font-size: 0.8rem; line-height: 1.4; margin-bottom: 0.7rem; }
         section[data-testid="stSidebar"] .stButton { margin-bottom: 20px; }
@@ -1603,10 +1578,6 @@ def render_sidebar_chrome() -> None:
             <span class="pm-logo-orb"></span>
             <span class="pm-brand-title">Mob Monitor</span>
         </div>
-        <div class="sidebar-nav">
-            <a href="#gap-analysis" class="sidebar-nav-item">Gap Analysis</a>
-            <a href="#trend-chart" class="sidebar-nav-item">Trend Chart</a>
-        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -1994,7 +1965,6 @@ def chart_legend_sku_label(sku: object, brand: object = "") -> str:
 
 
 def render_gap_chart(filtered: pd.DataFrame) -> None:
-    st.markdown("<a id='trend-chart'></a>", unsafe_allow_html=True)
     st.markdown("<h2 class='pm-section-heading'>Price Trend Chart</h2>", unsafe_allow_html=True)
 
     has_standard_sku = "standard_model_memory" in filtered.columns
@@ -2233,8 +2203,6 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
 
 def render_gap_analysis_section(gap_df: pd.DataFrame) -> pd.DataFrame:
     title = "Price Gap Analysis"
-    if anchor_id := SECTION_ANCHORS.get(title):
-        st.markdown(f"<a id='{anchor_id}'></a>", unsafe_allow_html=True)
     st.markdown(f"<h2 class='pm-section-heading'>{html.escape(title)}</h2>", unsafe_allow_html=True)
     render_gap_alert_filters()
 
