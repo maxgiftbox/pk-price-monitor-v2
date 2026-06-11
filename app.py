@@ -1089,6 +1089,37 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(18px) saturate(1.12);
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
+        .pm-action-card { padding: 1.1rem 1.2rem; }
+        .pm-action-card h2 { font-size: 1.16rem; margin-bottom: 0.95rem; }
+        .pm-action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
+        }
+        .pm-action-group-title {
+            color: #111827;
+            font-size: 0.86rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            margin-bottom: 0.5rem;
+        }
+        .pm-action-table-wrap {
+            border-radius: 16px;
+            box-shadow: 0 10px 26px rgba(79, 96, 140, 0.08);
+            max-height: 240px;
+            overflow: auto;
+        }
+        .pm-action-table { min-width: 0; font-size: 0.82rem; }
+        .pm-action-table thead th, .pm-action-table tbody td { padding: 0.58rem 0.7rem; }
+        .pm-action-empty {
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 26px rgba(79, 96, 140, 0.08);
+            color: #667085;
+            font-size: 0.88rem;
+            font-weight: 650;
+            padding: 0.85rem 0.9rem;
+        }
         .pm-section-heading {
             color: #111827;
             font-size: 1.45rem;
@@ -1938,6 +1969,83 @@ def numeric_gap_price(gap_df: pd.DataFrame, column: str) -> pd.Series:
     return pd.to_numeric(gap_df[column], errors="coerce")
 
 
+def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
+    required_columns = {"crawl_date", "Brand", "SKU", "Alert"}
+    if gap_df.empty or not required_columns.issubset(gap_df.columns):
+        return pd.DataFrame(columns=["Date", "Brand", "Model Name"])
+
+    action_df = gap_df.copy()
+    action_df["__action_date"] = pd.to_datetime(action_df["crawl_date"], errors="coerce").dt.date
+    latest_date = action_df["__action_date"].dropna().max()
+    if pd.isna(latest_date):
+        return pd.DataFrame(columns=["Date", "Brand", "Model Name"])
+
+    action_df = action_df[
+        action_df["__action_date"].eq(latest_date) & action_df["Alert"].eq(alert)
+    ].copy()
+    if action_df.empty:
+        return pd.DataFrame(columns=["Date", "Brand", "Model Name"])
+
+    action_df = action_df.drop_duplicates(["__action_date", "Brand", "SKU"])
+    action_df = action_df.sort_values(["Brand", "SKU"], na_position="last")
+
+    return pd.DataFrame(
+        {
+            "Date": action_df["__action_date"].apply(format_date),
+            "Brand": action_df["Brand"],
+            "Model Name": action_df["SKU"],
+        }
+    )
+
+
+def render_action_sku_group(title: str, rows: pd.DataFrame, empty_message: str) -> str:
+    escaped_title = html.escape(title)
+    if rows.empty:
+        return (
+            f"<div class='pm-action-group'>"
+            f"<div class='pm-action-group-title'>{escaped_title}</div>"
+            f"<div class='pm-action-empty'>{html.escape(empty_message)}</div>"
+            "</div>"
+        )
+
+    header_cells = "".join(f"<th>{html.escape(column)}</th>" for column in rows.columns)
+    body_rows = []
+    for _, row in rows.iterrows():
+        cells = "".join(f"<td>{html.escape(str(row.get(column, '')))}</td>" for column in rows.columns)
+        body_rows.append(f"<tr>{cells}</tr>")
+
+    return (
+        f"<div class='pm-action-group'>"
+        f"<div class='pm-action-group-title'>{escaped_title}</div>"
+        "<div class='pm-action-table-wrap'>"
+        "<table class='pm-dashboard-table pm-action-table'>"
+        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        "</table>"
+        "</div>"
+        "</div>"
+    )
+
+
+def render_today_action_skus(gap_df: pd.DataFrame) -> None:
+    red_rows = latest_action_sku_rows(gap_df, "Red")
+    orange_rows = latest_action_sku_rows(gap_df, "Orange")
+    st.markdown(
+        """
+        <div class='pm-card pm-action-card'>
+            <h2>Today Action SKU</h2>
+            <div class='pm-action-grid'>
+        """
+        + render_action_sku_group("Red SKU", red_rows, "No Red SKU today")
+        + render_action_sku_group("Orange SKU", orange_rows, "No Orange SKU today")
+        + """
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def count_distinct_gap_skus(
     gap_df: pd.DataFrame, sku_cols: list[str], mask: pd.Series | None = None
 ) -> int:
@@ -2228,13 +2336,41 @@ def render_gap_analysis_section(gap_df: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_gap_analysis_display(gap_df: pd.DataFrame) -> pd.DataFrame:
     sorted_gap_df = gap_df.copy()
-    if "crawl_date" in sorted_gap_df.columns:
-        sorted_gap_df["crawl_date"] = pd.to_datetime(sorted_gap_df["crawl_date"], errors="coerce")
-        sorted_gap_df = sorted_gap_df.sort_values("crawl_date", ascending=True)
 
     selected_alerts = selected_gap_alert_filters()
     if selected_alerts and len(selected_alerts) < len(ALERT_FILTERS) and "Alert" in sorted_gap_df.columns:
-        sorted_gap_df = sorted_gap_df[sorted_gap_df["Alert"].isin(selected_alerts)]
+        sorted_gap_df = sorted_gap_df[sorted_gap_df["Alert"].isin(selected_alerts)].copy()
+
+    if not sorted_gap_df.empty:
+        alert_series = sorted_gap_df.get("Alert", pd.Series("", index=sorted_gap_df.index))
+        sorted_gap_df["_alert_sort"] = alert_series.map({"Red": 0, "Orange": 1, "Green": 2}).fillna(9)
+
+        gap_pct_column = next(
+            (column for column in ["Gap %", "gap_pct", "gap_%"] if column in sorted_gap_df.columns),
+            None,
+        )
+        if gap_pct_column:
+            sorted_gap_df["_gap_pct_sort"] = pd.to_numeric(
+                sorted_gap_df[gap_pct_column], errors="coerce"
+            ).fillna(0)
+        else:
+            sorted_gap_df["_gap_pct_sort"] = 0
+
+        if "crawl_date" in sorted_gap_df.columns:
+            sorted_gap_df["crawl_date"] = pd.to_datetime(sorted_gap_df["crawl_date"], errors="coerce")
+            sorted_gap_df = sorted_gap_df.sort_values(
+                by=["_alert_sort", "_gap_pct_sort", "crawl_date"],
+                ascending=[True, False, True],
+                na_position="last",
+            )
+        else:
+            sorted_gap_df = sorted_gap_df.sort_values(
+                by=["_alert_sort", "_gap_pct_sort"],
+                ascending=[True, False],
+                na_position="last",
+            )
+
+        sorted_gap_df = sorted_gap_df.drop(columns=["_alert_sort", "_gap_pct_sort"], errors="ignore")
 
     return format_gap_table(sorted_gap_df)
 
@@ -2494,6 +2630,7 @@ def main() -> None:
     filtered = apply_filters(df)
     gap_df = calculate_gap_table(filtered)
     render_kpis(gap_df)
+    render_today_action_skus(gap_df)
 
     formatted_gap_df = render_gap_analysis_section(gap_df)
     render_gap_chart(filtered)
