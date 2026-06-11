@@ -1090,7 +1090,14 @@ def inject_styles() -> None:
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
         .pm-action-card { padding: 1.1rem 1.2rem; }
-        .pm-action-card h2 { font-size: 1.16rem; margin-bottom: 0.95rem; }
+        .pm-action-card h2 { font-size: 1.16rem; margin-bottom: 0.25rem; }
+        .pm-action-note {
+            color: #667085;
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.35;
+            margin: 0 0 0.8rem;
+        }
         .pm-action-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1107,10 +1114,26 @@ def inject_styles() -> None:
             border-radius: 16px;
             box-shadow: 0 10px 26px rgba(79, 96, 140, 0.08);
             max-height: 240px;
-            overflow: auto;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
-        .pm-action-table { min-width: 0; font-size: 0.82rem; }
-        .pm-action-table thead th, .pm-action-table tbody td { padding: 0.58rem 0.7rem; }
+        .pm-action-table {
+            min-width: 0 !important;
+            width: 100%;
+            table-layout: fixed;
+            font-size: 0.82rem;
+        }
+        .pm-action-table thead th,
+        .pm-action-table tbody td {
+            overflow: hidden;
+            padding: 10px 12px !important;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pm-action-table .date-col { width: 100px; }
+        .pm-action-table .brand-col { width: 82px; }
+        .pm-action-table .memory-col { width: 82px; }
+        .pm-action-table .model-col { width: auto; }
         .pm-action-empty {
             background: #ffffff;
             border-radius: 16px;
@@ -1972,28 +1995,33 @@ def numeric_gap_price(gap_df: pd.DataFrame, column: str) -> pd.Series:
 def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
     required_columns = {"crawl_date", "Brand", "SKU", "Alert"}
     if gap_df.empty or not required_columns.issubset(gap_df.columns):
-        return pd.DataFrame(columns=["Date", "Brand", "Model Name"])
+        return pd.DataFrame(columns=["Date", "Brand", "Model", "Memory"])
 
     action_df = gap_df.copy()
     action_df["__action_date"] = pd.to_datetime(action_df["crawl_date"], errors="coerce").dt.date
     latest_date = action_df["__action_date"].dropna().max()
     if pd.isna(latest_date):
-        return pd.DataFrame(columns=["Date", "Brand", "Model Name"])
+        return pd.DataFrame(columns=["Date", "Brand", "Model", "Memory"])
 
     action_df = action_df[
         action_df["__action_date"].eq(latest_date) & action_df["Alert"].eq(alert)
     ].copy()
     if action_df.empty:
-        return pd.DataFrame(columns=["Date", "Brand", "Model Name"])
+        return pd.DataFrame(columns=["Date", "Brand", "Model", "Memory"])
 
-    action_df = action_df.drop_duplicates(["__action_date", "Brand", "SKU"])
-    action_df = action_df.sort_values(["Brand", "SKU"], na_position="last")
+    action_df = action_df.drop_duplicates(
+        available_columns(["__action_date", "Brand", "SKU", "Memory"], action_df)
+    )
+    action_df = action_df.sort_values(
+        available_columns(["Brand", "SKU", "Memory"], action_df), na_position="last"
+    )
 
     return pd.DataFrame(
         {
             "Date": action_df["__action_date"].apply(format_date),
             "Brand": action_df["Brand"],
-            "Model Name": action_df["SKU"],
+            "Model": action_df["SKU"],
+            "Memory": action_df["Memory"] if "Memory" in action_df.columns else "",
         }
     )
 
@@ -2008,17 +2036,29 @@ def render_action_sku_group(title: str, rows: pd.DataFrame, empty_message: str) 
             "</div>"
         )
 
-    header_cells = "".join(f"<th>{html.escape(column)}</th>" for column in rows.columns)
+    column_classes = {
+        "Date": "date-col",
+        "Brand": "brand-col",
+        "Model": "model-col",
+        "Memory": "memory-col",
+    }
+    header_cells = "".join(
+        f"<th class='{column_classes.get(column, '')}'>{html.escape(column)}</th>"
+        for column in rows.columns
+    )
     body_rows = []
     for _, row in rows.iterrows():
-        cells = "".join(f"<td>{html.escape(str(row.get(column, '')))}</td>" for column in rows.columns)
+        cells = "".join(
+            f"<td class='{column_classes.get(column, '')}'>{html.escape(str(row.get(column, '')))}</td>"
+            for column in rows.columns
+        )
         body_rows.append(f"<tr>{cells}</tr>")
 
     return (
         f"<div class='pm-action-group'>"
         f"<div class='pm-action-group-title'>{escaped_title}</div>"
         "<div class='pm-action-table-wrap'>"
-        "<table class='pm-dashboard-table pm-action-table'>"
+        "<table class='pm-dashboard-table pm-action-table today-action-table'>"
         f"<thead><tr>{header_cells}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody>"
         "</table>"
@@ -2034,6 +2074,7 @@ def render_today_action_skus(gap_df: pd.DataFrame) -> None:
         """
         <div class='pm-card pm-action-card'>
             <h2>Today Action SKU</h2>
+            <div class='pm-action-note'>Red = Drz price &gt; LC price by ≥3%; Orange = Drz price &gt; LC price by 0–3%; Green = Drz price ≤ LC price.</div>
             <div class='pm-action-grid'>
         """
         + render_action_sku_group("Red SKU", red_rows, "No Red SKU today")
