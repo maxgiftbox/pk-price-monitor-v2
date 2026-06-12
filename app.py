@@ -588,6 +588,16 @@ def format_date(value: object) -> object:
         return value
 
 
+def display_brand(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().title()
+
+
+def display_brand_series(series: pd.Series) -> pd.Series:
+    return series.apply(display_brand)
+
+
 def format_price(value: object) -> object:
     try:
         if pd.isna(value):
@@ -738,7 +748,7 @@ def inject_styles() -> None:
             max-width: 100%;
             padding-left: 32px;
             padding-right: 32px;
-            padding-top: 20px;
+            padding-top: 6px;
             padding-bottom: 32px;
         }
 
@@ -1089,7 +1099,7 @@ def inject_styles() -> None:
             -webkit-backdrop-filter: blur(18px) saturate(1.12);
         }
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
-        .pm-action-card { padding: 1.1rem 1.2rem; }
+        .pm-action-card { margin-top: 0; padding: 1.1rem 1.2rem; }
         .pm-action-card h2 { font-size: 1.16rem; margin-bottom: 0.25rem; }
         .pm-action-note {
             color: #667085;
@@ -1312,7 +1322,7 @@ def inject_styles() -> None:
         }
 
         @media (max-width: 980px) {
-            .main .block-container { padding-left: 16px; padding-right: 16px; padding-top: 20px; }
+            .main .block-container { padding-left: 16px; padding-right: 16px; padding-top: 6px; }
             section[data-testid="stSidebar"] { width: 19rem !important; padding-left: 0.8rem; }
             section[data-testid="stSidebar"] > div { width: 17.8rem; border-radius: 26px; }
             .pm-topbar { align-items: flex-start; flex-direction: column; }
@@ -1640,21 +1650,6 @@ def render_sidebar_chrome() -> None:
     )
 
 
-def render_dashboard_header() -> None:
-    st.markdown(
-        f"""
-        <div class="pm-hero">
-            <div class="pm-hero-copy">
-                <div class="pm-title">Overview</div>
-                <div class="pm-subtitle">Daraz vs Competitor Pricing Intelligence — Latest Market Snapshot</div>
-                <div class="pm-overview">Overview generated on {date.today().strftime("%B %d, %Y")}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_refresh_control() -> None:
     if st.sidebar.button("🔄 Refresh Data"):
         st.session_state["last_refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1724,6 +1719,8 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
                 unsafe_allow_html=True,
             )
             multiselect_kwargs = {"placeholder": " ", "key": f"sidebar_filter_{col}"}
+            if col == "brand":
+                multiselect_kwargs["format_func"] = display_brand
             if col == "model":
                 multiselect_kwargs["format_func"] = short_sku_label
             selected = st.sidebar.multiselect(label, options=options, default=[], **multiselect_kwargs)
@@ -1893,7 +1890,7 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
             gap_df["crawl_date"].apply(format_date) if "crawl_date" in gap_df.columns else ""
         )
         formatted["country"] = gap_df["Country"] if "Country" in gap_df.columns else ""
-        formatted["brand"] = gap_df["Brand"] if "Brand" in gap_df.columns else ""
+        formatted["brand"] = display_brand_series(gap_df["Brand"]) if "Brand" in gap_df.columns else ""
         formatted["model"] = gap_df["SKU"] if "SKU" in gap_df.columns else ""
         formatted["memory"] = gap_df["Memory"] if "Memory" in gap_df.columns else ""
         formatted["Daraz Effective Price"] = (
@@ -1928,70 +1925,6 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         return gap_df[available_columns(GAP_COLUMNS + INTERNAL_TABLE_COLUMNS, gap_df)]
 
 
-def render_kpis(gap_df: pd.DataFrame) -> None:
-    sku_cols = available_columns(GAP_SKU_IDENTITY_COLUMNS, gap_df)
-    daraz_prices = numeric_gap_price(gap_df, "Daraz Price")
-    competitor_prices = numeric_gap_price(gap_df, "Competitor Price")
-
-    total_skus = count_distinct_gap_skus(gap_df, sku_cols)
-    daraz_skus = count_distinct_gap_skus(gap_df, sku_cols, daraz_prices.notna())
-    lc_skus = count_distinct_gap_skus(gap_df, sku_cols, competitor_prices.notna())
-    daraz_win_skus = count_distinct_gap_skus(
-        gap_df,
-        sku_cols,
-        daraz_prices.notna() & competitor_prices.notna() & (daraz_prices < competitor_prices),
-    )
-    daraz_loss_skus = count_distinct_gap_skus(
-        gap_df,
-        sku_cols,
-        daraz_prices.notna() & competitor_prices.notna() & (daraz_prices > competitor_prices),
-    )
-
-    metrics = [
-        ("Total SKU", f"{total_skus:,}"),
-        ("Drz SKU", f"{daraz_skus:,}"),
-        ("LC SKU", f"{lc_skus:,}"),
-        ("Drz Wins", f"{daraz_win_skus:,}"),
-        ("Drz Losses", f"{daraz_loss_skus:,}"),
-    ]
-    label_style = (
-        "color:#0F172A !important; "
-        "opacity:1 !important; "
-        "font-size:13px !important; "
-        "font-weight:800 !important; "
-        "letter-spacing:0.8px !important; "
-        "text-transform:uppercase !important; "
-        "margin-bottom:18px !important; "
-        "display:block !important;"
-    )
-    value_style = (
-        "color:#111827; "
-        "font-size:2.25rem; "
-        "font-weight:800; "
-        "letter-spacing:-0.055em; "
-        "line-height:1;"
-    )
-    card_style = "margin:0 !important;"
-    cols = st.columns(5)
-
-    for col, (label, value) in zip(cols, metrics, strict=False):
-        col.markdown(
-            f"""
-            <div class="metric-card" style="{card_style}">
-                <div class="kpi-label" style="{label_style}">{html.escape(label)}</div>
-                <div class="kpi-value" style="{value_style}">{html.escape(value)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-def numeric_gap_price(gap_df: pd.DataFrame, column: str) -> pd.Series:
-    if column not in gap_df.columns:
-        return pd.Series(pd.NA, index=gap_df.index, dtype="Float64")
-    return pd.to_numeric(gap_df[column], errors="coerce")
-
-
 def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
     required_columns = {"crawl_date", "Brand", "SKU", "Alert"}
     if gap_df.empty or not required_columns.issubset(gap_df.columns):
@@ -2019,7 +1952,7 @@ def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Date": action_df["__action_date"].apply(format_date),
-            "Brand": action_df["Brand"],
+            "Brand": display_brand_series(action_df["Brand"]),
             "Model": action_df["SKU"],
             "Memory": action_df["Memory"] if "Memory" in action_df.columns else "",
         }
@@ -2087,18 +2020,6 @@ def render_today_action_skus(gap_df: pd.DataFrame) -> None:
     )
 
 
-def count_distinct_gap_skus(
-    gap_df: pd.DataFrame, sku_cols: list[str], mask: pd.Series | None = None
-) -> int:
-    if gap_df.empty:
-        return 0
-
-    selected = gap_df.loc[mask] if mask is not None else gap_df
-    if selected.empty:
-        return 0
-    return selected.drop_duplicates(sku_cols).shape[0] if sku_cols else len(selected)
-
-
 def chart_platform_label(platform: object) -> str:
     platform_key = str(platform).strip().casefold()
     return {
@@ -2110,9 +2031,12 @@ def chart_platform_label(platform: object) -> str:
 
 def chart_legend_sku_label(sku: object, brand: object = "") -> str:
     sku_label = str(sku).strip()
-    brand_label = "" if pd.isna(brand) else str(brand).strip()
+    raw_brand_label = "" if pd.isna(brand) else str(brand).strip()
+    brand_label = display_brand(raw_brand_label)
+    if raw_brand_label and sku_label.casefold().startswith(f"{raw_brand_label.casefold()} "):
+        return sku_label[len(raw_brand_label) :].strip()
     if brand_label and sku_label.casefold().startswith(f"{brand_label.casefold()} "):
-        return sku_label[len(brand_label) :].strip()
+        return f"{brand_label} {sku_label[len(brand_label) :].strip()}".strip()
     return sku_label
 
 
@@ -2651,7 +2575,6 @@ def main() -> None:
     inject_styles()
 
     render_sidebar_chrome()
-    render_dashboard_header()
 
     if not require_password():
         st.stop()
@@ -2670,7 +2593,6 @@ def main() -> None:
 
     filtered = apply_filters(df)
     gap_df = calculate_gap_table(filtered)
-    render_kpis(gap_df)
     render_today_action_skus(gap_df)
 
     formatted_gap_df = render_gap_analysis_section(gap_df)
