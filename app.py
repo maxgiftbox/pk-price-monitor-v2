@@ -1687,26 +1687,122 @@ def short_sku_label(value):
     return v
 
 
+def non_empty_sorted_options(series: pd.Series) -> list:
+    return sorted([x for x in series.dropna().unique().tolist() if str(x).strip()])
+
+
+def clean_multiselect_state(key: str, options: list) -> list:
+    selected = st.session_state.get(key, [])
+    if selected is None:
+        selected = []
+    if not isinstance(selected, list):
+        selected = list(selected)
+
+    cleaned = [value for value in selected if value in options]
+    if cleaned != selected:
+        st.session_state[key] = cleaned
+    return cleaned
+
+
+def get_cascade_options(
+    df: pd.DataFrame,
+    column_map: dict[str, str],
+    selected_country: list | None = None,
+    selected_brand: list | None = None,
+    selected_sku: list | None = None,
+) -> tuple[list, list, list, list]:
+    country_col = column_map.get("country", "country")
+    brand_col = column_map.get("brand", "brand")
+    sku_col = column_map.get("sku", "model")
+    memory_col = column_map.get("memory", "memory")
+
+    country_options = non_empty_sorted_options(df[country_col]) if country_col in df.columns else []
+
+    temp = df.copy()
+    if selected_country and country_col in temp.columns:
+        temp = temp[temp[country_col].isin(selected_country)]
+
+    brand_options = non_empty_sorted_options(temp[brand_col]) if brand_col in temp.columns else []
+
+    if selected_brand and brand_col in temp.columns:
+        temp = temp[temp[brand_col].isin(selected_brand)]
+
+    sku_options = non_empty_sorted_options(temp[sku_col]) if sku_col in temp.columns else []
+
+    if selected_sku and sku_col in temp.columns:
+        temp = temp[temp[sku_col].isin(selected_sku)]
+
+    memory_options = non_empty_sorted_options(temp[memory_col]) if memory_col in temp.columns else []
+
+    return country_options, brand_options, sku_options, memory_options
+
 def apply_module_filters(df: pd.DataFrame, prefix: str, column_map: dict[str, str]) -> pd.DataFrame:
     filtered = df.copy()
     st.markdown("<div class='selector-fix-wrapper module-filter-wrapper'></div>", unsafe_allow_html=True)
 
+    country_col = column_map.get("country", "country")
+    brand_col = column_map.get("brand", "brand")
+    sku_col = column_map.get("sku", "model")
+    memory_col = column_map.get("memory", "memory")
+
+    country_key = f"{prefix}_country_filter"
+    brand_key = f"{prefix}_brand_filter"
+    sku_key = f"{prefix}_sku_filter"
+    memory_key = f"{prefix}_memory_filter"
+
+    country_options, brand_options, sku_options, memory_options = get_cascade_options(
+        df,
+        column_map,
+        selected_country=st.session_state.get(country_key, []),
+        selected_brand=st.session_state.get(brand_key, []),
+        selected_sku=st.session_state.get(sku_key, []),
+    )
+    selected_country = clean_multiselect_state(country_key, country_options)
+
+    country_options, brand_options, sku_options, memory_options = get_cascade_options(
+        df,
+        column_map,
+        selected_country=selected_country,
+        selected_brand=st.session_state.get(brand_key, []),
+        selected_sku=st.session_state.get(sku_key, []),
+    )
+    selected_brand = clean_multiselect_state(brand_key, brand_options)
+
+    country_options, brand_options, sku_options, memory_options = get_cascade_options(
+        df,
+        column_map,
+        selected_country=selected_country,
+        selected_brand=selected_brand,
+        selected_sku=st.session_state.get(sku_key, []),
+    )
+    selected_sku = clean_multiselect_state(sku_key, sku_options)
+
+    country_options, brand_options, sku_options, memory_options = get_cascade_options(
+        df,
+        column_map,
+        selected_country=selected_country,
+        selected_brand=selected_brand,
+        selected_sku=selected_sku,
+    )
+    selected_memory = clean_multiselect_state(memory_key, memory_options)
+
     filter_specs = [
-        (column_map.get("country", "country"), "Country", f"{prefix}_country_filter", None),
-        (column_map.get("brand", "brand"), "Brand", f"{prefix}_brand_filter", display_brand),
-        (column_map.get("sku", "model"), "SKU", f"{prefix}_sku_filter", short_sku_label),
-        (column_map.get("memory", "memory"), "Memory", f"{prefix}_memory_filter", None),
+        (country_col, "Country", country_key, country_options, selected_country, None),
+        (brand_col, "Brand", brand_key, brand_options, selected_brand, display_brand),
+        (sku_col, "SKU", sku_key, sku_options, selected_sku, short_sku_label),
+        (memory_col, "Memory", memory_key, memory_options, selected_memory, None),
     ]
 
     filter_cols = st.columns([0.16, 0.18, 0.30, 0.16, 0.20], gap="small")
-    for ui_col, (data_col, label, key, formatter) in zip(filter_cols[:4], filter_specs, strict=False):
+    for ui_col, (data_col, label, key, options, selected, formatter) in zip(
+        filter_cols[:4], filter_specs, strict=False
+    ):
         if data_col not in df.columns:
             continue
-        options = sorted([x for x in df[data_col].dropna().unique().tolist() if str(x).strip()])
         kwargs = {"placeholder": "All", "key": key}
         if formatter is not None:
             kwargs["format_func"] = formatter
-        selected = ui_col.multiselect(label, options=options, default=[], **kwargs)
+        selected = ui_col.multiselect(label, options=options, **kwargs)
         if selected:
             filtered = filtered[filtered[data_col].isin(selected)]
 
