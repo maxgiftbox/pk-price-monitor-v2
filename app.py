@@ -639,15 +639,18 @@ def platform_toggle_label(platform: str, selected: bool = False) -> str:
 
 
 def render_platform_toggles(available_platforms: list[str]) -> list[str]:
-    state_key = "trend_chart_platforms"
-    stored_platforms = st.session_state.get(state_key, available_platforms)
-    if not isinstance(stored_platforms, list):
-        stored_platforms = available_platforms
+    for platform in available_platforms:
+        st.session_state.setdefault(f"trend_platform_filter_{platform}", True)
 
-    selected_platforms = [platform for platform in available_platforms if platform in stored_platforms]
+    selected_platforms = [
+        platform
+        for platform in available_platforms
+        if st.session_state.get(f"trend_platform_filter_{platform}", True)
+    ]
     if not selected_platforms:
         selected_platforms = available_platforms.copy()
-    st.session_state[state_key] = selected_platforms
+        for platform in available_platforms:
+            st.session_state[f"trend_platform_filter_{platform}"] = True
 
     st.markdown("<div class='platform-toggle-control'></div>", unsafe_allow_html=True)
     toggle_cols = st.columns(len(available_platforms))
@@ -656,20 +659,21 @@ def render_platform_toggles(available_platforms: list[str]) -> list[str]:
         col.markdown(f"<div class='platform-toggle-btn{active_class}'></div>", unsafe_allow_html=True)
         if col.button(
             platform_toggle_label(platform, platform in selected_platforms),
-            key=f"trend_platform_toggle_{platform}",
+            key=f"trend_platform_filter_{platform}_button",
             use_container_width=True,
         ):
-            updated_platforms = st.session_state[state_key].copy()
-            if platform in updated_platforms:
-                if len(updated_platforms) > 1:
-                    updated_platforms.remove(platform)
+            platform_key = f"trend_platform_filter_{platform}"
+            if platform in selected_platforms and len(selected_platforms) <= 1:
+                st.session_state[platform_key] = True
             else:
-                updated_platforms.append(platform)
-                updated_platforms = [item for item in available_platforms if item in updated_platforms]
-            st.session_state[state_key] = updated_platforms
+                st.session_state[platform_key] = not bool(st.session_state.get(platform_key, True))
             st.rerun()
 
-    return st.session_state[state_key]
+    return [
+        platform
+        for platform in available_platforms
+        if st.session_state.get(f"trend_platform_filter_{platform}", True)
+    ]
 
 
 def require_password() -> bool:
@@ -1638,26 +1642,15 @@ def inject_styles() -> None:
     )
 
 
-def render_sidebar_chrome() -> None:
-    st.sidebar.markdown(
-        """
-        <div class="pm-sidebar-brand">
-            <span class="pm-logo-orb"></span>
-            <span class="pm-brand-title">Mob Monitor</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_refresh_control() -> None:
-    if st.sidebar.button("🔄 Refresh Data"):
+    refresh_col, status_col = st.columns([0.18, 0.82])
+    if refresh_col.button("🔄 Refresh Data", key="main_refresh_data"):
         st.session_state["last_refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.cache_data.clear()
         st.rerun()
 
     if st.session_state.get("last_refreshed_at"):
-        st.sidebar.caption(f"Last refreshed: {st.session_state['last_refreshed_at']}")
+        status_col.caption(f"Last refreshed: {st.session_state['last_refreshed_at']}")
 
 
 def available_columns(columns: list[str], df: pd.DataFrame) -> list[str]:
@@ -1694,48 +1687,44 @@ def short_sku_label(value):
     return v
 
 
-def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
+def apply_module_filters(df: pd.DataFrame, prefix: str, column_map: dict[str, str]) -> pd.DataFrame:
     filtered = df.copy()
-    st.sidebar.markdown(
-        """
-        <div class="pm-filter-title">Filters</div>
-        <div class="pm-filter-caption">Refine the pricing intelligence view</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("<div class='selector-fix-wrapper module-filter-wrapper'></div>", unsafe_allow_html=True)
 
     filter_specs = [
-        ("country", "Country"),
-        ("brand", "Brand"),
-        ("model", "SKU"),
-        ("memory", "Memory"),
+        (column_map.get("country", "country"), "Country", f"{prefix}_country_filter", None),
+        (column_map.get("brand", "brand"), "Brand", f"{prefix}_brand_filter", display_brand),
+        (column_map.get("sku", "model"), "SKU", f"{prefix}_sku_filter", short_sku_label),
+        (column_map.get("memory", "memory"), "Memory", f"{prefix}_memory_filter", None),
     ]
 
-    for col, label in filter_specs:
-        if col in filtered.columns:
-            options = sorted([x for x in filtered[col].dropna().unique().tolist() if str(x).strip()])
-            st.sidebar.markdown(
-                f"<div class='selector-fix-wrapper sidebar-filter-wrapper sidebar-selector-fix sidebar-selector-{col}'></div>",
-                unsafe_allow_html=True,
-            )
-            multiselect_kwargs = {"placeholder": " ", "key": f"sidebar_filter_{col}"}
-            if col == "brand":
-                multiselect_kwargs["format_func"] = display_brand
-            if col == "model":
-                multiselect_kwargs["format_func"] = short_sku_label
-            selected = st.sidebar.multiselect(label, options=options, default=[], **multiselect_kwargs)
-            if selected:
-                filtered = filtered[filtered[col].isin(selected)]
+    filter_cols = st.columns([0.16, 0.18, 0.30, 0.16, 0.20], gap="small")
+    for ui_col, (data_col, label, key, formatter) in zip(filter_cols[:4], filter_specs, strict=False):
+        if data_col not in df.columns:
+            continue
+        options = sorted([x for x in df[data_col].dropna().unique().tolist() if str(x).strip()])
+        kwargs = {"placeholder": "All", "key": key}
+        if formatter is not None:
+            kwargs["format_func"] = formatter
+        selected = ui_col.multiselect(label, options=options, default=[], **kwargs)
+        if selected:
+            filtered = filtered[filtered[data_col].isin(selected)]
 
-    if "crawl_date" in filtered.columns and not filtered["crawl_date"].dropna().empty:
-        min_date = filtered["crawl_date"].dropna().min()
-        max_date = filtered["crawl_date"].dropna().max()
-        date_range = st.sidebar.date_input("Date Range", value=(min_date, max_date))
-        if isinstance(date_range, tuple) and len(date_range) == 2:
-            start_date, end_date = date_range
-            filtered = filtered[
-                (filtered["crawl_date"] >= start_date) & (filtered["crawl_date"] <= end_date)
-            ]
+    date_col = column_map.get("date", "crawl_date")
+    if date_col in df.columns and not df[date_col].dropna().empty:
+        date_values = pd.to_datetime(df[date_col], errors="coerce").dropna().dt.date
+        if not date_values.empty:
+            min_date = date_values.min()
+            max_date = date_values.max()
+            date_range = filter_cols[4].date_input(
+                "Date Range",
+                value=(min_date, max_date),
+                key=f"{prefix}_date_range_filter",
+            )
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                start_date, end_date = date_range
+                filtered_dates = pd.to_datetime(filtered[date_col], errors="coerce").dt.date
+                filtered = filtered[filtered_dates.between(start_date, end_date)]
 
     return filtered
 
@@ -2040,8 +2029,19 @@ def chart_legend_sku_label(sku: object, brand: object = "") -> str:
     return sku_label
 
 
-def render_gap_chart(filtered: pd.DataFrame) -> None:
+def render_gap_chart(df: pd.DataFrame) -> None:
     st.markdown("<h2 class='pm-section-heading'>Price Trend Chart</h2>", unsafe_allow_html=True)
+    filtered = apply_module_filters(
+        df,
+        "trend",
+        {
+            "country": "country",
+            "brand": "brand",
+            "sku": "model",
+            "memory": "memory",
+            "date": "crawl_date",
+        },
+    )
 
     has_standard_sku = "standard_model_memory" in filtered.columns
     has_fallback_sku = {"model", "memory"}.issubset(filtered.columns)
@@ -2277,9 +2277,21 @@ def render_gap_chart(filtered: pd.DataFrame) -> None:
     )
 
 
-def render_gap_analysis_section(gap_df: pd.DataFrame) -> pd.DataFrame:
+def render_gap_analysis_section(df: pd.DataFrame) -> pd.DataFrame:
     title = "Price Gap Analysis"
     st.markdown(f"<h2 class='pm-section-heading'>{html.escape(title)}</h2>", unsafe_allow_html=True)
+    filtered = apply_module_filters(
+        df,
+        "gap",
+        {
+            "country": "country",
+            "brand": "brand",
+            "sku": "model",
+            "memory": "memory",
+            "date": "crawl_date",
+        },
+    )
+    gap_df = calculate_gap_table(filtered)
     render_gap_alert_filters()
 
     display_gap_df = prepare_gap_analysis_display(gap_df)
@@ -2574,8 +2586,6 @@ def main() -> None:
     st.set_page_config(page_title="Mob Price Monitor", layout="wide", page_icon="📱")
     inject_styles()
 
-    render_sidebar_chrome()
-
     if not require_password():
         st.stop()
 
@@ -2591,12 +2601,11 @@ def main() -> None:
         st.info("No rows found in price_daily.")
         st.stop()
 
-    filtered = apply_filters(df)
-    gap_df = calculate_gap_table(filtered)
-    render_today_action_skus(gap_df)
+    unfiltered_gap_df = calculate_gap_table(df)
+    render_today_action_skus(unfiltered_gap_df)
 
-    formatted_gap_df = render_gap_analysis_section(gap_df)
-    render_gap_chart(filtered)
+    formatted_gap_df = render_gap_analysis_section(df)
+    render_gap_chart(df)
 
     render_downloads(formatted_gap_df)
 
