@@ -70,10 +70,8 @@ GAP_COLUMNS = [
     "model",
     "memory",
     "Daraz Effective Price",
-    "Daraz Stock Status",
     "Competitor Platform",
     "Competitor Effective Price",
-    "LC Stock Status",
     "Gap Amount",
     "Gap %",
     "Alert",
@@ -1981,9 +1979,6 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         formatted["Daraz Effective Price"] = (
             gap_df["Daraz Price"].apply(format_price) if "Daraz Price" in gap_df.columns else ""
         )
-        formatted["Daraz Stock Status"] = (
-            gap_df["Daraz Stock Status"] if "Daraz Stock Status" in gap_df.columns else ""
-        )
         formatted["Competitor Platform"] = (
             gap_df["Competitor Platform"] if "Competitor Platform" in gap_df.columns else ""
         )
@@ -1991,9 +1986,6 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
             gap_df["Competitor Price"].apply(format_price)
             if "Competitor Price" in gap_df.columns
             else ""
-        )
-        formatted["LC Stock Status"] = (
-            gap_df["LC Stock Status"] if "LC Stock Status" in gap_df.columns else ""
         )
         formatted["Gap Amount"] = (
             gap_df["Gap Amount"].apply(format_price) if "Gap Amount" in gap_df.columns else ""
