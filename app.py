@@ -69,6 +69,8 @@ GAP_COLUMNS = [
     "brand",
     "model",
     "memory",
+    "MRP",
+    "Disc",
     "Daraz Effective Price",
     "Competitor Platform",
     "Competitor Effective Price",
@@ -82,6 +84,8 @@ RAW_GAP_COLUMNS = [
     "Brand",
     "SKU",
     "Memory",
+    "MRP",
+    "Disc",
     "Daraz Price",
     "Daraz Stock Status",
     "Competitor Platform",
@@ -618,6 +622,18 @@ def format_gap_pct(value: object) -> object:
         return f"{numeric_value * 100:.2f}%"
     except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
         return value
+
+
+def format_discount_pct(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+        numeric_value = pd.to_numeric(value, errors="coerce")
+        if pd.isna(numeric_value):
+            return ""
+        return f"{numeric_value * 100:.1f}%"
+    except Exception:  # noqa: BLE001 - display formatting should never crash the dashboard.
+        return ""
 
 
 def normalized_platform(value: object) -> str:
@@ -1862,6 +1878,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     display_key_cols = ["country", "brand", "model", "memory"]
     competitor_keys = [platform.casefold() for platform in COMPETITOR_PLATFORMS]
     selected_cols = join_cols + display_key_cols + ["__platform_key", "effective_price"]
+    selected_cols += available_columns(["original_price"], working)
     selected_cols += available_columns(["crawl_datetime", "crawl_date", "product_url", "stock_status"], working)
 
     # Price availability is the only row-level filter used for dashboard matching.
@@ -1876,6 +1893,7 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     ).rename(
         columns={
             "effective_price": "Daraz Price",
+            "original_price": "MRP",
             "product_url": "daraz_product_url",
             "stock_status": "Daraz Stock Status",
             "crawl_datetime": "daraz_crawl_datetime",
@@ -1924,6 +1942,17 @@ def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
     gap["LC Stock Status"] = gap.get("LC Stock Status", pd.Series("", index=gap.index)).fillna("")
     gap["Competitor Platform"] = gap["Competitor Platform"].fillna("")
     gap["competitor_product_url"] = gap["competitor_product_url"].fillna("")
+    if "MRP" not in gap.columns:
+        gap["MRP"] = pd.NA
+    original_price_num = pd.to_numeric(gap.get("MRP", pd.Series(pd.NA, index=gap.index)), errors="coerce")
+    effective_price_num = pd.to_numeric(
+        gap.get("Daraz Price", pd.Series(pd.NA, index=gap.index)), errors="coerce"
+    )
+    valid_discount_inputs = original_price_num.gt(0) & effective_price_num.notna()
+    gap["Disc"] = pd.NA
+    gap.loc[valid_discount_inputs, "Disc"] = (
+        1 - effective_price_num[valid_discount_inputs] / original_price_num[valid_discount_inputs]
+    )
     gap["Gap Amount"] = gap["Daraz Price"] - gap["Competitor Price"]
     gap["Gap %"] = gap["Gap Amount"] / gap["Daraz Price"]
     gap["Alert"] = gap["Gap %"].apply(alert_level).where(gap["Competitor Price"].notna(), "")
@@ -1976,6 +2005,8 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         formatted["brand"] = display_brand_series(gap_df["Brand"]) if "Brand" in gap_df.columns else ""
         formatted["model"] = gap_df["SKU"] if "SKU" in gap_df.columns else ""
         formatted["memory"] = gap_df["Memory"] if "Memory" in gap_df.columns else ""
+        formatted["MRP"] = gap_df["MRP"].apply(format_price) if "MRP" in gap_df.columns else ""
+        formatted["Disc"] = gap_df["Disc"].apply(format_discount_pct) if "Disc" in gap_df.columns else ""
         formatted["Daraz Effective Price"] = (
             gap_df["Daraz Price"].apply(format_price) if "Daraz Price" in gap_df.columns else ""
         )
