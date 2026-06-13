@@ -1158,9 +1158,10 @@ def inject_styles() -> None:
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .pm-action-table .date-col { width: 100px; }
-        .pm-action-table .brand-col { width: 82px; }
-        .pm-action-table .memory-col { width: 82px; }
+        .pm-action-table .date-col { width: 92px; }
+        .pm-action-table .brand-col { width: 72px; }
+        .pm-action-table .memory-col { width: 74px; }
+        .pm-action-table .gap-pct-col { width: 76px; }
         .pm-action-table .model-col { width: auto; }
         .pm-action-empty {
             background: #ffffff;
@@ -2034,27 +2035,37 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
+    action_columns = ["Date", "Brand", "Model", "Memory", "Gap %"]
     required_columns = {"crawl_date", "Brand", "SKU", "Alert"}
     if gap_df.empty or not required_columns.issubset(gap_df.columns):
-        return pd.DataFrame(columns=["Date", "Brand", "Model", "Memory"])
+        return pd.DataFrame(columns=action_columns)
 
     action_df = gap_df.copy()
     action_df["__action_date"] = pd.to_datetime(action_df["crawl_date"], errors="coerce").dt.date
     latest_date = action_df["__action_date"].dropna().max()
     if pd.isna(latest_date):
-        return pd.DataFrame(columns=["Date", "Brand", "Model", "Memory"])
+        return pd.DataFrame(columns=action_columns)
 
     action_df = action_df[
         action_df["__action_date"].eq(latest_date) & action_df["Alert"].eq(alert)
     ].copy()
     if action_df.empty:
-        return pd.DataFrame(columns=["Date", "Brand", "Model", "Memory"])
+        return pd.DataFrame(columns=action_columns)
 
     action_df = action_df.drop_duplicates(
         available_columns(["__action_date", "Brand", "SKU", "Memory"], action_df)
     )
     action_df = action_df.sort_values(
         available_columns(["Brand", "SKU", "Memory"], action_df), na_position="last"
+    )
+    gap_pct_column = next(
+        (column for column in ["Gap %", "gap_pct", "gap_%"] if column in action_df.columns),
+        None,
+    )
+    gap_pct_values = (
+        action_df[gap_pct_column].apply(lambda value: "" if pd.isna(value) else format_gap_pct(value))
+        if gap_pct_column
+        else ""
     )
 
     return pd.DataFrame(
@@ -2063,6 +2074,7 @@ def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
             "Brand": display_brand_series(action_df["Brand"]),
             "Model": action_df["SKU"],
             "Memory": action_df["Memory"] if "Memory" in action_df.columns else "",
+            "Gap %": gap_pct_values,
         }
     )
 
@@ -2082,6 +2094,7 @@ def render_action_sku_group(title: str, rows: pd.DataFrame, empty_message: str) 
         "Brand": "brand-col",
         "Model": "model-col",
         "Memory": "memory-col",
+        "Gap %": "gap-pct-col",
     }
     header_cells = "".join(
         f"<th class='{column_classes.get(column, '')}'>{html.escape(column)}</th>"
