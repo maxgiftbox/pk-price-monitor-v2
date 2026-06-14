@@ -1638,6 +1638,15 @@ def inject_styles() -> None:
             -webkit-text-fill-color: #111827 !important;
             border-color: rgba(148, 163, 184, 0.30) !important;
         }
+        .refresh-status-text {
+            color: #6b7280 !important;
+            font-size: 0.82rem !important;
+            line-height: 1.2 !important;
+            margin: 0 0 0.35rem 0 !important;
+            padding: 0 !important;
+            white-space: nowrap !important;
+        }
+
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] span,
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] div,
         section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]:has(.sidebar-filter-wrapper) [data-baseweb="tag"] p {
@@ -1657,15 +1666,38 @@ def inject_styles() -> None:
     )
 
 
+def format_refresh_times(ts: object) -> str:
+    if not ts:
+        return ""
+
+    dt = pd.to_datetime(ts, errors="coerce")
+    if pd.isna(dt):
+        return ""
+
+    if dt.tzinfo is None:
+        dt = dt.tz_localize("UTC")
+    else:
+        dt = dt.tz_convert("UTC")
+
+    pkt = dt.tz_convert("Asia/Karachi").strftime("%Y-%m-%d %H:%M")
+    bdt = dt.tz_convert("Asia/Dhaka").strftime("%Y-%m-%d %H:%M")
+
+    return f"PKT: {pkt} | BDT: {bdt}"
+
+
 def render_refresh_control() -> None:
-    refresh_col, status_col = st.columns([0.18, 0.82])
+    refresh_col, status_col = st.columns([0.16, 0.84], gap="small", vertical_alignment="bottom")
     if refresh_col.button("🔄 Refresh Data", key="main_refresh_data"):
         st.session_state["last_refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.cache_data.clear()
         st.rerun()
 
-    if st.session_state.get("last_refreshed_at"):
-        status_col.caption(f"Last refreshed: {st.session_state['last_refreshed_at']}")
+    refreshed_text = format_refresh_times(st.session_state.get("last_refreshed_at"))
+    if refreshed_text:
+        status_col.markdown(
+            f"<div class='refresh-status-text'>{html.escape(refreshed_text)}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def available_columns(columns: list[str], df: pd.DataFrame) -> list[str]:
