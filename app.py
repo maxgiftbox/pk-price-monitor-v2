@@ -1638,9 +1638,23 @@ def inject_styles() -> None:
             -webkit-text-fill-color: #111827 !important;
             border-color: rgba(148, 163, 184, 0.30) !important;
         }
+        [data-testid="stHorizontalBlock"]:has(.refresh-control-marker) {
+            display: flex !important;
+            align-items: flex-end !important;
+            gap: 16px !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.refresh-control-marker) > div:first-child {
+            flex: 0 0 auto !important;
+            width: auto !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.refresh-control-marker) > div:nth-child(2) {
+            flex: 0 1 auto !important;
+            width: auto !important;
+        }
         .refresh-status-text {
-            color: #6b7280 !important;
-            font-size: 0.82rem !important;
+            color: #6B7280 !important;
+            font-size: 16px !important;
+            font-weight: 500 !important;
             line-height: 1.2 !important;
             margin: 0 0 0.35rem 0 !important;
             padding: 0 !important;
@@ -1686,7 +1700,7 @@ def format_refresh_times(ts: object) -> str:
 
 
 def render_refresh_control() -> None:
-    refresh_col, status_col = st.columns([0.16, 0.84], gap="small", vertical_alignment="bottom")
+    refresh_col, status_col = st.columns([1, 6], gap="small", vertical_alignment="bottom")
     if refresh_col.button("🔄 Refresh Data", key="main_refresh_data"):
         st.session_state["last_refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.cache_data.clear()
@@ -1695,7 +1709,7 @@ def render_refresh_control() -> None:
     refreshed_text = format_refresh_times(st.session_state.get("last_refreshed_at"))
     if refreshed_text:
         status_col.markdown(
-            f"<div class='refresh-status-text'>{html.escape(refreshed_text)}</div>",
+            f"<div class='refresh-control-marker refresh-status-text'>{html.escape(refreshed_text)}</div>",
             unsafe_allow_html=True,
         )
 
