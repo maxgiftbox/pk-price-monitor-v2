@@ -1125,21 +1125,38 @@ def inject_styles() -> None:
             margin-bottom: 0.35rem !important;
         }
         [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) [data-testid="column"]:last-child {
-            max-width: 150px !important;
+            max-width: 260px !important;
         }
-        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .stSelectbox label {
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .today-action-country-label {
             color: #667085 !important;
             font-size: 0.76rem !important;
             font-weight: 800 !important;
             letter-spacing: 0.08em !important;
+            line-height: 1.15 !important;
+            margin-bottom: 0.28rem !important;
             text-transform: uppercase !important;
         }
-        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .stSelectbox [data-baseweb="select"] > div {
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .stButton > button {
             min-height: 36px !important;
-            border-radius: 14px !important;
-            background: rgba(255, 255, 255, 0.82) !important;
-            border-color: rgba(148, 163, 184, 0.35) !important;
+            padding: 0.35rem 0.58rem !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(148, 163, 184, 0.42) !important;
+            background: #ffffff !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            font-weight: 800 !important;
+            line-height: 1 !important;
             box-shadow: 0 8px 20px rgba(79, 96, 140, 0.08) !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .stButton > button[kind="primary"] {
+            border-color: transparent !important;
+            background: linear-gradient(135deg, #6d28d9 0%, #9333ea 55%, #c026d3 100%) !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            font-weight: 900 !important;
+            box-shadow: 0 10px 24px rgba(109, 40, 217, 0.28) !important;
         }
         .pm-action-note {
             color: #667085;
@@ -2194,14 +2211,32 @@ def render_action_sku_group(title: str, rows: pd.DataFrame, empty_message: str) 
 
 def render_today_action_skus(gap_df: pd.DataFrame) -> None:
     st.markdown("<div class='today-action-filter-wrapper'></div>", unsafe_allow_html=True)
-    title_col, filter_col = st.columns([0.86, 0.14], gap="small")
+    title_col, filter_col = st.columns([0.74, 0.26], gap="small")
     title_col.markdown("<h2 class='pm-action-title'>Today Action SKU</h2>", unsafe_allow_html=True)
-    country_filter = filter_col.selectbox(
-        "Country",
-        options=["All", "PK", "BD"],
-        index=0,
-        key="today_action_country_filter",
-    )
+
+    country_filter_key = "today_action_country_filter"
+    country_options = ["All", "PK", "BD"]
+    current_country_filter = st.session_state.get(country_filter_key, "All")
+    if current_country_filter not in country_options:
+        current_country_filter = "All"
+        st.session_state[country_filter_key] = current_country_filter
+
+    def set_today_action_country_filter(country: str) -> None:
+        st.session_state[country_filter_key] = country
+
+    filter_col.markdown("<div class='today-action-country-label'>Country</div>", unsafe_allow_html=True)
+    country_button_cols = filter_col.columns(3, gap="small")
+    for option, button_col in zip(country_options, country_button_cols):
+        button_col.button(
+            option,
+            key=f"today_action_country_{option.lower()}_button",
+            type="primary" if current_country_filter == option else "secondary",
+            use_container_width=True,
+            on_click=set_today_action_country_filter,
+            args=(option,),
+        )
+
+    country_filter = current_country_filter
     red_rows = latest_action_sku_rows(gap_df, "Red", country_filter)
     orange_rows = latest_action_sku_rows(gap_df, "Orange", country_filter)
     st.markdown(
