@@ -1119,6 +1119,28 @@ def inject_styles() -> None:
         .pm-card h2, .pm-card h3 { margin-top: 0; color: #111827; letter-spacing: -0.04em; }
         .pm-action-card { margin-top: 0; padding: 1.1rem 1.2rem; }
         .pm-action-card h2 { font-size: 1.16rem; margin-bottom: 0.25rem; }
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) [data-testid="stHorizontalBlock"] {
+            align-items: end !important;
+            gap: 0.75rem !important;
+            margin-bottom: 0.35rem !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) [data-testid="column"]:last-child {
+            max-width: 150px !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .stSelectbox label {
+            color: #667085 !important;
+            font-size: 0.76rem !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.08em !important;
+            text-transform: uppercase !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.today-action-filter-wrapper) .stSelectbox [data-baseweb="select"] > div {
+            min-height: 36px !important;
+            border-radius: 14px !important;
+            background: rgba(255, 255, 255, 0.82) !important;
+            border-color: rgba(148, 163, 184, 0.35) !important;
+            box-shadow: 0 8px 20px rgba(79, 96, 140, 0.08) !important;
+        }
         .pm-action-note {
             color: #667085;
             font-size: 0.78rem;
@@ -2080,7 +2102,7 @@ def format_gap_table(gap_df: pd.DataFrame) -> pd.DataFrame:
         return gap_df[available_columns(GAP_COLUMNS + INTERNAL_TABLE_COLUMNS, gap_df)]
 
 
-def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
+def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str, country_filter: str = "All") -> pd.DataFrame:
     action_columns = ["Date", "Brand", "Model", "Memory", "Gap %"]
     required_columns = {"crawl_date", "Brand", "SKU", "Alert"}
     if gap_df.empty or not required_columns.issubset(gap_df.columns):
@@ -2095,6 +2117,9 @@ def latest_action_sku_rows(gap_df: pd.DataFrame, alert: str) -> pd.DataFrame:
     action_df = action_df[
         action_df["__action_date"].eq(latest_date) & action_df["Alert"].eq(alert)
     ].copy()
+    country_filter_value = str(country_filter).strip().casefold()
+    if country_filter_value in {"pk", "bd"} and "Country" in action_df.columns:
+        action_df = action_df[action_df["Country"].astype(str).str.strip().str.casefold().eq(country_filter_value)]
     if action_df.empty:
         return pd.DataFrame(columns=action_columns)
 
@@ -2168,12 +2193,20 @@ def render_action_sku_group(title: str, rows: pd.DataFrame, empty_message: str) 
 
 
 def render_today_action_skus(gap_df: pd.DataFrame) -> None:
-    red_rows = latest_action_sku_rows(gap_df, "Red")
-    orange_rows = latest_action_sku_rows(gap_df, "Orange")
+    st.markdown("<div class='today-action-filter-wrapper'></div>", unsafe_allow_html=True)
+    title_col, filter_col = st.columns([0.86, 0.14], gap="small")
+    title_col.markdown("<h2 class='pm-action-title'>Today Action SKU</h2>", unsafe_allow_html=True)
+    country_filter = filter_col.selectbox(
+        "Country",
+        options=["All", "PK", "BD"],
+        index=0,
+        key="today_action_country_filter",
+    )
+    red_rows = latest_action_sku_rows(gap_df, "Red", country_filter)
+    orange_rows = latest_action_sku_rows(gap_df, "Orange", country_filter)
     st.markdown(
         """
         <div class='pm-card pm-action-card'>
-            <h2>Today Action SKU</h2>
             <div class='pm-action-note'>Red = Drz price &gt; LC price by ≥3%; Orange = Drz price &gt; LC price by 0–3%; Green = Drz price ≤ LC price.</div>
             <div class='pm-action-grid'>
         """
