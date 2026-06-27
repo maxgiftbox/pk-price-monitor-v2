@@ -2909,7 +2909,7 @@ def derive_chipset_brand(row: pd.Series) -> str:
         return "Unisoc"
     if "exynos" in chipset:
         return "Exynos"
-    if "apple" in chipset or (brand == "apple" and re.search(r"\ba\s*\d{2}\b", chipset)):
+    if "apple" in chipset or (brand == "apple" and re.match(r"^a(?:[-\s]*series|[-\s]*\d+)", chipset)):
         return "Apple"
     return "Others"
 
@@ -2931,9 +2931,9 @@ def normalize_to_score(series: pd.Series, higher_is_better: bool = True, neutral
     min_value = values.min()
     max_value = values.max()
     if pd.isna(min_value) or pd.isna(max_value) or min_value == max_value:
-        score = pd.Series(70 if not higher_is_better else neutral, index=series.index, dtype="float64")
+        score = pd.Series(70, index=series.index, dtype="float64")
     elif higher_is_better:
-        score = 100 * values / max_value
+        score = 100 * (values - min_value) / (max_value - min_value)
     else:
         score = 100 * (max_value - values) / (max_value - min_value)
     return score.fillna(neutral).clip(0, 100)
@@ -3022,6 +3022,141 @@ def product_label(row: pd.Series) -> str:
     )
 
 
+def product_discount(row: pd.Series) -> float | None:
+    mrp = pd.to_numeric(row.get("mrp_price"), errors="coerce")
+    selling = pd.to_numeric(row.get("selling_price"), errors="coerce")
+    if pd.notna(mrp) and mrp > 0 and pd.notna(selling):
+        return float(1 - selling / mrp)
+    return None
+
+
+def product_ram_storage(row: pd.Series) -> tuple[float | None, float | None]:
+    return parse_memory_components(row.get("memory", ""))
+
+
+def format_gb(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return f"{value:g}GB"
+
+
+def comparison_rows(include_similarity: bool = False) -> list[tuple[str, str | None, str | None]]:
+    rows: list[tuple[str, str | None, str | None]] = []
+    if include_similarity:
+        rows.append(("", "Similarity Score", "similarity_score"))
+    rows.extend([
+        ("Price", None, None), ("", "MRP", "mrp_price"), ("", "Selling Price", "selling_price"), ("", "Disc %", "disc_pct"), ("", "Value Score", "Value Score"), ("", "Value Tier", "Value Tier"),
+        ("Display", None, None), ("", "Display Size", "display_size"), ("", "Display Type", "display_type"), ("", "Resolution", "resolution"), ("", "Refresh Rate", "refresh_rate_hz"),
+        ("Performance", None, None), ("", "Chipset", "chipset"), ("", "Chipset Brand", "chipset_brand"), ("", "CPU", "cpu"), ("", "GPU", "gpu"), ("", "RAM", "ram_gb"), ("", "Storage", "storage_gb"),
+        ("Camera", None, None), ("", "Main Camera", "main_camera"), ("", "Main Camera MP", "main_camera_mp"), ("", "Selfie Camera", "selfie_camera"), ("", "Selfie Camera MP", "selfie_camera_mp"),
+        ("Battery", None, None), ("", "Battery", "battery"), ("", "Battery mAh", "battery_mah"), ("", "Charging", "charging"), ("", "Charging W", "charging_w"),
+        ("Other", None, None), ("", "OS", "os"), ("", "Colors", "colors"), ("", "Launching Date", "launching_date"),
+    ])
+    return rows
+
+
+def comparison_value(row: pd.Series, key: str | None) -> str:
+    if key is None:
+        return ""
+    if key == "disc_pct":
+        disc = product_discount(row)
+        return format_discount_pct(disc) if disc is not None else ""
+    if key == "ram_gb":
+        ram, _ = product_ram_storage(row)
+        return format_gb(ram)
+    if key == "storage_gb":
+        _, storage = product_ram_storage(row)
+        return format_gb(storage)
+    if key == "similarity_score":
+        value = row.get("Similarity Score", "")
+        return str(value) if str(value) == "Base" else (f"{value}%" if str(value).strip() else "")
+    if key in {"mrp_price", "selling_price"}:
+        return str(format_price(row.get(key, "")) or "")
+    if key in {"refresh_rate_hz", "battery_mah", "charging_w", "main_camera_mp", "selfie_camera_mp"}:
+        return format_product_number(row.get(key, ""))
+    value = row.get(key, "")
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def comparison_numeric(row: pd.Series, key: str | None) -> float | None:
+    if key == "disc_pct":
+        return product_discount(row)
+    if key == "ram_gb":
+        return product_ram_storage(row)[0]
+    if key == "storage_gb":
+        return product_ram_storage(row)[1]
+    if key in {"selling_price", "refresh_rate_hz", "battery_mah", "charging_w", "main_camera_mp", "selfie_camera_mp", "Value Score"}:
+        value = pd.to_numeric(row.get(key), errors="coerce")
+        return None if pd.isna(value) else float(value)
+    return None
+
+
+def best_value_map(rows: list[pd.Series]) -> dict[str, float]:
+    best: dict[str, float] = {}
+    for key in ["selling_price", "disc_pct", "Value Score", "refresh_rate_hz", "main_camera_mp", "selfie_camera_mp", "battery_mah", "charging_w", "ram_gb", "storage_gb"]:
+        values = [comparison_numeric(row, key) for row in rows]
+        values = [value for value in values if value is not None]
+        if not values:
+            continue
+        best[key] = min(values) if key == "selling_price" else max(values)
+    return best
+
+
+def product_comparison_css() -> str:
+    return """
+    <style>
+    .pi-board-wrap{max-width:100%;overflow-x:auto;border-radius:24px;background:#fff;box-shadow:0 24px 60px rgba(15,23,42,.10);border:1px solid rgba(148,163,184,.18);margin:12px 0 22px;}
+    .pi-board{display:grid;grid-template-columns:180px repeat(var(--pi-cols), minmax(230px, 260px));min-width:max-content;background:#fff;color:#111827;}
+    .pi-cell{padding:12px 16px;border-bottom:1px solid #eef2f7;border-right:1px solid #eef2f7;min-height:48px;font-size:.92rem;line-height:1.35;}
+    .pi-spec{position:sticky;left:0;z-index:2;background:#fff;font-weight:750;color:#475467;}
+    .pi-head{min-height:154px;background:linear-gradient(180deg,#fff,#fbfcff);}
+    .pi-head.pi-spec{z-index:3;color:#111827;font-size:1rem;display:flex;align-items:center;}
+    .pi-product-brand{font-weight:850;color:#111827;font-size:.86rem;text-transform:uppercase;letter-spacing:.06em;}
+    .pi-product-model{font-weight:850;color:#111827;font-size:1.06rem;margin-top:4px;}
+    .pi-product-meta{color:#667085;margin-top:4px;font-weight:650;}
+    .pi-product-price{margin-top:10px;color:#344054;font-weight:750;}
+    .pi-product-score{display:inline-block;margin-top:8px;padding:5px 10px;border-radius:999px;background:#fff3e8;color:#ff7a00;font-weight:850;}
+    .pi-section{grid-column:1 / -1;background:#f6f7f9;color:#667085;font-weight:850;text-transform:uppercase;letter-spacing:.09em;font-size:.74rem;padding:10px 16px;border-bottom:1px solid #e9edf3;position:sticky;left:0;z-index:1;}
+    .pi-best{color:#ff7a00;font-weight:850;background:#fff7ed;border-radius:12px;display:inline-block;padding:3px 8px;margin:-3px -8px;}
+    .pi-empty{color:#98a2b3;}.product-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.product-detail-grid div{background:#f8fafc;border:1px solid #eef2f7;border-radius:16px;padding:12px}.product-detail-grid strong{display:block;color:#667085;font-size:.76rem;text-transform:uppercase;letter-spacing:.06em}.product-detail-grid span{display:block;margin-top:4px;color:#111827;font-weight:700}
+    </style>
+    """
+
+
+def render_comparison_board(rows: list[pd.Series], include_similarity: bool = False) -> None:
+    if not rows:
+        st.info("Select products above to view details.")
+        return
+    best = best_value_map(rows)
+    pieces = [product_comparison_css(), f"<div class='pi-board-wrap'><div class='pi-board' style='--pi-cols:{len(rows)}'>"]
+    pieces.append("<div class='pi-cell pi-head pi-spec'>Spec</div>")
+    for row in rows:
+        pieces.append(
+            "<div class='pi-cell pi-head'>"
+            f"<div class='pi-product-brand'>{html.escape(display_brand(row.get('brand', '')))}</div>"
+            f"<div class='pi-product-model'>{html.escape(str(row.get('model', '') or ''))}</div>"
+            f"<div class='pi-product-meta'>{html.escape(str(row.get('memory', '') or ''))}</div>"
+            f"<div class='pi-product-price'>Price: {html.escape(str(format_price(row.get('selling_price', '')) or ''))}</div>"
+            f"<div class='pi-product-score'>Value Score: {html.escape(str(row.get('Value Score', '') or ''))}</div>"
+            "</div>"
+        )
+    for section, label, key in comparison_rows(include_similarity):
+        if label is None:
+            pieces.append(f"<div class='pi-section'>{html.escape(section)}</div>")
+            continue
+        pieces.append(f"<div class='pi-cell pi-spec'>{html.escape(label)}</div>")
+        for row in rows:
+            value = comparison_value(row, key)
+            numeric = comparison_numeric(row, key)
+            is_best = key in best and numeric is not None and numeric == best[key]
+            value_html = html.escape(value) if value else "<span class='pi-empty'>—</span>"
+            pieces.append(f"<div class='pi-cell'>{'<span class=\'pi-best\'>' + value_html + '</span>' if is_best else value_html}</div>")
+    pieces.append("</div></div>")
+    st.markdown("".join(pieces), unsafe_allow_html=True)
+
+
 def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
     st.markdown("<div class='selector-fix-wrapper product-filter-wrapper'></div>", unsafe_allow_html=True)
@@ -3043,13 +3178,10 @@ def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
             filtered = filtered[filtered[col].isin(selected)]
 
     c5, c6, c7, c8, c9 = st.columns(5, gap="small")
-    range_specs = [
-        ("Price Range", "selling_price", "product_price_range", c5),
-        ("Battery Range", "battery_mah", "product_battery_range", c6),
-        ("Charging Range", "charging_w", "product_charging_range", c7),
-        ("Refresh Rate", "refresh_rate_hz", "product_refresh_range", c8),
-    ]
-    for label, col, key, ui_col in range_specs:
+    for label, col, key, ui_col in [
+        ("Price Range", "selling_price", "product_price_range", c5), ("Battery Range", "battery_mah", "product_battery_range", c6),
+        ("Charging Range", "charging_w", "product_charging_range", c7), ("Refresh Rate", "refresh_rate_hz", "product_refresh_range", c8),
+    ]:
         values = pd.to_numeric(filtered.get(col, pd.Series(dtype="float64")), errors="coerce").dropna()
         if values.empty:
             continue
@@ -3066,36 +3198,59 @@ def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def render_product_detail_card(row: pd.Series) -> None:
-    mrp = pd.to_numeric(row.get("mrp_price"), errors="coerce")
-    selling = pd.to_numeric(row.get("selling_price"), errors="coerce")
-    disc = format_discount_pct(1 - selling / mrp) if pd.notna(mrp) and mrp > 0 and pd.notna(selling) else ""
+    disc = product_discount(row)
+    display_value = " ".join(x for x in [str(row.get("display_type", "")).strip(), str(row.get("display_size", "")).strip()] if x)
     fields = [
-        ("Model", row.get("model", "")), ("Memory", row.get("memory", "")), ("Brand", display_brand(row.get("brand", ""))),
-        ("MRP", format_price(row.get("mrp_price"))), ("Selling Price", format_price(row.get("selling_price"))), ("Disc %", disc),
-        ("Display", " ".join(x for x in [str(row.get("display_type", "")).strip(), str(row.get("display_size", "")).strip()] if x)),
-        ("Resolution", row.get("resolution", "")), ("Refresh Rate", format_product_number(row.get("refresh_rate_hz"))),
+        ("Brand", display_brand(row.get("brand", ""))), ("Model", row.get("model", "")), ("Memory", row.get("memory", "")),
+        ("MRP", format_price(row.get("mrp_price"))), ("Selling Price", format_price(row.get("selling_price"))), ("Disc %", format_discount_pct(disc) if disc is not None else ""),
+        ("Display", display_value), ("Resolution", row.get("resolution", "")), ("Refresh Rate", format_product_number(row.get("refresh_rate_hz"))),
         ("OS", row.get("os", "")), ("Chipset", row.get("chipset", "")), ("CPU", row.get("cpu", "")), ("GPU", row.get("gpu", "")),
         ("Main Camera", row.get("main_camera", "")), ("Selfie Camera", row.get("selfie_camera", "")),
         ("Battery", row.get("battery", "")), ("Charging", row.get("charging", "")), ("Colors", row.get("colors", "")),
-        ("Launching Date", row.get("launching_date", "")), ("Value Score", row.get("Value Score", "")),
+        ("Launching Date", row.get("launching_date", "")), ("Value Score", row.get("Value Score", "")), ("Value Tier", row.get("Value Tier", "")),
     ]
     html_fields = "".join(f"<div><strong>{html.escape(k)}</strong><span>{html.escape(str(v))}</span></div>" for k, v in fields if str(v).strip())
-    st.markdown(f"<div class='pm-card'><h3>Product Detail</h3><div class='product-detail-grid'>{html_fields}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='pm-card'><h3>Product Detail View</h3><div class='product-detail-grid'>{html_fields}</div></div>", unsafe_allow_html=True)
+
+
+def selected_product_rows(filtered: pd.DataFrame) -> list[pd.Series]:
+    if filtered.empty:
+        return []
+    labels = {idx: product_label(row) for idx, row in filtered.iterrows()}
+    default = filtered.sort_values("Value Score", ascending=False, na_position="last").head(min(3, len(filtered))).index.tolist()
+    selected = st.multiselect(
+        "Select products to compare",
+        options=list(labels.keys()),
+        default=default,
+        format_func=lambda x: labels.get(x, str(x)),
+        key="product_compare_selector",
+    )
+    if len(selected) > 4:
+        st.warning("Please select up to 4 products for comparison.")
+        selected = selected[:4]
+    if not selected:
+        selected = default
+    return [filtered.loc[idx] for idx in selected if idx in filtered.index]
 
 
 def render_product_explorer(df: pd.DataFrame) -> pd.DataFrame:
-    st.markdown("<div class='pm-card'><h2>Product Explorer</h2></div>", unsafe_allow_html=True)
+    st.markdown("<div class='pm-card'><h2>Product Explorer</h2><p class='pm-action-note'>Filter SKUs, choose 2–4 products, and compare specs side by side.</p></div>", unsafe_allow_html=True)
+    st.markdown("#### Filters")
     filtered = apply_product_explorer_filters(df)
-    st.markdown(render_dashboard_table(format_product_table(filtered), title="Product Explorer"), unsafe_allow_html=True)
     if filtered.empty:
-        st.info("Select one product to view full specifications.")
+        st.info("No products match current filters.")
         return filtered
-    labels = {idx: product_label(row) for idx, row in filtered.iterrows()}
-    selected = st.selectbox("Select Product Detail", options=[""] + list(labels.keys()), format_func=lambda x: "Select one product" if x == "" else labels.get(x, str(x)), key="product_detail_selector")
-    if selected == "":
-        st.info("Select one product to view full specifications.")
+    st.markdown("#### Product Selection")
+    selected_rows = selected_product_rows(filtered)
+    st.markdown("#### Product Comparison Board")
+    render_comparison_board(selected_rows)
+    st.markdown("#### Product Detail View")
+    if not selected_rows:
+        st.info("Select products above to view details.")
     else:
-        render_product_detail_card(filtered.loc[selected])
+        labels = {i: product_label(row) for i, row in enumerate(selected_rows)}
+        selected = st.selectbox("Select one product to view full details", options=list(labels.keys()), format_func=lambda x: labels[x], key="product_detail_selector")
+        render_product_detail_card(selected_rows[selected])
     return filtered
 
 
@@ -3115,43 +3270,47 @@ def calculate_similar_products(df: pd.DataFrame, base_row: pd.Series) -> pd.Data
     if candidates.empty:
         return candidates
     base_price = pd.to_numeric(base_row.get("selling_price"), errors="coerce")
-    if pd.notna(base_price) and base_price > 0:
+    if pd.notna(base_price) and base_price > 0 and "selling_price" in candidates.columns:
         candidates = candidates[pd.to_numeric(candidates["selling_price"], errors="coerce").between(base_price * 0.85, base_price * 1.15)]
     if "country" in candidates.columns and str(base_row.get("country", "")).strip():
-        candidates = candidates[candidates["country"].astype(str).str.casefold().eq(str(base_row.get("country")).casefold())]
+        same_country = candidates["country"].astype(str).str.casefold().eq(str(base_row.get("country")).casefold())
+        if same_country.any():
+            candidates = candidates[same_country]
     if candidates.empty:
         return candidates
+
     def closeness(col: str, tolerance: float) -> pd.Series:
         base = pd.to_numeric(base_row.get(col), errors="coerce")
-        vals = pd.to_numeric(candidates[col], errors="coerce")
+        vals = pd.to_numeric(candidates.get(col, pd.Series(pd.NA, index=candidates.index)), errors="coerce")
         if pd.isna(base) or base == 0:
             return pd.Series(0.5, index=candidates.index)
         return (1 - (vals - base).abs() / tolerance).clip(0, 1).fillna(0.5)
+
     price_sim = closeness("selling_price", max(float(base_price) * 0.15, 1)) if pd.notna(base_price) else pd.Series(0.5, index=candidates.index)
-    memory_sim = candidates["memory"].apply(lambda value: memory_similarity(base_row.get("memory", ""), value))
+    memory_sim = candidates.get("memory", pd.Series("", index=candidates.index)).apply(lambda value: memory_similarity(base_row.get("memory", ""), value))
     battery_sim = closeness("battery_mah", 1000)
     charging_sim = closeness("charging_w", 20)
     refresh_sim = closeness("refresh_rate_hz", 30)
-    chipset_sim = candidates["chipset_brand"].eq(base_row.get("chipset_brand", "")).astype(float)
+    chipset_sim = candidates.get("chipset_brand", pd.Series("", index=candidates.index)).eq(base_row.get("chipset_brand", "")).astype(float)
     candidates["Similarity Score"] = ((price_sim * 0.35 + memory_sim * 0.20 + battery_sim * 0.15 + charging_sim * 0.10 + refresh_sim * 0.10 + chipset_sim * 0.10) * 100).round().astype("Int64")
-    return candidates.sort_values("Similarity Score", ascending=False).head(10)
+    return candidates.sort_values("Similarity Score", ascending=False).head(3)
 
 
 def render_similar_products_discovery(df: pd.DataFrame) -> None:
-    st.markdown("<div class='pm-card'><h2>Similar Products Discovery</h2><p class='pm-action-note'>Identify comparable SKUs by price, memory, battery, charging, refresh rate, and chipset family.</p></div>", unsafe_allow_html=True)
+    st.markdown("<div class='pm-card'><h2>Similar Products Discovery</h2><p class='pm-action-note'>Select a base product and compare the three closest alternatives in the same board layout.</p></div>", unsafe_allow_html=True)
     if df.empty:
         st.info("No similar products found.")
         return
     labels = {idx: product_label(row) for idx, row in df.iterrows()}
-    selected = st.selectbox("Base Product", options=list(labels.keys()), format_func=lambda x: labels.get(x, str(x)), key="similar_base_product")
+    selected = st.selectbox("Select base product", options=list(labels.keys()), format_func=lambda x: labels.get(x, str(x)), key="similar_base_product")
+    base = df.loc[selected].copy()
+    base["Similarity Score"] = "Base"
     similar = calculate_similar_products(df, df.loc[selected])
     if similar.empty:
         st.info("No similar products found.")
         return
-    display = format_product_table(similar)
-    display.insert(0, "Similarity Score", similar["Similarity Score"].astype("object").fillna(""))
-    display = display[["Similarity Score", "Brand", "Model", "Memory", "Selling Price", "MRP", "Chipset", "Chipset Brand", "Battery", "Charging", "Refresh Rate", "Main Camera", "Value Score"]]
-    st.markdown(render_dashboard_table(display, title="Similar Products"), unsafe_allow_html=True)
+    rows = [base] + [row for _, row in similar.iterrows()]
+    render_comparison_board(rows, include_similarity=True)
 
 
 def render_product_intelligence() -> None:
@@ -3159,11 +3318,13 @@ def render_product_intelligence() -> None:
     st.markdown("<p class='pm-subtitle'>Explore product specifications, compare similar models, and evaluate value-for-money.</p>", unsafe_allow_html=True)
     product_df = load_product_features_data()
     if product_df.empty:
-        st.warning("sku_features_master is missing or empty.")
+        st.warning("sku_features_master is missing. Please add this tab to the Google Sheet.")
         return
-    filtered = render_product_explorer(product_df)
-    render_similar_products_discovery(add_product_value_scores(product_df))
-
+    explorer_tab, similar_tab = st.tabs(["Product Explorer", "Similar Products Discovery"])
+    with explorer_tab:
+        render_product_explorer(product_df)
+    with similar_tab:
+        render_similar_products_discovery(add_product_value_scores(product_df))
 
 def render_downloads(gap_df: pd.DataFrame) -> None:
     st.markdown("<h2 class='pm-section-heading'>Download</h2>", unsafe_allow_html=True)
