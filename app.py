@@ -1847,6 +1847,61 @@ def inject_styles() -> None:
             text-overflow: ellipsis !important;
         }
 
+
+
+        /* Product Explorer filter and compare selector density. */
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-testid="stWidgetLabel"] label,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-testid="stWidgetLabel"] label {
+            font-size: 0.78rem !important;
+            line-height: 1.1 !important;
+            margin-bottom: 0.12rem !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] > div,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] > div {
+            min-height: 36px !important;
+            border-radius: 12px !important;
+            padding: 4px 32px 4px 10px !important;
+            box-shadow: 0 5px 14px rgba(111, 143, 190, 0.08) !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] span,
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] input,
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] div,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] span,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] input,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] div {
+            font-size: 13px !important;
+            line-height: 1.15 !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"],
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] {
+            max-width: none !important;
+            margin: 1px 4px 1px 0 !important;
+            padding: 3px 7px !important;
+            overflow: visible !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] > div {
+            max-height: 82px !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+        }
+
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"] span,
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"] div,
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"] p,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] span,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] div,
+        [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] p {
+            max-width: none !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) .stSlider {
+            padding-top: 0 !important;
+        }
+
         .product-detail-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -3101,6 +3156,22 @@ def product_label(row: pd.Series) -> str:
     return " | ".join(part for part in parts if part)
 
 
+def compact_product_label(row: pd.Series) -> str:
+    model = short_sku_label(row.get("model", ""))
+    memory = str(row.get("memory", "")).strip()
+    return " ".join(part for part in [model, memory] if part)
+
+
+def clean_product_title(brand: object, model: object) -> str:
+    model_text = str(model or "").strip()
+    brand_text = display_brand(brand).strip()
+    if model_text:
+        if brand_text and brand_text.casefold() not in model_text.casefold():
+            return model_text
+        return model_text
+    return brand_text
+
+
 def safe_product_value(row: pd.Series, field: str) -> str:
     if field == "Product":
         return product_label(row)
@@ -3196,8 +3267,7 @@ def product_header_html(row: pd.Series, background: str) -> str:
     memory = safe_product_value(row, "Memory")
     price = safe_product_value(row, "Selling Price")
     value_score = safe_product_value(row, "Value Score")
-    title_parts = [part for part in [brand, model] if part]
-    title = " ".join(title_parts) if title_parts else product_label(row)
+    title = clean_product_title(brand, model) or product_label(row)
     escaped_title = html.escape(title or "Product")
     escaped_memory = html.escape(memory or "—")
     escaped_price = html.escape(price or "—")
@@ -3254,7 +3324,9 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
 
 def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
-    c1, c2, c3, c4 = st.columns(4, gap="small")
+    st.markdown("<div class='selector-fix-wrapper product-explorer-filter-wrapper'></div>", unsafe_allow_html=True)
+    primary_cols = st.columns([0.25, 0.25, 0.50], gap="small")
+    c1, c2 = primary_cols[0], primary_cols[1]
     countries = non_empty_sorted_options(filtered.get("country", pd.Series(dtype="object")))
     country = c1.multiselect("Country", countries, key="product_country_filter", placeholder="All")
     if country and "country" in filtered.columns:
@@ -3266,38 +3338,15 @@ def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
     if brand and "brand" in filtered.columns:
         filtered = filtered[filtered["brand"].isin(brand)]
 
-    model_source = filtered.copy()
-    models = non_empty_sorted_options(model_source.get("model", pd.Series(dtype="object")))
-    model = c3.multiselect("Model", models, key="product_model_filter", placeholder="All")
-    if model and "model" in filtered.columns:
-        filtered = filtered[filtered["model"].isin(model)]
-
     memory_source = filtered.copy()
+    spec_cols = st.columns([0.25, 0.25, 0.50], gap="small")
+    c3, c4 = spec_cols[0], spec_cols[1]
     memories = non_empty_sorted_options(memory_source.get("memory", pd.Series(dtype="object")))
-    memory = c4.multiselect("Memory", memories, key="product_memory_filter", placeholder="All")
+    memory = c3.multiselect("Memory", memories, key="product_memory_filter", placeholder="All")
     if memory and "memory" in filtered.columns:
         filtered = filtered[filtered["memory"].isin(memory)]
 
-    c5, c6, c7, c8, c9 = st.columns(5, gap="small")
-    for label, col, key, ui_col in [
-        ("Price Range", "selling_price", "product_price_range", c5),
-        ("Battery Range", "battery_mah", "product_battery_range", c6),
-        ("Charging Range", "charging_w", "product_charging_range", c7),
-        ("Refresh Rate", "refresh_rate_hz", "product_refresh_range", c8),
-    ]:
-        values = pd.to_numeric(filtered.get(col, pd.Series(dtype="float64")), errors="coerce").dropna()
-        if values.empty:
-            continue
-        min_v = float(values.min())
-        max_v = float(values.max())
-        if min_v == max_v:
-            ui_col.caption(f"{label}: {format_product_number(min_v)}")
-            continue
-        selected_range = ui_col.slider(label, min_v, max_v, (min_v, max_v), key=key)
-        numeric_values = pd.to_numeric(filtered[col], errors="coerce")
-        filtered = filtered[numeric_values.between(*selected_range) | numeric_values.isna()]
-
-    chipset_brand = c9.selectbox("Chipset Brand", CHIPSET_BRAND_OPTIONS, key="product_chipset_brand_filter")
+    chipset_brand = c4.selectbox("Chipset Brand", CHIPSET_BRAND_OPTIONS, key="product_chipset_brand_filter")
     if chipset_brand != "All" and "chipset_brand" in filtered.columns:
         filtered = filtered[filtered["chipset_brand"].eq(chipset_brand)]
     return add_product_value_scores(filtered)
@@ -3310,8 +3359,9 @@ def render_product_explorer(df: pd.DataFrame) -> pd.DataFrame:
         st.info("No products match the selected filters.")
         return filtered
 
-    labels = {idx: product_label(row) for idx, row in filtered.iterrows()}
+    labels = {idx: compact_product_label(row) for idx, row in filtered.iterrows()}
     default_ids = filtered.sort_values("Value Score", ascending=False).head(3).index.tolist()
+    st.markdown("<div class='selector-fix-wrapper product-compare-selector-wrapper'></div>", unsafe_allow_html=True)
     selected_ids = st.multiselect(
         "Select products to compare",
         options=list(labels.keys()),
