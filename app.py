@@ -1383,23 +1383,36 @@ def inject_styles() -> None:
         .pm-alert-badge.is-orange { background: #f59e0b; }
         .pm-alert-badge.is-green { background: #22c55e; }
 
-        .pi-board-scroll {
+        .pi-table-scroll {
             max-width: 100%;
-            width: fit-content;
-            overflow-x: auto;
+            max-height: 70vh;
+            overflow: auto;
             margin-top: 0.4rem;
-        }
-        .pi-board-grid {
-            display: grid;
-            width: max-content;
-            min-width: max-content;
-            align-items: stretch;
             border: 1px solid rgba(15, 23, 42, 0.08);
             border-radius: 14px;
             background: #ffffff;
-            overflow: visible;
         }
-        .pi-board-cell {
+        .pi-table {
+            display: inline-flex;
+            flex-direction: column;
+            width: max-content;
+            min-width: max-content;
+            background: #ffffff;
+        }
+        .pi-row {
+            display: flex;
+            align-items: stretch;
+            width: max-content;
+        }
+        .pi-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: #ffffff;
+        }
+        .pi-cell {
+            flex: 0 0 230px;
+            width: 230px;
             min-height: 34px;
             padding: 8px 10px;
             border-right: 1px solid rgba(15, 23, 42, 0.06);
@@ -1410,45 +1423,40 @@ def inject_styles() -> None:
             overflow-wrap: anywhere;
             word-break: normal;
             white-space: normal;
+            box-sizing: border-box;
         }
-        .pi-board-row-label {
+        .pi-spec {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            flex-basis: 150px;
+            width: 150px;
+            min-width: 150px;
             background: #F3F6FA;
             color: #344054;
             font-weight: 760;
         }
-        .pi-spec-cell {
-            position: sticky;
-            left: 0;
-            z-index: 4;
-        }
-        .pi-header-cell {
-            position: sticky;
-            top: 0;
-            z-index: 5;
-        }
-        .pi-spec-header {
-            position: sticky;
-            top: 0;
-            left: 0;
-            z-index: 7;
-        }
-        .pi-board-header {
+        .pi-header .pi-cell {
             min-height: 104px;
             padding: 8px 10px;
             font-size: 12.5px;
         }
-        .pi-board-header-title {
+        .pi-header .pi-spec {
+            z-index: 30;
+            background: #F3F6FA;
+        }
+        .pi-product-title {
             margin-bottom: 5px;
             color: #111827;
             font-size: 13.5px;
             font-weight: 820;
             line-height: 1.2;
         }
-        .pi-board-header-line {
+        .pi-product-meta {
             margin-top: 2px;
             color: #475467;
         }
-        .pi-board-value {
+        .pi-value {
             min-height: 34px;
         }
 
@@ -3164,20 +3172,22 @@ PRODUCT_BOARD_COLORS = ["#FFFFFF", "#FFF7D6", "#EAF8EF", "#EAF3FF", "#FFF0F5"]
 PRODUCT_BOARD_LABEL_COLOR = "#F3F6FA"
 
 
-def board_cell_html(value: object, background: str, label: bool = False, extra_class: str = "") -> str:
+def board_cell_html(value: object, background: str, spec: bool = False, extra_class: str = "") -> str:
     raw_value = str(value).strip()
     display_value = raw_value if raw_value else "—"
     escaped_value = html.escape(display_value)
-    classes = ["pi-board-cell"]
-    if label:
-        classes.append("pi-board-row-label")
-        classes.append("pi-spec-cell")
+    classes = ["pi-cell"]
+    if spec:
+        classes.append("pi-spec")
     if extra_class:
         classes.append(extra_class)
     class_text = " ".join(classes)
     safe_background = html.escape(background, quote=True)
-    style = "background: " + safe_background + ";"
-    return "<div class='" + class_text + "' style='" + style + "'>" + escaped_value + "</div>"
+    return "<div class='{class_text}' style='background: {background};'>{value}</div>".format(
+        class_text=class_text,
+        background=safe_background,
+        value=escaped_value,
+    )
 
 
 def product_header_html(row: pd.Series, background: str) -> str:
@@ -3189,20 +3199,18 @@ def product_header_html(row: pd.Series, background: str) -> str:
     title_parts = [part for part in [brand, model] if part]
     title = " ".join(title_parts) if title_parts else product_label(row)
     escaped_title = html.escape(title or "Product")
-    escaped_brand = html.escape(brand or "—")
     escaped_memory = html.escape(memory or "—")
     escaped_price = html.escape(price or "—")
     escaped_value_score = html.escape(value_score or "—")
     safe_background = html.escape(background, quote=True)
-    pieces = []
-    pieces.append("<div class='pi-board-cell pi-board-header pi-header-cell' style='background: " + safe_background + ";'>")
-    pieces.append("<div class='pi-board-header-title'>" + escaped_title + "</div>")
-    pieces.append("<div class='pi-board-header-line'><strong>Brand:</strong> " + escaped_brand + "</div>")
-    pieces.append("<div class='pi-board-header-line'><strong>Memory:</strong> " + escaped_memory + "</div>")
-    pieces.append("<div class='pi-board-header-line'><strong>Price:</strong> " + escaped_price + "</div>")
-    pieces.append("<div class='pi-board-header-line'><strong>Value Score:</strong> " + escaped_value_score + "</div>")
-    pieces.append("</div>")
-    return "".join(pieces)
+    return "".join([
+        "<div class='pi-cell' style='background: {background};'>".format(background=safe_background),
+        "<div class='pi-product-title'>{title}</div>".format(title=escaped_title),
+        "<div class='pi-product-meta'><strong>Memory:</strong> {memory}</div>".format(memory=escaped_memory),
+        "<div class='pi-product-meta'><strong>Price:</strong> {price}</div>".format(price=escaped_price),
+        "<div class='pi-product-meta'><strong>Value Score:</strong> {score}</div>".format(score=escaped_value_score),
+        "</div>",
+    ])
 
 
 def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: dict[object, str] | None = None) -> None:
@@ -3218,19 +3226,16 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
     if similarity_scores is not None:
         fields.insert(1, "Similarity Score")
     winners = best_value_fields(rows)
-    product_count = len(rows)
-    grid_template = "150px repeat(" + str(product_count) + ", 230px)"
-    board_style = "grid-template-columns: " + grid_template + ";"
-    pieces = []
-    pieces.append("<div class='pi-board-scroll'>")
-    pieces.append("<div class='pi-board-grid' style='" + board_style + "'>")
-    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header pi-header-cell pi-spec-cell pi-spec-header"))
+    pieces = ["<div class='pi-table-scroll'>", "<div class='pi-table'>", "<div class='pi-row pi-header'>"]
+    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, spec=True))
     for position, (_, row) in enumerate(rows.iterrows()):
         background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
         pieces.append(product_header_html(row, background))
+    pieces.append("</div>")
 
     for field in fields:
-        pieces.append(board_cell_html(field, PRODUCT_BOARD_LABEL_COLOR, label=True))
+        pieces.append("<div class='pi-row'>")
+        pieces.append(board_cell_html(field, PRODUCT_BOARD_LABEL_COLOR, spec=True))
         for position, (_, row) in enumerate(rows.iterrows()):
             background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
             if field == "Similarity Score":
@@ -3240,7 +3245,8 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
                 is_best = row.name in winners.get(field, set())
                 if is_best and value:
                     value = "🏆 " + value
-            pieces.append(board_cell_html(value, background, extra_class="pi-board-value"))
+            pieces.append(board_cell_html(value, background, extra_class="pi-value"))
+        pieces.append("</div>")
     pieces.append("</div>")
     pieces.append("</div>")
     st.markdown("".join(pieces), unsafe_allow_html=True)
