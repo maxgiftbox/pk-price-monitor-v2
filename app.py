@@ -1383,16 +1383,29 @@ def inject_styles() -> None:
         .pm-alert-badge.is-orange { background: #f59e0b; }
         .pm-alert-badge.is-green { background: #22c55e; }
 
-        .pi-board-cell,
-        .pi-board-header {
-            min-height: 36px;
+        .pi-board-scroll {
+            max-width: 100%;
+            overflow-x: auto;
+            margin-top: 0.4rem;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 14px;
+            background: #ffffff;
+        }
+        .pi-board-grid {
+            display: grid;
+            min-width: max-content;
+            align-items: stretch;
+        }
+        .pi-board-cell {
+            min-height: 34px;
             padding: 8px 10px;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            border-radius: 12px;
+            border-right: 1px solid rgba(15, 23, 42, 0.06);
+            border-bottom: 1px solid rgba(15, 23, 42, 0.06);
             color: #1f2937;
             font-size: 13px;
-            line-height: 1.25;
+            line-height: 1.35;
             overflow-wrap: anywhere;
+            white-space: normal;
         }
         .pi-board-row-label {
             background: #F3F6FA;
@@ -1400,26 +1413,23 @@ def inject_styles() -> None:
             font-weight: 760;
         }
         .pi-board-header {
-            min-height: 112px;
+            min-height: 104px;
+            padding: 8px 10px;
             font-size: 12.5px;
-            box-shadow: 0 8px 18px rgba(79, 96, 140, 0.08);
         }
         .pi-board-header-title {
-            margin-bottom: 6px;
+            margin-bottom: 5px;
             color: #111827;
-            font-size: 14px;
+            font-size: 13.5px;
             font-weight: 820;
-            line-height: 1.18;
+            line-height: 1.2;
         }
         .pi-board-header-line {
             margin-top: 2px;
             color: #475467;
         }
         .pi-board-value {
-            min-height: 36px;
-        }
-        .pi-board-spacer {
-            height: 4px;
+            min-height: 34px;
         }
 
         [data-testid="stDataFrame"] div[role="grid"],
@@ -3134,8 +3144,9 @@ PRODUCT_BOARD_COLORS = ["#FFFFFF", "#F7F8FA", "#EEF5FF", "#F8F2FF"]
 PRODUCT_BOARD_LABEL_COLOR = "#F3F6FA"
 
 
-def render_board_cell(value: object, background: str, label: bool = False, extra_class: str = "") -> None:
-    display_value = str(value).strip() if str(value).strip() else "—"
+def board_cell_html(value: object, background: str, label: bool = False, extra_class: str = "") -> str:
+    raw_value = str(value).strip()
+    display_value = raw_value if raw_value else "—"
     escaped_value = html.escape(display_value)
     classes = ["pi-board-cell"]
     if label:
@@ -3143,11 +3154,12 @@ def render_board_cell(value: object, background: str, label: bool = False, extra
     if extra_class:
         classes.append(extra_class)
     class_text = " ".join(classes)
-    style = f"background: {background};"
-    st.markdown(f"<div class='{class_text}' style='{style}'>{escaped_value}</div>", unsafe_allow_html=True)
+    safe_background = html.escape(background, quote=True)
+    style = "background: " + safe_background + ";"
+    return "<div class='" + class_text + "' style='" + style + "'>" + escaped_value + "</div>"
 
 
-def render_product_header_card(row: pd.Series, background: str) -> None:
+def product_header_html(row: pd.Series, background: str) -> str:
     brand = safe_product_value(row, "Brand")
     model = safe_product_value(row, "Model")
     memory = safe_product_value(row, "Memory")
@@ -3160,16 +3172,16 @@ def render_product_header_card(row: pd.Series, background: str) -> None:
     escaped_memory = html.escape(memory or "—")
     escaped_price = html.escape(price or "—")
     escaped_value_score = html.escape(value_score or "—")
-    card_html = (
-        f"<div class='pi-board-header' style='background: {background};'>"
-        f"<div class='pi-board-header-title'>{escaped_title}</div>"
-        f"<div class='pi-board-header-line'><strong>Brand:</strong> {escaped_brand}</div>"
-        f"<div class='pi-board-header-line'><strong>Memory:</strong> {escaped_memory}</div>"
-        f"<div class='pi-board-header-line'><strong>Price:</strong> {escaped_price}</div>"
-        f"<div class='pi-board-header-line'><strong>Value Score:</strong> {escaped_value_score}</div>"
-        "</div>"
-    )
-    st.markdown(card_html, unsafe_allow_html=True)
+    safe_background = html.escape(background, quote=True)
+    pieces = []
+    pieces.append("<div class='pi-board-cell pi-board-header' style='background: " + safe_background + ";'>")
+    pieces.append("<div class='pi-board-header-title'>" + escaped_title + "</div>")
+    pieces.append("<div class='pi-board-header-line'><strong>Brand:</strong> " + escaped_brand + "</div>")
+    pieces.append("<div class='pi-board-header-line'><strong>Memory:</strong> " + escaped_memory + "</div>")
+    pieces.append("<div class='pi-board-header-line'><strong>Price:</strong> " + escaped_price + "</div>")
+    pieces.append("<div class='pi-board-header-line'><strong>Value Score:</strong> " + escaped_value_score + "</div>")
+    pieces.append("</div>")
+    return "".join(pieces)
 
 
 def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: dict[object, str] | None = None) -> None:
@@ -3185,29 +3197,32 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
     if similarity_scores is not None:
         fields.insert(1, "Similarity Score")
     winners = best_value_fields(rows)
-    header_columns = st.columns([1.1] + [1] * len(rows), gap="small")
-    with header_columns[0]:
-        render_board_cell("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header")
-    for position, (column, (_, row)) in enumerate(zip(header_columns[1:], rows.iterrows())):
+    product_count = len(rows)
+    grid_template = "140px repeat(" + str(product_count) + ", minmax(230px, 1fr))"
+    board_style = "grid-template-columns: " + grid_template + ";"
+    pieces = []
+    pieces.append("<div class='pi-board-scroll'>")
+    pieces.append("<div class='pi-board-grid' style='" + board_style + "'>")
+    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header"))
+    for position, (_, row) in enumerate(rows.iterrows()):
         background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
-        with column:
-            render_product_header_card(row, background)
-    st.markdown("<div class='pi-board-spacer'></div>", unsafe_allow_html=True)
+        pieces.append(product_header_html(row, background))
 
     for field in fields:
-        row_columns = st.columns([1.1] + [1] * len(rows), gap="small")
-        with row_columns[0]:
-            render_board_cell(field, PRODUCT_BOARD_LABEL_COLOR, label=True)
-        for position, (column, (_, row)) in enumerate(zip(row_columns[1:], rows.iterrows())):
+        pieces.append(board_cell_html(field, PRODUCT_BOARD_LABEL_COLOR, label=True))
+        for position, (_, row) in enumerate(rows.iterrows()):
             background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
             if field == "Similarity Score":
                 value = similarity_scores.get(row.name, "") if similarity_scores else ""
             else:
                 value = safe_product_value(row, field)
-                if row.name in winners.get(field, set()) and value:
+                is_best = row.name in winners.get(field, set())
+                if is_best and value:
                     value = "🏆 " + value
-            with column:
-                render_board_cell(value, background, extra_class="pi-board-value")
+            pieces.append(board_cell_html(value, background, extra_class="pi-board-value"))
+    pieces.append("</div>")
+    pieces.append("</div>")
+    st.markdown("".join(pieces), unsafe_allow_html=True)
 
 
 def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
