@@ -1393,7 +1393,8 @@ def inject_styles() -> None:
         }
         .pi-board-grid {
             display: grid;
-            min-width: max-content;
+            width: max-content;
+            min-width: auto;
             align-items: stretch;
         }
         .pi-board-cell {
@@ -1409,9 +1410,15 @@ def inject_styles() -> None:
             white-space: normal;
         }
         .pi-board-row-label {
+            position: sticky;
+            left: 0;
+            z-index: 3;
             background: #F3F6FA;
             color: #344054;
             font-weight: 760;
+        }
+        .pi-board-row-label.pi-board-header {
+            z-index: 4;
         }
         .pi-board-header {
             min-height: 104px;
@@ -3199,7 +3206,7 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
         fields.insert(1, "Similarity Score")
     winners = best_value_fields(rows)
     product_count = len(rows)
-    grid_template = "140px repeat(" + str(product_count) + ", minmax(210px, 240px))"
+    grid_template = "150px repeat(" + str(product_count) + ", 230px)"
     board_style = "grid-template-columns: " + grid_template + ";"
     pieces = []
     pieces.append("<div class='pi-board-scroll'>")
@@ -3307,9 +3314,6 @@ def render_product_explorer(df: pd.DataFrame) -> pd.DataFrame:
         format_func=lambda key: labels.get(key, str(key)),
         key="product_compare_selector",
     )
-    if len(selected_ids) > 4:
-        st.warning("Select up to 4 products. Showing the first 4 selected products.")
-        selected_ids = selected_ids[:4]
     if not selected_ids:
         selected_ids = default_ids
     selected_rows = filtered.loc[selected_ids]
