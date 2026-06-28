@@ -1405,6 +1405,7 @@ def inject_styles() -> None:
             font-size: 13px;
             line-height: 1.35;
             overflow-wrap: anywhere;
+            word-break: normal;
             white-space: normal;
         }
         .pi-board-row-label {
@@ -3140,7 +3141,7 @@ def best_value_fields(rows: pd.DataFrame) -> dict[str, set[object]]:
     return winners
 
 
-PRODUCT_BOARD_COLORS = ["#FFFFFF", "#F7F8FA", "#EEF5FF", "#F8F2FF"]
+PRODUCT_BOARD_COLORS = ["#FFFFFF", "#FFF7D6", "#EAF8EF", "#EAF3FF", "#FFF0F5"]
 PRODUCT_BOARD_LABEL_COLOR = "#F3F6FA"
 
 
@@ -3198,7 +3199,7 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
         fields.insert(1, "Similarity Score")
     winners = best_value_fields(rows)
     product_count = len(rows)
-    grid_template = "140px repeat(" + str(product_count) + ", minmax(230px, 1fr))"
+    grid_template = "140px repeat(" + str(product_count) + ", minmax(210px, 240px))"
     board_style = "grid-template-columns: " + grid_template + ";"
     pieces = []
     pieces.append("<div class='pi-board-scroll'>")
