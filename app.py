@@ -1394,7 +1394,7 @@ def inject_styles() -> None:
         .pi-board-grid {
             display: grid;
             width: max-content;
-            min-width: auto;
+            min-width: max-content;
             align-items: stretch;
         }
         .pi-board-cell {
@@ -1418,6 +1418,12 @@ def inject_styles() -> None:
             font-weight: 760;
         }
         .pi-board-row-label.pi-board-header {
+            left: 0;
+            z-index: 5;
+        }
+        .pi-header-cell {
+            position: sticky;
+            top: 0;
             z-index: 4;
         }
         .pi-board-header {
@@ -3182,7 +3188,7 @@ def product_header_html(row: pd.Series, background: str) -> str:
     escaped_value_score = html.escape(value_score or "—")
     safe_background = html.escape(background, quote=True)
     pieces = []
-    pieces.append("<div class='pi-board-cell pi-board-header' style='background: " + safe_background + ";'>")
+    pieces.append("<div class='pi-board-cell pi-board-header pi-header-cell' style='background: " + safe_background + ";'>")
     pieces.append("<div class='pi-board-header-title'>" + escaped_title + "</div>")
     pieces.append("<div class='pi-board-header-line'><strong>Brand:</strong> " + escaped_brand + "</div>")
     pieces.append("<div class='pi-board-header-line'><strong>Memory:</strong> " + escaped_memory + "</div>")
@@ -3211,7 +3217,7 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
     pieces = []
     pieces.append("<div class='pi-board-scroll'>")
     pieces.append("<div class='pi-board-grid' style='" + board_style + "'>")
-    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header"))
+    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header pi-header-cell"))
     for position, (_, row) in enumerate(rows.iterrows()):
         background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
         pieces.append(product_header_html(row, background))
@@ -3284,20 +3290,6 @@ def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
     return add_product_value_scores(filtered)
 
 
-def render_product_detail_card(row: pd.Series) -> None:
-    fields = [
-        "Brand", "Model", "Memory", "MRP", "Selling Price", "Disc %", "Display Size", "Display Type",
-        "Resolution", "Refresh Rate", "OS", "Chipset", "CPU", "GPU", "Main Camera", "Selfie Camera",
-        "Battery", "Charging", "Colors", "Launching Date", "Value Score", "Value Tier",
-    ]
-    with st.expander("Product Detail", expanded=True):
-        cols = st.columns(3, gap="small")
-        for pos, field in enumerate(fields):
-            with cols[pos % 3]:
-                st.caption(field)
-                st.write(safe_product_value(row, field) or "—")
-
-
 def render_product_explorer(df: pd.DataFrame) -> pd.DataFrame:
     st.markdown("### Product Explorer")
     filtered = apply_product_explorer_filters(df)
@@ -3319,14 +3311,6 @@ def render_product_explorer(df: pd.DataFrame) -> pd.DataFrame:
     selected_rows = filtered.loc[selected_ids]
     render_comparison_board(selected_rows, "Comparison Board")
 
-    detail_labels = {idx: product_label(row) for idx, row in selected_rows.iterrows()}
-    detail_id = st.selectbox(
-        "Select one product to view full details",
-        options=list(detail_labels.keys()),
-        format_func=lambda key: detail_labels.get(key, str(key)),
-        key="product_detail_selector",
-    )
-    render_product_detail_card(selected_rows.loc[detail_id])
     return filtered
 
 
