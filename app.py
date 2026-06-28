@@ -1849,30 +1849,109 @@ def inject_styles() -> None:
 
 
 
-        /* Product Explorer filter and compare selector density. */
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-testid="stWidgetLabel"] label,
+        /* Product Explorer filter layout: keep controls fully visible and wrapping. */
+        .pi-filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-start;
+            height: auto;
+            overflow: visible;
+        }
+        .pi-filter-box {
+            min-height: 44px;
+            height: auto;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+        }
+        .pi-filter-marker {
+            display: none;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper),
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-testid="stVerticalBlock"],
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-testid="stHorizontalBlock"],
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-testid="column"] {
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 12px !important;
+            align-items: flex-start !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) > [data-testid="column"] {
+            flex: 1 1 210px !important;
+            min-width: 210px !important;
+            width: auto !important;
+            max-width: 100% !important;
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-testid="stWidgetLabel"] label {
+            font-size: 0.78rem !important;
+            line-height: 1.15 !important;
+            margin-bottom: 0.2rem !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="select"],
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="select"] > div {
+            min-height: 44px !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="select"] > div {
+            border-radius: 12px !important;
+            padding: 8px 36px 8px 12px !important;
+            box-shadow: 0 5px 14px rgba(111, 143, 190, 0.08) !important;
+            display: flex !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="select"] span,
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="select"] input,
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="select"] div {
+            font-size: 13px !important;
+            line-height: 1.25 !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="tag"] {
+            max-width: none !important;
+            margin: 2px 4px 2px 0 !important;
+            padding: 4px 8px !important;
+            overflow: visible !important;
+        }
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="tag"] span,
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="tag"] div,
+        [data-testid="stHorizontalBlock"]:has(.pi-filter-row) [data-baseweb="tag"] p {
+            max-width: none !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+        }
+        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) .stSlider {
+            padding-top: 0 !important;
+        }
+
+        /* Product compare selector density. */
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-testid="stWidgetLabel"] label {
             font-size: 0.78rem !important;
             line-height: 1.1 !important;
             margin-bottom: 0.12rem !important;
         }
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] > div,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] > div {
             min-height: 36px !important;
             border-radius: 12px !important;
             padding: 4px 32px 4px 10px !important;
             box-shadow: 0 5px 14px rgba(111, 143, 190, 0.08) !important;
         }
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] span,
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] input,
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="select"] div,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] span,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] input,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="select"] div {
             font-size: 13px !important;
             line-height: 1.15 !important;
         }
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"],
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] {
             max-width: none !important;
             margin: 1px 4px 1px 0 !important;
@@ -1886,10 +1965,6 @@ def inject_styles() -> None:
             flex-wrap: nowrap !important;
             align-items: center !important;
         }
-
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"] span,
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"] div,
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) [data-baseweb="tag"] p,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] span,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] div,
         [data-testid="stVerticalBlock"]:has(.product-compare-selector-wrapper) [data-baseweb="tag"] p {
@@ -1897,9 +1972,6 @@ def inject_styles() -> None:
             white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: clip !important;
-        }
-        [data-testid="stVerticalBlock"]:has(.product-explorer-filter-wrapper) .stSlider {
-            padding-top: 0 !important;
         }
 
         .product-detail-grid {
@@ -3325,8 +3397,10 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
 def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
     st.markdown("<div class='selector-fix-wrapper product-explorer-filter-wrapper'></div>", unsafe_allow_html=True)
-    primary_cols = st.columns([0.25, 0.25, 0.50], gap="small")
+    primary_cols = st.columns([1, 1], gap="small")
     c1, c2 = primary_cols[0], primary_cols[1]
+    c1.markdown("<div class='pi-filter-row pi-filter-box pi-filter-marker'></div>", unsafe_allow_html=True)
+    c2.markdown("<div class='pi-filter-row pi-filter-box pi-filter-marker'></div>", unsafe_allow_html=True)
     countries = non_empty_sorted_options(filtered.get("country", pd.Series(dtype="object")))
     country = c1.multiselect("Country", countries, key="product_country_filter", placeholder="All")
     if country and "country" in filtered.columns:
@@ -3339,8 +3413,10 @@ def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
         filtered = filtered[filtered["brand"].isin(brand)]
 
     memory_source = filtered.copy()
-    spec_cols = st.columns([0.25, 0.25, 0.50], gap="small")
+    spec_cols = st.columns([1, 1], gap="small")
     c3, c4 = spec_cols[0], spec_cols[1]
+    c3.markdown("<div class='pi-filter-row pi-filter-box pi-filter-marker'></div>", unsafe_allow_html=True)
+    c4.markdown("<div class='pi-filter-row pi-filter-box pi-filter-marker'></div>", unsafe_allow_html=True)
     memories = non_empty_sorted_options(memory_source.get("memory", pd.Series(dtype="object")))
     memory = c3.multiselect("Memory", memories, key="product_memory_filter", placeholder="All")
     if memory and "memory" in filtered.columns:
