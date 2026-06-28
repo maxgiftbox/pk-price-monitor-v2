@@ -1385,17 +1385,19 @@ def inject_styles() -> None:
 
         .pi-board-scroll {
             max-width: 100%;
+            width: fit-content;
             overflow-x: auto;
             margin-top: 0.4rem;
-            border: 1px solid rgba(15, 23, 42, 0.08);
-            border-radius: 14px;
-            background: #ffffff;
         }
         .pi-board-grid {
             display: grid;
             width: max-content;
             min-width: max-content;
             align-items: stretch;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 14px;
+            background: #ffffff;
+            overflow: visible;
         }
         .pi-board-cell {
             min-height: 34px;
@@ -1410,21 +1412,25 @@ def inject_styles() -> None:
             white-space: normal;
         }
         .pi-board-row-label {
-            position: sticky;
-            left: 0;
-            z-index: 3;
             background: #F3F6FA;
             color: #344054;
             font-weight: 760;
         }
-        .pi-board-row-label.pi-board-header {
+        .pi-spec-cell {
+            position: sticky;
             left: 0;
-            z-index: 5;
+            z-index: 4;
         }
         .pi-header-cell {
             position: sticky;
             top: 0;
-            z-index: 4;
+            z-index: 5;
+        }
+        .pi-spec-header {
+            position: sticky;
+            top: 0;
+            left: 0;
+            z-index: 7;
         }
         .pi-board-header {
             min-height: 104px;
@@ -3165,6 +3171,7 @@ def board_cell_html(value: object, background: str, label: bool = False, extra_c
     classes = ["pi-board-cell"]
     if label:
         classes.append("pi-board-row-label")
+        classes.append("pi-spec-cell")
     if extra_class:
         classes.append(extra_class)
     class_text = " ".join(classes)
@@ -3217,7 +3224,7 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
     pieces = []
     pieces.append("<div class='pi-board-scroll'>")
     pieces.append("<div class='pi-board-grid' style='" + board_style + "'>")
-    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header pi-header-cell"))
+    pieces.append(board_cell_html("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header pi-header-cell pi-spec-cell pi-spec-header"))
     for position, (_, row) in enumerate(rows.iterrows()):
         background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
         pieces.append(product_header_html(row, background))
