@@ -1383,6 +1383,45 @@ def inject_styles() -> None:
         .pm-alert-badge.is-orange { background: #f59e0b; }
         .pm-alert-badge.is-green { background: #22c55e; }
 
+        .pi-board-cell,
+        .pi-board-header {
+            min-height: 36px;
+            padding: 8px 10px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 12px;
+            color: #1f2937;
+            font-size: 13px;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+        .pi-board-row-label {
+            background: #F3F6FA;
+            color: #344054;
+            font-weight: 760;
+        }
+        .pi-board-header {
+            min-height: 112px;
+            font-size: 12.5px;
+            box-shadow: 0 8px 18px rgba(79, 96, 140, 0.08);
+        }
+        .pi-board-header-title {
+            margin-bottom: 6px;
+            color: #111827;
+            font-size: 14px;
+            font-weight: 820;
+            line-height: 1.18;
+        }
+        .pi-board-header-line {
+            margin-top: 2px;
+            color: #475467;
+        }
+        .pi-board-value {
+            min-height: 36px;
+        }
+        .pi-board-spacer {
+            height: 4px;
+        }
+
         [data-testid="stDataFrame"] div[role="grid"],
         [data-testid="stDataFrame"] [role="table"] {
             background: #ffffff !important;
@@ -3091,12 +3130,54 @@ def best_value_fields(rows: pd.DataFrame) -> dict[str, set[object]]:
     return winners
 
 
+PRODUCT_BOARD_COLORS = ["#FFFFFF", "#F7F8FA", "#EEF5FF", "#F8F2FF"]
+PRODUCT_BOARD_LABEL_COLOR = "#F3F6FA"
+
+
+def render_board_cell(value: object, background: str, label: bool = False, extra_class: str = "") -> None:
+    display_value = str(value).strip() if str(value).strip() else "—"
+    escaped_value = html.escape(display_value)
+    classes = ["pi-board-cell"]
+    if label:
+        classes.append("pi-board-row-label")
+    if extra_class:
+        classes.append(extra_class)
+    class_text = " ".join(classes)
+    style = f"background: {background};"
+    st.markdown(f"<div class='{class_text}' style='{style}'>{escaped_value}</div>", unsafe_allow_html=True)
+
+
+def render_product_header_card(row: pd.Series, background: str) -> None:
+    brand = safe_product_value(row, "Brand")
+    model = safe_product_value(row, "Model")
+    memory = safe_product_value(row, "Memory")
+    price = safe_product_value(row, "Selling Price")
+    value_score = safe_product_value(row, "Value Score")
+    title_parts = [part for part in [brand, model] if part]
+    title = " ".join(title_parts) if title_parts else product_label(row)
+    escaped_title = html.escape(title or "Product")
+    escaped_brand = html.escape(brand or "—")
+    escaped_memory = html.escape(memory or "—")
+    escaped_price = html.escape(price or "—")
+    escaped_value_score = html.escape(value_score or "—")
+    card_html = (
+        f"<div class='pi-board-header' style='background: {background};'>"
+        f"<div class='pi-board-header-title'>{escaped_title}</div>"
+        f"<div class='pi-board-header-line'><strong>Brand:</strong> {escaped_brand}</div>"
+        f"<div class='pi-board-header-line'><strong>Memory:</strong> {escaped_memory}</div>"
+        f"<div class='pi-board-header-line'><strong>Price:</strong> {escaped_price}</div>"
+        f"<div class='pi-board-header-line'><strong>Value Score:</strong> {escaped_value_score}</div>"
+        "</div>"
+    )
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
 def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: dict[object, str] | None = None) -> None:
     if rows.empty:
         return
     st.markdown(f"### {title}")
     fields = [
-        "Product", "MRP", "Selling Price", "Disc %", "Value Score", "Value Tier", "Display Size",
+        "MRP", "Selling Price", "Disc %", "Value Score", "Value Tier", "Display Size",
         "Display Type", "Resolution", "Refresh Rate", "Chipset", "Chipset Brand", "CPU", "GPU", "RAM",
         "Storage", "Main Camera", "Main Camera MP", "Selfie Camera", "Selfie Camera MP", "Battery",
         "Battery mAh", "Charging", "Charging W", "OS", "Colors", "Launching Date",
@@ -3104,20 +3185,29 @@ def render_comparison_board(rows: pd.DataFrame, title: str, similarity_scores: d
     if similarity_scores is not None:
         fields.insert(1, "Similarity Score")
     winners = best_value_fields(rows)
-    columns = st.columns([1.2] + [1] * len(rows), gap="small")
-    with columns[0]:
-        for field in fields:
-            st.markdown(f"**{field}**")
-    for col, (_, row) in zip(columns[1:], rows.iterrows()):
-        with col:
-            for field in fields:
-                if field == "Similarity Score":
-                    value = similarity_scores.get(row.name, "") if similarity_scores else ""
-                else:
-                    value = safe_product_value(row, field)
-                    if row.name in winners.get(field, set()) and value:
-                        value = "🏆 " + value
-                st.markdown(str(value) if str(value).strip() else "—")
+    header_columns = st.columns([1.1] + [1] * len(rows), gap="small")
+    with header_columns[0]:
+        render_board_cell("Spec", PRODUCT_BOARD_LABEL_COLOR, label=True, extra_class="pi-board-header")
+    for position, (column, (_, row)) in enumerate(zip(header_columns[1:], rows.iterrows())):
+        background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
+        with column:
+            render_product_header_card(row, background)
+    st.markdown("<div class='pi-board-spacer'></div>", unsafe_allow_html=True)
+
+    for field in fields:
+        row_columns = st.columns([1.1] + [1] * len(rows), gap="small")
+        with row_columns[0]:
+            render_board_cell(field, PRODUCT_BOARD_LABEL_COLOR, label=True)
+        for position, (column, (_, row)) in enumerate(zip(row_columns[1:], rows.iterrows())):
+            background = PRODUCT_BOARD_COLORS[position % len(PRODUCT_BOARD_COLORS)]
+            if field == "Similarity Score":
+                value = similarity_scores.get(row.name, "") if similarity_scores else ""
+            else:
+                value = safe_product_value(row, field)
+                if row.name in winners.get(field, set()) and value:
+                    value = "🏆 " + value
+            with column:
+                render_board_cell(value, background, extra_class="pi-board-value")
 
 
 def apply_product_explorer_filters(df: pd.DataFrame) -> pd.DataFrame:
