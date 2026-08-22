@@ -1,9 +1,10 @@
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 import gspread
 import pandas as pd
@@ -35,6 +36,42 @@ PRICE_DAILY_COLUMNS = [
     "crawl_time",
     "error_message",
 ]
+
+TRANSIENT_GOOGLE_SHEETS_STATUS_CODES = {429, 500, 502, 503, 504}
+GOOGLE_SHEETS_MAX_ATTEMPTS = 5
+GOOGLE_SHEETS_MAX_BACKOFF_SECONDS = 32.0
+T = TypeVar("T")
+
+
+def google_sheets_retry(operation: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run a Google Sheets operation with bounded retries for transient API errors."""
+    retried = False
+    for attempt in range(1, GOOGLE_SHEETS_MAX_ATTEMPTS + 1):
+        try:
+            result = operation(*args, **kwargs)
+            if retried:
+                print("[GSHEET RETRY] Google Sheets connection recovered.")
+            return result
+        except gspread.exceptions.APIError as exc:
+            status_code = exc.code
+            if status_code not in TRANSIENT_GOOGLE_SHEETS_STATUS_CODES:
+                raise
+            if attempt == GOOGLE_SHEETS_MAX_ATTEMPTS:
+                print(
+                    "[GSHEET ERROR] Google Sheets unavailable after "
+                    f"{GOOGLE_SHEETS_MAX_ATTEMPTS} attempts."
+                )
+                raise
+
+            delay = min(2**attempt, GOOGLE_SHEETS_MAX_BACKOFF_SECONDS) + random.uniform(0, 1)
+            print(
+                f"[GSHEET RETRY] API returned {status_code}. Retry "
+                f"{attempt}/{GOOGLE_SHEETS_MAX_ATTEMPTS} in {delay:.1f} seconds."
+            )
+            retried = True
+            time.sleep(delay)
+
+    raise RuntimeError("Google Sheets retry loop exited unexpectedly.")
 
 
 def get_gspread_client() -> gspread.Client:
@@ -1314,9 +1351,10 @@ def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) ->
 
 
 def ensure_price_daily_header(worksheet: gspread.Worksheet) -> None:
-    existing_header = worksheet.row_values(1)
+    existing_header = google_sheets_retry(worksheet.row_values, 1)
     if existing_header != PRICE_DAILY_COLUMNS:
-        worksheet.update("A1:N1", [PRICE_DAILY_COLUMNS])
+        # Updating a fixed range is idempotent, so retrying cannot duplicate rows.
+        google_sheets_retry(worksheet.update, "A1:N1", [PRICE_DAILY_COLUMNS])
 
 
 def main() -> None:
@@ -1324,14 +1362,14 @@ def main() -> None:
     print(f"[DEBUG][PriceOye] Debug directory ready: {os.path.abspath('debug_screenshots')}")
 
     client = get_gspread_client()
-    sheet = client.open(SHEET_NAME)
+    sheet = google_sheets_retry(client.open, SHEET_NAME)
 
-    sku_ws = sheet.worksheet(SKU_MASTER_TAB)
-    price_ws = sheet.worksheet(PRICE_DAILY_TAB)
+    sku_ws = google_sheets_retry(sheet.worksheet, SKU_MASTER_TAB)
+    price_ws = google_sheets_retry(sheet.worksheet, PRICE_DAILY_TAB)
 
     ensure_price_daily_header(price_ws)
 
-    sku_records = sku_ws.get_all_records()
+    sku_records = google_sheets_retry(sku_ws.get_all_records)
     if not sku_records:
         print("No SKU rows found in sku_master.")
         return
