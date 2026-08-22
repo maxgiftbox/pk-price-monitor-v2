@@ -49,3 +49,12 @@ jobs:
           path: debug_screenshots/**
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Upload Daraz debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daraz-debug-artifacts
+          path: debug_daraz/**
+          if-no-files-found: warn
+          retention-days: 7
