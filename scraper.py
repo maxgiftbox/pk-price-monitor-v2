@@ -876,7 +876,8 @@ DARAZ_CURRENT_PRICE_SELECTORS = [
     "[class*='product-price']",
     "[class*='sale-price']",
 ]
-DARAZ_PRICE_FAIL_ARTIFACT_SAVED = False
+DARAZ_PRICE_FAIL_ARTIFACT_COUNT = 0
+DARAZ_PRICE_FAIL_ARTIFACT_LIMIT = 5
 DARAZ_ORIGINAL_PRICE_SELECTORS = [
     "del",
     "s",
@@ -997,24 +998,97 @@ def extract_daraz_product_price(page: Any) -> Tuple[str, Any]:
     return selector_price, ""
 
 
-def save_first_daraz_price_failure_artifacts(page: Any) -> None:
-    global DARAZ_PRICE_FAIL_ARTIFACT_SAVED
-    if DARAZ_PRICE_FAIL_ARTIFACT_SAVED:
+def save_daraz_price_failure_artifacts(page: Any, debug_identity: Dict[str, str]) -> None:
+    global DARAZ_PRICE_FAIL_ARTIFACT_COUNT
+    if DARAZ_PRICE_FAIL_ARTIFACT_COUNT >= DARAZ_PRICE_FAIL_ARTIFACT_LIMIT:
         return
 
-    DARAZ_PRICE_FAIL_ARTIFACT_SAVED = True
+    DARAZ_PRICE_FAIL_ARTIFACT_COUNT += 1
+    os.makedirs("debug_daraz", exist_ok=True)
+    safe_country = sanitize_filename(debug_identity.get("country", ""), "unknown_country")
+    safe_brand = sanitize_filename(debug_identity.get("brand", ""), "unknown_brand")
+    safe_model = sanitize_filename(debug_identity.get("model", ""), "unknown_model")
+    prefix = os.path.join(
+        "debug_daraz",
+        f"{safe_country}_{safe_brand}_{safe_model}_{DARAZ_PRICE_FAIL_ARTIFACT_COUNT}",
+    )
+    html_path = f"{prefix}.html"
+    screenshot_path = f"{prefix}.png"
     try:
-        with open("daraz_price_fail.html", "w", encoding="utf-8") as handle:
+        with open(html_path, "w", encoding="utf-8") as handle:
             handle.write(page.content())
-        print("[DARAZ PRICE DEBUG] Saved HTML: daraz_price_fail.html")
+        print(f"[DARAZ DEBUG] Saved HTML: {html_path}")
     except Exception as exc:
-        print(f"[DARAZ PRICE DEBUG] Failed to save HTML daraz_price_fail.html: {exc}")
+        print(f"[DARAZ DEBUG] Failed to save HTML {html_path}: {exc}")
 
     try:
-        page.screenshot(path="daraz_price_fail.png", full_page=True)
-        print("[DARAZ PRICE DEBUG] Saved screenshot: daraz_price_fail.png")
+        page.screenshot(path=screenshot_path, full_page=True)
+        print(f"[DARAZ DEBUG] Saved screenshot: {screenshot_path}")
     except Exception as exc:
-        print(f"[DARAZ PRICE DEBUG] Failed to save screenshot daraz_price_fail.png: {exc}")
+        print(f"[DARAZ DEBUG] Failed to save screenshot {screenshot_path}: {exc}")
+
+
+def log_daraz_price_failure_debug(
+    page: Any,
+    product_url: str,
+    navigation_status: Optional[int],
+    raw_body_text: str,
+) -> None:
+    body_text_lower = raw_body_text.lower()
+    print("[DARAZ DEBUG] Product price not parsed")
+    print(f"[DARAZ DEBUG] input_product_url={product_url}")
+    print(f"[DARAZ DEBUG] final_page_url={page.url}")
+    status_text = navigation_status if navigation_status is not None else "unavailable"
+    print(f"[DARAZ DEBUG] navigation_status={status_text}")
+    print(f"[DARAZ DEBUG] page_title={clean_price(page.title())}")
+    print(f"[DARAZ DEBUG] body_text_length={len(raw_body_text)}")
+    print(f"[DARAZ DEBUG] visible_body_text_first_2000={raw_body_text[:2000]}")
+    for marker in [
+        "captcha",
+        "verify",
+        "access denied",
+        "robot",
+        "unusual traffic",
+        "out of stock",
+        "buy now",
+        "add to cart",
+    ]:
+        print(f"[DARAZ DEBUG] body_contains[{marker}]={marker in body_text_lower}")
+
+    for selector in DARAZ_CURRENT_PRICE_SELECTORS:
+        values = [item["text"] for item in get_visible_daraz_texts(page, [selector])]
+        print("[DARAZ DEBUG]")
+        print(f"selector={selector}")
+        print(f"values={values}")
+
+    price_candidates = [clean_price(match.group(0)) for match in DARAZ_PRICE_PATTERN.finditer(raw_body_text)]
+    print(f"[DARAZ DEBUG] raw_price_candidates={price_candidates[:20]}")
+
+    script_diagnostics = page.evaluate(
+        r"""
+        () => {
+            const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
+            const shorten = (text) => normalize(text).slice(0, 500);
+            const ldJson = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+                .map((script) => shorten(script.textContent))
+                .filter(Boolean);
+            const priceKeys = /salePrice|originalPrice|offerPrice|price/i;
+            const aroundPriceKey = (text) => {
+                const match = priceKeys.exec(text);
+                if (!match) return '';
+                return normalize(text.slice(Math.max(0, match.index - 150), match.index + 350));
+            };
+            const priceScripts = Array.from(document.querySelectorAll('script'))
+                .map((script) => script.textContent || '')
+                .filter((text) => priceKeys.test(text))
+                .map(aroundPriceKey)
+                .filter(Boolean);
+            return { ldJson: ldJson.slice(0, 10), priceScripts: priceScripts.slice(0, 10) };
+        }
+        """
+    )
+    print(f"[DARAZ DEBUG] json_ld_snippets={script_diagnostics.get('ldJson', [])}")
+    print(f"[DARAZ DEBUG] price_script_snippets={script_diagnostics.get('priceScripts', [])}")
 
 
 def extract_daraz_original_price(page: Any, product_price: Any) -> Any:
@@ -1025,10 +1099,14 @@ def extract_daraz_original_price(page: Any, product_price: Any) -> Any:
     return product_price if isinstance(product_price, int) else ""
 
 
-def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
+def parse_daraz(
+    browser_context: Any,
+    product_url: str,
+    debug_identity: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
     page = browser_context.new_page()
     try:
-        page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
+        response = page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
 
         selector_price, product_price = extract_daraz_product_price(page)
         print(
@@ -1046,7 +1124,13 @@ def parse_daraz(browser_context: Any, product_url: str) -> Dict[str, Any]:
             stock_status = "active"
 
         if not isinstance(product_price, int):
-            save_first_daraz_price_failure_artifacts(page)
+            log_daraz_price_failure_debug(
+                page,
+                product_url,
+                response.status if response is not None else None,
+                raw_body_text,
+            )
+            save_daraz_price_failure_artifacts(page, debug_identity or {})
             return {
                 "product_price": "",
                 "original_price": "",
@@ -1324,7 +1408,15 @@ def main() -> None:
             elif platform == "pickaboo":
                 crawl_result = crawl_pickaboo_page(context, product_url)
             elif platform == "daraz":
-                crawl_result = parse_daraz(context, product_url)
+                crawl_result = parse_daraz(
+                    context,
+                    product_url,
+                    debug_identity={
+                        "country": str(row.get("country", "")).strip(),
+                        "brand": str(row.get("brand", "")).strip(),
+                        "model": str(row.get("model", "")).strip(),
+                    },
+                )
             else:
                 crawl_result = {
                     "product_price": "",
