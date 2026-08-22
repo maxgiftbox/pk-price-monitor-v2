@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import re
 import time
 from datetime import datetime, timezone
@@ -877,7 +878,14 @@ DARAZ_CURRENT_PRICE_SELECTORS = [
     "[class*='sale-price']",
 ]
 DARAZ_PRICE_FAIL_ARTIFACT_COUNT = 0
-DARAZ_PRICE_FAIL_ARTIFACT_LIMIT = 5
+DARAZ_PRICE_FAIL_ARTIFACT_LIMIT = 3
+DARAZ_CAPTCHA_ERROR = "Daraz CAPTCHA / access verification triggered"
+DARAZ_REQUEST_DELAY_SECONDS = (8, 15)
+DARAZ_BATCH_SIZE = 25
+DARAZ_BATCH_COOLDOWN_SECONDS = (45, 90)
+DARAZ_CHALLENGE_BACKOFF_SECONDS = (60, 120)
+DARAZ_CIRCUIT_COOLDOWN_SECONDS = (180, 300)
+DARAZ_COUNTRY_COOLDOWN_SECONDS = (60, 120)
 DARAZ_ORIGINAL_PRICE_SELECTORS = [
     "del",
     "s",
@@ -887,6 +895,43 @@ DARAZ_ORIGINAL_PRICE_SELECTORS = [
     "[class*='old-price']",
     "[class*='regular-price']",
 ]
+
+
+def detect_daraz_challenge(page: Any, body_text: str = "") -> Tuple[bool, str]:
+    """Identify obvious Daraz verification pages without attempting to bypass them."""
+    title = clean_price(page.title()).lower()
+    visible_text = clean_price(body_text).lower()
+
+    title_signals = [
+        signal for signal in ("captcha verification", "captcha", "verification") if signal in title
+    ]
+    body_signals = [
+        signal
+        for signal in (
+            "captcha",
+            "please drag the slider",
+            "slider to verify",
+            "unusual traffic",
+            "security verification",
+            "access verification",
+        )
+        if signal in visible_text
+    ]
+    # A slider instruction is itself a compound challenge signal. Generic words such
+    # as "verify" only count when corroborated by the title or another body marker.
+    has_slider_instruction = any(
+        signal in visible_text for signal in ("please drag the slider", "slider to verify")
+    )
+    generic_verify = re.search(r"\bverify|verification\b", visible_text) is not None
+    is_challenge = bool(title_signals or body_signals or has_slider_instruction)
+    if not is_challenge:
+        return False, ""
+
+    signals = [f"title:{signal}" for signal in title_signals]
+    signals.extend(f"body:{signal}" for signal in body_signals)
+    if generic_verify and not body_signals:
+        signals.append("body:verify")
+    return True, ", ".join(signals)
 
 
 def parse_daraz_price_to_int(value: Any) -> Any:
@@ -1108,13 +1153,26 @@ def parse_daraz(
     try:
         response = page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
 
+        raw_body_text = page.locator("body").inner_text()
+        is_challenge, challenge_reason = detect_daraz_challenge(page, raw_body_text)
+        if is_challenge:
+            print(f"[DARAZ CAPTCHA] {DARAZ_CAPTCHA_ERROR}; signals={challenge_reason}")
+            save_daraz_price_failure_artifacts(page, debug_identity or {})
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": "unknown",
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": DARAZ_CAPTCHA_ERROR,
+            }
+
         selector_price, product_price = extract_daraz_product_price(page)
         print(
             f"[DARAZ PRICE DEBUG] url={product_url} "
             f"selector_price={selector_price} parsed_price={product_price}"
         )
 
-        raw_body_text = page.locator("body").inner_text()
         body_text = clean_price(raw_body_text)
 
         stock_status = "unknown"
@@ -1320,6 +1378,8 @@ def ensure_price_daily_header(worksheet: gspread.Worksheet) -> None:
 
 
 def main() -> None:
+    global DARAZ_PRICE_FAIL_ARTIFACT_COUNT
+    DARAZ_PRICE_FAIL_ARTIFACT_COUNT = 0
     os.makedirs("debug_screenshots", exist_ok=True)
     print(f"[DEBUG][PriceOye] Debug directory ready: {os.path.abspath('debug_screenshots')}")
 
@@ -1347,6 +1407,24 @@ def main() -> None:
     output_rows = []
     total_sku_rows = len(sku_records)
     print(f"[DEBUG][PriceOye] total sku_master rows: {total_sku_rows}")
+    daraz_rows_remaining = sum(
+        1
+        for row in active_rows
+        if str(row.get("platform", "")).strip().lower() == "daraz"
+        and str(row.get("product_url", "")).strip()
+    )
+    daraz_metrics = {
+        "attempted": 0,
+        "successes": 0,
+        "captchas": 0,
+        "other_parse_failures": 0,
+        "timeouts": 0,
+    }
+    daraz_consecutive_captchas = 0
+    daraz_batch_captchas = 0
+    daraz_batch_attempts = 0
+    daraz_stopped = False
+    last_daraz_country = ""
 
     rows_by_url: Dict[str, List[Dict[str, Any]]] = {}
     for row in active_rows:
@@ -1377,6 +1455,7 @@ def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
+        daraz_context = browser.new_context()
         for row in active_rows:
             product_url = str(row.get("product_url", "")).strip()
             platform = str(row.get("platform", "")).strip().lower()
@@ -1408,15 +1487,88 @@ def main() -> None:
             elif platform == "pickaboo":
                 crawl_result = crawl_pickaboo_page(context, product_url)
             elif platform == "daraz":
-                crawl_result = parse_daraz(
-                    context,
-                    product_url,
-                    debug_identity={
-                        "country": str(row.get("country", "")).strip(),
-                        "brand": str(row.get("brand", "")).strip(),
-                        "model": str(row.get("model", "")).strip(),
-                    },
-                )
+                daraz_rows_remaining -= 1
+                if daraz_stopped:
+                    crawl_result = {
+                        "product_price": "",
+                        "original_price": "",
+                        "stock_status": "unknown",
+                        "voucher_amount": 0,
+                        "effective_price": "",
+                        "error_message": "Daraz crawl stopped by CAPTCHA circuit breaker",
+                    }
+                else:
+                    country = str(row.get("country", "")).strip().upper()
+                    if daraz_metrics["attempted"]:
+                        delay = random.uniform(*DARAZ_REQUEST_DELAY_SECONDS)
+                        print(f"[DARAZ THROTTLE] Sleeping {delay:.1f} seconds before next Daraz request")
+                        time.sleep(delay)
+                    if last_daraz_country and country and country != last_daraz_country:
+                        delay = random.uniform(*DARAZ_COUNTRY_COOLDOWN_SECONDS)
+                        print(
+                            f"[DARAZ COUNTRY COOLDOWN] Switching {last_daraz_country} -> {country}. "
+                            f"Sleeping {delay:.0f} seconds."
+                        )
+                        time.sleep(delay)
+
+                    crawl_result = parse_daraz(
+                        daraz_context,
+                        product_url,
+                        debug_identity={
+                            "country": country,
+                            "brand": str(row.get("brand", "")).strip(),
+                            "model": str(row.get("model", "")).strip(),
+                        },
+                    )
+                    last_daraz_country = country
+                    daraz_metrics["attempted"] += 1
+                    daraz_batch_attempts += 1
+                    error_message = crawl_result.get("error_message", "")
+                    if error_message == DARAZ_CAPTCHA_ERROR:
+                        daraz_metrics["captchas"] += 1
+                        daraz_consecutive_captchas += 1
+                        daraz_batch_captchas += 1
+                        daraz_context.close()
+                        if daraz_consecutive_captchas >= 3:
+                            daraz_stopped = True
+                            print(
+                                "[DARAZ CIRCUIT BREAKER] 3 consecutive CAPTCHA challenges. "
+                                "Stopping Daraz crawl for this run."
+                            )
+                        else:
+                            cooldown_range = (
+                                DARAZ_CIRCUIT_COOLDOWN_SECONDS
+                                if daraz_batch_captchas >= 2
+                                else DARAZ_CHALLENGE_BACKOFF_SECONDS
+                            )
+                            delay = random.uniform(*cooldown_range)
+                            label = "CIRCUIT COOLDOWN" if daraz_batch_captchas >= 2 else "CAPTCHA BACKOFF"
+                            print(f"[DARAZ {label}] Sleeping {delay:.0f} seconds before refreshing context.")
+                            time.sleep(delay)
+                            daraz_context = browser.new_context()
+                    elif isinstance(crawl_result.get("product_price"), int):
+                        daraz_metrics["successes"] += 1
+                        daraz_consecutive_captchas = 0
+                    elif error_message == "Timeout while loading page":
+                        daraz_metrics["timeouts"] += 1
+                        daraz_consecutive_captchas = 0
+                    else:
+                        daraz_metrics["other_parse_failures"] += 1
+                        daraz_consecutive_captchas = 0
+
+                    if (
+                        not daraz_stopped
+                        and daraz_batch_attempts >= DARAZ_BATCH_SIZE
+                        and daraz_rows_remaining > 0
+                    ):
+                        delay = random.uniform(*DARAZ_BATCH_COOLDOWN_SECONDS)
+                        print(
+                            f"[DARAZ COOLDOWN] Completed batch of {daraz_batch_attempts} SKUs. "
+                            f"Sleeping {delay:.0f} seconds."
+                        )
+                        time.sleep(delay)
+                        daraz_batch_attempts = 0
+                        daraz_batch_captchas = 0
             else:
                 crawl_result = {
                     "product_price": "",
@@ -1446,12 +1598,25 @@ def main() -> None:
             )
             output_rows.append(output_row)
 
+        if not daraz_stopped:
+            daraz_context.close()
+        context.close()
         browser.close()
 
     df = pd.DataFrame(output_rows, columns=PRICE_DAILY_COLUMNS).fillna("")
     if not df.empty:
         price_ws.append_rows(df.values.tolist(), value_input_option="RAW")
     print(f"Appended {len(df)} row(s) to {PRICE_DAILY_TAB}.")
+    attempted = daraz_metrics["attempted"]
+    success_rate = (daraz_metrics["successes"] / attempted * 100) if attempted else 0.0
+    print("\nDARAZ RUN SUMMARY\n")
+    print(f"Total Daraz SKUs attempted: {attempted}")
+    print(f"Successful price parses: {daraz_metrics['successes']}")
+    print(f"CAPTCHA challenges: {daraz_metrics['captchas']}")
+    print(f"Other price parse failures: {daraz_metrics['other_parse_failures']}")
+    print(f"Timeouts: {daraz_metrics['timeouts']}")
+    print(f"Daraz crawl stopped by circuit breaker: {daraz_stopped}")
+    print(f"Daraz success rate: {success_rate:.1f}%")
 
 
 if __name__ == "__main__":
