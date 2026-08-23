@@ -1035,18 +1035,20 @@ def extract_daraz_product_price(page: Any) -> Tuple[str, Any]:
     return selector_price, ""
 
 
-def save_daraz_price_failure_artifacts(page: Any, debug_identity: Dict[str, str]) -> None:
+def save_daraz_price_failure_artifacts(
+    page: Any, debug_identity: Dict[str, str], debug_dir: str = "debug_daraz"
+) -> None:
     global DARAZ_PRICE_FAIL_ARTIFACT_COUNT
     if DARAZ_PRICE_FAIL_ARTIFACT_COUNT >= DARAZ_PRICE_FAIL_ARTIFACT_LIMIT:
         return
 
     DARAZ_PRICE_FAIL_ARTIFACT_COUNT += 1
-    os.makedirs("debug_daraz", exist_ok=True)
+    os.makedirs(debug_dir, exist_ok=True)
     safe_country = sanitize_filename(debug_identity.get("country", ""), "unknown_country")
     safe_brand = sanitize_filename(debug_identity.get("brand", ""), "unknown_brand")
     safe_model = sanitize_filename(debug_identity.get("model", ""), "unknown_model")
     prefix = os.path.join(
-        "debug_daraz",
+        debug_dir,
         f"{safe_country}_{safe_brand}_{safe_model}_{DARAZ_PRICE_FAIL_ARTIFACT_COUNT}",
     )
     html_path = f"{prefix}.html"
@@ -1140,6 +1142,7 @@ def parse_daraz(
     browser_context: Any,
     product_url: str,
     debug_identity: Optional[Dict[str, str]] = None,
+    debug_dir: str = "debug_daraz",
 ) -> Dict[str, Any]:
     page = browser_context.new_page()
     try:
@@ -1154,6 +1157,18 @@ def parse_daraz(
         raw_body_text = page.locator("body").inner_text()
         body_text = clean_price(raw_body_text)
 
+        captcha_markers = ("captcha", "verify you are human", "unusual traffic", "robot check")
+        if any(marker in body_text.lower() for marker in captcha_markers):
+            save_daraz_price_failure_artifacts(page, debug_identity or {}, debug_dir)
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": "unknown",
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": "CAPTCHA detected; crawl not bypassed",
+            }
+
         stock_status = "unknown"
         if re.search(r"(?i)(out of stock|sold out|this item is no longer available)", body_text):
             stock_status = "out_of_stock"
@@ -1167,7 +1182,7 @@ def parse_daraz(
                 response.status if response is not None else None,
                 raw_body_text,
             )
-            save_daraz_price_failure_artifacts(page, debug_identity or {})
+            save_daraz_price_failure_artifacts(page, debug_identity or {}, debug_dir)
             return {
                 "product_price": "",
                 "original_price": "",
@@ -1190,6 +1205,7 @@ def parse_daraz(
         }
     except PlaywrightTimeoutError:
         print(f"[DARAZ PRICE DEBUG] url={product_url} selector_price= parsed_price=")
+        save_daraz_price_failure_artifacts(page, debug_identity or {}, debug_dir)
         return {
             "product_price": "",
             "original_price": "",
@@ -1200,6 +1216,7 @@ def parse_daraz(
         }
     except Exception as exc:  # noqa: BLE001
         print(f"[DARAZ PRICE DEBUG] url={product_url} selector_price= parsed_price=")
+        save_daraz_price_failure_artifacts(page, debug_identity or {}, debug_dir)
         return {
             "product_price": "",
             "original_price": "",
