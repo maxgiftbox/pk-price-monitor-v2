@@ -13,21 +13,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Check Python
+        run: |
+          /opt/homebrew/bin/python3.11 --version
+          /opt/homebrew/bin/python3.11 -m pip --version
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          /opt/homebrew/bin/python3.11 -m pip install -r requirements.txt
 
       - name: Install Playwright Chromium
-        run: playwright install chromium
+        run: |
+          /opt/homebrew/bin/python3.11 -m playwright install chromium
 
       - name: Run full Daraz PK and BD crawl
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python daraz_selfhosted.py
+        run: |
+          /opt/homebrew/bin/python3.11 daraz_selfhosted.py
 
       - name: Upload Daraz self-hosted debug artifacts
         if: always()
