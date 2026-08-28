@@ -1147,13 +1147,6 @@ def parse_daraz(
     page = browser_context.new_page()
     try:
         response = page.goto(product_url, wait_until="domcontentloaded", timeout=30000)
-
-        selector_price, product_price = extract_daraz_product_price(page)
-        print(
-            f"[DARAZ PRICE DEBUG] url={product_url} "
-            f"selector_price={selector_price} parsed_price={product_price}"
-        )
-
         raw_body_text = page.locator("body").inner_text()
         body_text = clean_price(raw_body_text)
 
@@ -1168,6 +1161,32 @@ def parse_daraz(
                 "effective_price": "",
                 "error_message": "CAPTCHA detected; crawl not bypassed",
             }
+
+        title = clean_price(page.title()).casefold()
+        unavailable_markers = (
+            "we're sorry, an error has occurred",
+            "we’re sorry, an error has occurred",
+            "we seem to have lost this page",
+        )
+        if (response is not None and response.status == 404) or "error" in title or any(
+            marker in body_text.casefold() for marker in unavailable_markers
+        ):
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": "unknown",
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": "Daraz PDP unavailable / 404",
+            }
+
+        # Only inspect product-price selectors after ruling out Daraz error pages;
+        # those pages can contain unrelated recommendation-card prices.
+        selector_price, product_price = extract_daraz_product_price(page)
+        print(
+            f"[DARAZ PRICE DEBUG] url={product_url} "
+            f"selector_price={selector_price} parsed_price={product_price}"
+        )
 
         stock_status = "unknown"
         if re.search(r"(?i)(out of stock|sold out|this item is no longer available)", body_text):

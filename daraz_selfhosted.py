@@ -30,6 +30,21 @@ THROTTLE_SECONDS = float(os.getenv("DARAZ_THROTTLE_SECONDS", "4"))
 MAX_BACKOFF_SECONDS = float(os.getenv("DARAZ_MAX_BACKOFF_SECONDS", "120"))
 CAPTCHA_BREAKER_THRESHOLD = int(os.getenv("DARAZ_CAPTCHA_BREAKER_THRESHOLD", "3"))
 CAPTCHA_COOLDOWN_SECONDS = float(os.getenv("DARAZ_CAPTCHA_COOLDOWN_SECONDS", "300"))
+NETWORK_MAX_ATTEMPTS = 3
+NETWORK_RETRY_DELAYS = (5, 10)
+TRANSIENT_NETWORK_MARKERS = (
+    "err_internet_disconnected",
+    "err_connection_reset",
+    "err_connection_closed",
+    "err_network_changed",
+    "err_timed_out",
+    "err_name_not_resolved",
+    "err_dns",
+    "temporary failure in name resolution",
+    "timeout while loading page",
+    "target page, context or browser has been closed",
+    "navigation failed",
+)
 
 
 def normalized_key(row: Dict[str, Any]) -> Tuple[str, ...]:
@@ -74,18 +89,92 @@ def classify_result(result: Dict[str, Any]) -> str:
     if result.get("product_price"):
         return "success"
     error = str(result.get("error_message", "")).casefold()
+    if "pdp unavailable / 404" in error:
+        return "unavailable"
     if any(marker in error for marker in CAPTCHA_MARKERS):
         return "captcha"
     if "timeout" in error:
-        return "timeout"
+        return "timeout_failure"
+    if "network failure after" in error:
+        return "network_failure"
     if "not parsed" in error or "parsing" in error:
         return "parse_failure"
     return "other_error"
 
 
+def _network_reason(result: Dict[str, Any]) -> str:
+    error = str(result.get("error_message", ""))
+    folded = error.casefold()
+    for marker in TRANSIENT_NETWORK_MARKERS:
+        if marker in folded:
+            return marker.upper().removeprefix("NET::")
+    return ""
+
+
+def crawl_daraz_with_retries(
+    context: Any,
+    url: str,
+    row: Dict[str, Any],
+    recover_context: Any = None,
+) -> Tuple[Dict[str, Any], Any]:
+    """Crawl one SKU with bounded network retries and one fresh parse retry."""
+    network_failures = 0
+    parse_retry_used = False
+    while True:
+        result = parse_daraz(context, url, debug_identity=row, debug_dir=DEBUG_DIR)
+        reason = _network_reason(result)
+        if reason:
+            network_failures += 1
+            if network_failures >= NETWORK_MAX_ATTEMPTS:
+                category = (
+                    "Timeout"
+                    if "TIMEOUT" in reason or "TIMED_OUT" in reason
+                    else "Network failure"
+                )
+                print(
+                    f"[NETWORK FAILED] country={row.get('country', '')} model={row.get('model', '')} "
+                    f"attempts={NETWORK_MAX_ATTEMPTS} reason={reason}"
+                )
+                result["error_message"] = f"{category} after {NETWORK_MAX_ATTEMPTS} attempts"
+                return result, context
+
+            next_attempt = network_failures + 1
+            print(
+                f"[NETWORK RETRY] country={row.get('country', '')} model={row.get('model', '')} "
+                f"attempt={next_attempt}/{NETWORK_MAX_ATTEMPTS} reason={reason}"
+            )
+            if recover_context is not None:
+                context = recover_context(context)
+            delay = NETWORK_RETRY_DELAYS[network_failures - 1]
+            print(f"[NETWORK RETRY] waiting={delay}s")
+            time.sleep(delay)
+            continue
+
+        if network_failures:
+            print(
+                f"[NETWORK RECOVERED] country={row.get('country', '')} model={row.get('model', '')} "
+                f"attempt={network_failures + 1}"
+            )
+        if result.get("error_message") == "Product price not parsed" and not parse_retry_used:
+            parse_retry_used = True
+            time.sleep(random.uniform(3, 6))
+            continue
+        return result, context
+
+
 def write_summary(summary: Dict[Tuple[str, str], Dict[str, int]]) -> None:
     os.makedirs(os.path.dirname(SUMMARY_PATH), exist_ok=True)
-    fields = ["country", "brand", "total", "success", "captcha", "parse_failure", "timeout", "success_rate"]
+    count_fields = [
+        "total",
+        "success",
+        "unavailable",
+        "captcha",
+        "parse_failure",
+        "network_failure",
+        "timeout_failure",
+        "other_error",
+    ]
+    fields = ["country", "brand", *count_fields, "success_rate"]
     with open(SUMMARY_PATH, "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -94,7 +183,7 @@ def write_summary(summary: Dict[Tuple[str, str], Dict[str, int]]) -> None:
             writer.writerow({
                 "country": country,
                 "brand": brand,
-                **{name: counts[name] for name in fields[2:7]},
+                **{name: counts[name] for name in count_fields},
                 "success_rate": f"{(counts['success'] / total * 100) if total else 0:.2f}%",
             })
 
@@ -116,9 +205,11 @@ def print_summary(rows: List[Dict[str, Any]], statuses: List[str], summary: Dict
     print(f"PK total: {country_totals['PK']}")
     print(f"BD total: {country_totals['BD']}")
     print(f"Successful: {totals['success']}")
+    print(f"PDP unavailable / 404: {totals['unavailable']}")
     print(f"CAPTCHA: {totals['captcha']}")
     print(f"Parse failures: {totals['parse_failure']}")
-    print(f"Timeouts: {totals['timeout']}")
+    print(f"Network failures: {totals['network_failure']}")
+    print(f"Timeout failures: {totals['timeout_failure']}")
     print(f"Other errors: {totals['other_error']}")
     print(f"Overall success rate: {rate(totals['success'], total):.2f}%")
     print(f"CAPTCHA rate: {rate(totals['captcha'], total):.2f}%")
@@ -127,7 +218,16 @@ def print_summary(rows: List[Dict[str, Any]], statuses: List[str], summary: Dict
     print("Brand-level summary:")
     print("country / brand / total / success / captcha / failure")
     for (country, brand), counts in sorted(summary.items()):
-        failure = counts["parse_failure"] + counts["timeout"] + counts["other_error"]
+        failure = sum(
+            counts[name]
+            for name in (
+                "unavailable",
+                "parse_failure",
+                "network_failure",
+                "timeout_failure",
+                "other_error",
+            )
+        )
         print(f"{country} / {brand} / {counts['total']} / {counts['success']} / {counts['captcha']} / {failure}")
 
 
@@ -180,11 +280,25 @@ def main() -> None:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             context = browser.new_context()
+
+            def recover_context(current_context: Any) -> Any:
+                """Keep a usable context, replacing it only when Playwright reports it closed."""
+                try:
+                    probe = current_context.new_page()
+                    probe.close()
+                    return current_context
+                except Exception:  # noqa: BLE001 - Playwright has several closed-target errors
+                    try:
+                        current_context.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return browser.new_context()
+
             try:
                 for index, row in enumerate(rows):
                     url = str(row.get("product_url", "")).strip()
                     if url:
-                        result = parse_daraz(context, url, debug_identity=row, debug_dir=DEBUG_DIR)
+                        result, context = crawl_daraz_with_retries(context, url, row, recover_context)
                     else:
                         result = {"error_message": "Missing product_url", "stock_status": "unknown"}
                     status = classify_result(result)
