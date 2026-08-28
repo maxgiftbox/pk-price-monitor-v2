@@ -1,7 +1,15 @@
 import unittest
 from unittest.mock import patch
 
-from daraz_selfhosted import PRICE_DAILY_COLUMNS, normalized_key, upsert_daraz_rows
+from daraz_selfhosted import (
+    CHECKPOINT_SIZE,
+    PRICE_DAILY_COLUMNS,
+    classify_result,
+    crawl_daraz_with_retries,
+    normalized_key,
+    upsert_daraz_rows,
+)
+from scraper import parse_daraz
 
 
 class FakeWorksheet:
@@ -62,6 +70,102 @@ class DarazUpsertTests(unittest.TestCase):
             normalized_key(row(platform=" Daraz ", country="pk", brand="EXAMPLE")),
             normalized_key(row(platform="daraz", country="PK", brand="example")),
         )
+
+    def test_checkpoint_size_remains_twenty(self):
+        self.assertEqual(CHECKPOINT_SIZE, 20)
+
+
+class DarazResilienceTests(unittest.TestCase):
+    @patch("daraz_selfhosted.time.sleep")
+    @patch("daraz_selfhosted.parse_daraz")
+    def test_transient_network_failure_retries_at_most_three_times(self, parse, _sleep):
+        parse.side_effect = [
+            {"error_message": "Crawl failed: Page.goto: net::ERR_CONNECTION_RESET"},
+            {"error_message": "Crawl failed: Page.goto: net::ERR_CONNECTION_RESET"},
+            {"error_message": "Crawl failed: Page.goto: net::ERR_CONNECTION_RESET"},
+        ]
+
+        result, _ = crawl_daraz_with_retries(
+            object(),
+            "https://example.test",
+            {"country": "PK", "model": "Phone"},
+        )
+
+        self.assertEqual(parse.call_count, 3)
+        self.assertEqual(result["error_message"], "Network failure after 3 attempts")
+
+    @patch("daraz_selfhosted.random.uniform", return_value=3)
+    @patch("daraz_selfhosted.time.sleep")
+    @patch("daraz_selfhosted.parse_daraz")
+    def test_parse_failure_gets_only_one_fresh_retry(self, parse, _sleep, _uniform):
+        parse.return_value = {"error_message": "Product price not parsed"}
+
+        result, _ = crawl_daraz_with_retries(object(), "https://example.test", {})
+
+        self.assertEqual(parse.call_count, 2)
+        self.assertEqual(result["error_message"], "Product price not parsed")
+
+    @patch("daraz_selfhosted.parse_daraz")
+    def test_unavailable_and_captcha_are_not_retried(self, parse):
+        for message, category in (
+            ("Daraz PDP unavailable / 404", "unavailable"),
+            ("CAPTCHA detected; crawl not bypassed", "captcha"),
+        ):
+            with self.subTest(message=message):
+                parse.reset_mock()
+                parse.return_value = {"error_message": message}
+                result, _ = crawl_daraz_with_retries(object(), "https://example.test", {})
+                self.assertEqual(parse.call_count, 1)
+                self.assertEqual(classify_result(result), category)
+
+
+class FakeDarazPage:
+    def __init__(self, status=200, title="Product", body="Product details"):
+        self.response = type("Response", (), {"status": status})()
+        self._title = title
+        self._body = body
+
+    def goto(self, *_args, **_kwargs):
+        return self.response
+
+    def locator(self, _selector):
+        return self
+
+    def inner_text(self):
+        return self._body
+
+    def title(self):
+        return self._title
+
+    def close(self):
+        pass
+
+
+class FakeDarazContext:
+    def __init__(self, page):
+        self.page = page
+
+    def new_page(self):
+        return self.page
+
+
+class DarazUnavailablePageTests(unittest.TestCase):
+    @patch("scraper.extract_daraz_product_price")
+    def test_http_404_returns_unavailable_without_parsing_prices(self, extract_price):
+        result = parse_daraz(FakeDarazContext(FakeDarazPage(status=404)), "https://example.test")
+
+        self.assertEqual(result["error_message"], "Daraz PDP unavailable / 404")
+        self.assertEqual(result["product_price"], "")
+        extract_price.assert_not_called()
+
+    @patch("scraper.extract_daraz_product_price")
+    def test_daraz_error_body_returns_unavailable_without_parsing_prices(self, extract_price):
+        page = FakeDarazPage(body="We're Sorry, an error has occurred. Recommended ৳3,156")
+
+        result = parse_daraz(FakeDarazContext(page), "https://example.test")
+
+        self.assertEqual(result["error_message"], "Daraz PDP unavailable / 404")
+        extract_price.assert_not_called()
 
 
 if __name__ == "__main__":
