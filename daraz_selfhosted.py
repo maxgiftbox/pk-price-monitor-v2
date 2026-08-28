@@ -25,6 +25,7 @@ DEBUG_DIR = "debug_daraz_selfhosted"
 SUMMARY_PATH = "output/daraz_selfhosted_run_summary.csv"
 DAILY_KEY_COLUMNS = ("crawl_date", "platform", "country", "brand", "model", "memory")
 CAPTCHA_MARKERS = ("captcha", "verify you are human", "unusual traffic", "robot check")
+CHECKPOINT_SIZE = 20
 THROTTLE_SECONDS = float(os.getenv("DARAZ_THROTTLE_SECONDS", "4"))
 MAX_BACKOFF_SECONDS = float(os.getenv("DARAZ_MAX_BACKOFF_SECONDS", "120"))
 CAPTCHA_BREAKER_THRESHOLD = int(os.getenv("DARAZ_CAPTCHA_BREAKER_THRESHOLD", "3"))
@@ -144,43 +145,83 @@ def main() -> None:
             and str(row.get("country", "")).strip().upper() in {"PK", "BD"}]
     print(f"Loaded {len(rows)} active Daraz PK/BD SKU(s) from {SKU_MASTER_TAB}.")
 
-    output_rows: List[Dict[str, Any]] = []
+    current_batch: List[Dict[str, Any]] = []
     statuses: List[str] = []
     summary: Dict[Tuple[str, str], Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     consecutive_captchas = 0
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context()
-        for index, row in enumerate(rows):
-            url = str(row.get("product_url", "")).strip()
-            if url:
-                result = parse_daraz(context, url, debug_identity=row, debug_dir=DEBUG_DIR)
-            else:
-                result = {"error_message": "Missing product_url", "stock_status": "unknown"}
-            status = classify_result(result)
-            output_rows.append(build_price_daily_row(row, result))
-            statuses.append(status)
-            key = (str(row.get("country", "")).strip().upper(), str(row.get("brand", "")).strip())
-            summary[key]["total"] += 1
-            summary[key][status] += 1
+    total_batches = successful_batches = failed_batches = 0
+    total_records_checkpointed = total_updated = total_appended = 0
+    checkpoint_write_failed = False
 
-            if status == "captcha":
-                consecutive_captchas += 1
-                backoff = min(2 ** consecutive_captchas, MAX_BACKOFF_SECONDS)
-                print(f"[DARAZ] CAPTCHA detected; backing off {backoff:.0f}s (no bypass attempted).")
-                time.sleep(backoff)
-                if consecutive_captchas >= CAPTCHA_BREAKER_THRESHOLD:
-                    print(f"[DARAZ] Circuit breaker open; cooling down {CAPTCHA_COOLDOWN_SECONDS:.0f}s.")
-                    time.sleep(CAPTCHA_COOLDOWN_SECONDS)
-                    consecutive_captchas = 0
-            else:
-                consecutive_captchas = 0
-            if index + 1 < len(rows):
-                time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
-        browser.close()
+    def write_checkpoint() -> None:
+        nonlocal total_batches, successful_batches, failed_batches
+        nonlocal total_records_checkpointed, total_updated, total_appended
+        nonlocal checkpoint_write_failed
+        total_batches += 1
+        batch_number = total_batches
+        record_count = len(current_batch)
+        print(f"[CHECKPOINT] Writing batch {batch_number} | records={record_count}")
+        try:
+            updated, appended = upsert_daraz_rows(price_ws, current_batch)
+        except Exception as error:
+            failed_batches += 1
+            checkpoint_write_failed = True
+            print(f"[CHECKPOINT ERROR] batch={batch_number} records={record_count} reason={error}")
+            raise
+        successful_batches += 1
+        total_records_checkpointed += record_count
+        total_updated += updated
+        total_appended += appended
+        print(f"[CHECKPOINT] Batch {batch_number} complete | updated={updated} | appended={appended}")
+        # Retain the batch until its upsert succeeds so a failed write is never discarded.
+        current_batch.clear()
 
-    updated, appended = upsert_daraz_rows(price_ws, output_rows)
-    print(f"Daraz daily upsert complete: {updated} updated, {appended} appended.")
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context()
+            try:
+                for index, row in enumerate(rows):
+                    url = str(row.get("product_url", "")).strip()
+                    if url:
+                        result = parse_daraz(context, url, debug_identity=row, debug_dir=DEBUG_DIR)
+                    else:
+                        result = {"error_message": "Missing product_url", "stock_status": "unknown"}
+                    status = classify_result(result)
+                    current_batch.append(build_price_daily_row(row, result))
+                    statuses.append(status)
+                    key = (str(row.get("country", "")).strip().upper(), str(row.get("brand", "")).strip())
+                    summary[key]["total"] += 1
+                    summary[key][status] += 1
+
+                    if len(current_batch) >= CHECKPOINT_SIZE:
+                        write_checkpoint()
+
+                    if status == "captcha":
+                        consecutive_captchas += 1
+                        backoff = min(2 ** consecutive_captchas, MAX_BACKOFF_SECONDS)
+                        print(f"[DARAZ] CAPTCHA detected; backing off {backoff:.0f}s (no bypass attempted).")
+                        time.sleep(backoff)
+                        if consecutive_captchas >= CAPTCHA_BREAKER_THRESHOLD:
+                            print(f"[DARAZ] Circuit breaker open; cooling down {CAPTCHA_COOLDOWN_SECONDS:.0f}s.")
+                            time.sleep(CAPTCHA_COOLDOWN_SECONDS)
+                            consecutive_captchas = 0
+                    else:
+                        consecutive_captchas = 0
+                    if index + 1 < len(rows):
+                        time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
+            finally:
+                if current_batch and not checkpoint_write_failed:
+                    write_checkpoint()
+                browser.close()
+    finally:
+        print("\nCHECKPOINT WRITE SUMMARY")
+        print(f"Total batches: {total_batches}")
+        print(f"Successful batches: {successful_batches}")
+        print(f"Failed batches: {failed_batches}")
+        print(f"Total records checkpointed: {total_records_checkpointed}")
+
+    print(f"Daraz daily upsert complete: {total_updated} updated, {total_appended} appended.")
     write_summary(summary)
     print_summary(rows, statuses, summary)
 
