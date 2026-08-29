@@ -1,5 +1,8 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import gspread
+import requests
 
 from daraz_selfhosted import (
     CHECKPOINT_SIZE,
@@ -9,7 +12,7 @@ from daraz_selfhosted import (
     normalized_key,
     upsert_daraz_rows,
 )
-from scraper import parse_daraz
+from scraper import GOOGLE_SHEETS_MAX_ATTEMPTS, google_sheets_retry, parse_daraz
 
 
 class FakeWorksheet:
@@ -73,6 +76,62 @@ class DarazUpsertTests(unittest.TestCase):
 
     def test_checkpoint_size_remains_twenty(self):
         self.assertEqual(CHECKPOINT_SIZE, 20)
+
+    def test_lost_append_response_does_not_duplicate_daily_key(self):
+        class LostResponseWorksheet(FakeWorksheet):
+            def append_row(self, values, value_input_option=None):
+                self.records.append(dict(zip(PRICE_DAILY_COLUMNS, values)))
+                self.appends.append((values, value_input_option))
+                if len(self.appends) == 1:
+                    raise requests.exceptions.ProxyError("response lost")
+
+        worksheet = LostResponseWorksheet([])
+        with patch("scraper.time.sleep"):
+            updated, appended = upsert_daraz_rows(worksheet, [row(country="BD")])
+
+        self.assertEqual((updated, appended), (0, 1))
+        self.assertEqual(len(worksheet.appends), 1)
+        self.assertEqual(len(worksheet.records), 1)
+
+
+class GoogleSheetsRetryTests(unittest.TestCase):
+    @patch("scraper.time.sleep")
+    def test_transport_errors_retry_and_recover(self, sleep):
+        for error in (
+            requests.exceptions.ProxyError("proxy"),
+            requests.exceptions.ConnectionError("connection reset"),
+            requests.exceptions.Timeout("timed out"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                operation = MagicMock(side_effect=[error, "ok"])
+                self.assertEqual(google_sheets_retry(operation), "ok")
+                self.assertEqual(operation.call_count, 2)
+        self.assertEqual(sleep.call_count, 3)
+
+    @patch("scraper.time.sleep")
+    def test_transport_error_is_raised_after_max_attempts(self, sleep):
+        operation = MagicMock(
+            side_effect=requests.exceptions.ConnectionError("connection closed")
+        )
+
+        with self.assertRaises(requests.exceptions.ConnectionError):
+            google_sheets_retry(operation)
+
+        self.assertEqual(operation.call_count, GOOGLE_SHEETS_MAX_ATTEMPTS)
+        self.assertEqual(sleep.call_count, GOOGLE_SHEETS_MAX_ATTEMPTS - 1)
+
+    @patch("scraper.random.uniform", return_value=0)
+    @patch("scraper.time.sleep")
+    def test_transient_api_error_retry_remains_intact(self, _sleep, _uniform):
+        response = MagicMock()
+        response.status_code = 503
+        response.json.return_value = {
+            "error": {"code": 503, "message": "unavailable", "status": "UNAVAILABLE"}
+        }
+        operation = MagicMock(side_effect=[gspread.exceptions.APIError(response), "ok"])
+
+        self.assertEqual(google_sheets_retry(operation), "ok")
+        self.assertEqual(operation.call_count, 2)
 
 
 class DarazResilienceTests(unittest.TestCase):

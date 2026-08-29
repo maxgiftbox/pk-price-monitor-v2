@@ -1,13 +1,16 @@
+import http.client
 import json
 import os
 import random
 import re
+import socket
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 import gspread
 import pandas as pd
+import requests
 from bs4 import BeautifulSoup
 from google.oauth2.service_account import Credentials
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -40,16 +43,29 @@ PRICE_DAILY_COLUMNS = [
 TRANSIENT_GOOGLE_SHEETS_STATUS_CODES = {429, 500, 502, 503, 504}
 GOOGLE_SHEETS_MAX_ATTEMPTS = 5
 GOOGLE_SHEETS_MAX_BACKOFF_SECONDS = 32.0
+GOOGLE_SHEETS_NETWORK_DELAYS = (5.0, 10.0, 20.0, 30.0)
+TRANSIENT_GOOGLE_SHEETS_NETWORK_ERRORS = (
+    requests.exceptions.ProxyError,
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    http.client.RemoteDisconnected,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    socket.gaierror,
+)
 T = TypeVar("T")
 
 
 def google_sheets_retry(operation: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-    """Run a Google Sheets operation with bounded retries for transient API errors."""
-    retried = False
+    """Run a Google Sheets operation with bounded transient API/network retries."""
+    api_retried = network_retried = False
     for attempt in range(1, GOOGLE_SHEETS_MAX_ATTEMPTS + 1):
         try:
             result = operation(*args, **kwargs)
-            if retried:
+            if network_retried:
+                print("[GSHEET NETWORK RECOVERED] Google Sheets connection restored.")
+            elif api_retried:
                 print("[GSHEET RETRY] Google Sheets connection recovered.")
             return result
         except gspread.exceptions.APIError as exc:
@@ -68,7 +84,22 @@ def google_sheets_retry(operation: Callable[..., T], *args: Any, **kwargs: Any) 
                 f"[GSHEET RETRY] API returned {status_code}. Retry "
                 f"{attempt}/{GOOGLE_SHEETS_MAX_ATTEMPTS} in {delay:.1f} seconds."
             )
-            retried = True
+            api_retried = True
+            time.sleep(delay)
+        except TRANSIENT_GOOGLE_SHEETS_NETWORK_ERRORS as exc:
+            if attempt == GOOGLE_SHEETS_MAX_ATTEMPTS:
+                print(
+                    "[GSHEET NETWORK ERROR] Google Sheets unavailable after "
+                    f"{GOOGLE_SHEETS_MAX_ATTEMPTS} transport retries."
+                )
+                raise
+
+            delay = GOOGLE_SHEETS_NETWORK_DELAYS[attempt - 1]
+            print(
+                f"[GSHEET NETWORK RETRY] {type(exc).__name__} "
+                f"attempt={attempt}/{GOOGLE_SHEETS_MAX_ATTEMPTS} waiting={delay:g}s"
+            )
+            network_retried = True
             time.sleep(delay)
 
     raise RuntimeError("Google Sheets retry loop exited unexpectedly.")

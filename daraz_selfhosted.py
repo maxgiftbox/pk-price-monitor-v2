@@ -74,14 +74,37 @@ def upsert_daraz_rows(worksheet: Any, rows: Iterable[Dict[str, Any]]) -> Tuple[i
             )
             updated += 1
         else:
-            google_sheets_retry(
-                worksheet.append_row,
-                _row_values(row),
-                value_input_option="RAW",
-            )
+            # Retry the complete lookup-and-write unit, rather than append_row alone.
+            # If an append reached Sheets but its response was lost, the next lookup
+            # finds the daily key and updates it instead of creating a duplicate.
+            append_attempted = False
+
+            def append_if_missing() -> Tuple[bool, int]:
+                nonlocal append_attempted
+                current_records = worksheet.get_all_records()
+                current = {
+                    normalized_key(record): index
+                    for index, record in enumerate(current_records, start=2)
+                }
+                current_row_number = current.get(key)
+                if current_row_number is not None:
+                    worksheet.update(
+                        f"A{current_row_number}:N{current_row_number}",
+                        [_row_values(row)],
+                        value_input_option="RAW",
+                    )
+                    return append_attempted, current_row_number
+                append_attempted = True
+                worksheet.append_row(_row_values(row), value_input_option="RAW")
+                return True, len(current_records) + 2
+
+            was_appended, row_number = google_sheets_retry(append_if_missing)
             # Track the newly appended row so duplicate keys within this run update it.
-            existing[key] = len(records) + appended + 2
-            appended += 1
+            existing[key] = row_number
+            if was_appended:
+                appended += 1
+            else:
+                updated += 1
     return updated, appended
 
 
