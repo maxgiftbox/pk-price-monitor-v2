@@ -42,5 +42,5 @@ def gap(snapshot, params):
         return value
     rows=[]
     for _, r in frame.iterrows():
-        rows.append({"productId":r.product_id,"date":r.crawl_date.isoformat(),"country":r.country,"brand":r.brand,"sku":r.model,"memory":r.memory,"mrp":nullable(r.get("mrp")),"discountPct":nullable(r.discount_pct),"darazPrice":nullable(r.daraz_price),"darazUrl":r.get("daraz_url") or None,"competitorPlatform":nullable(r.competitor_platform),"competitorPrice":nullable(r.competitor_price),"competitorUrl":r.get("competitor_url") or None,"gapAmount":nullable(r.gap_amount),"gapPct":nullable(r.gap_pct),"alert":nullable(r.alert)})
+        rows.append({"productId":r.product_id,"date":r.crawl_date.isoformat(),"country":r.country,"brand":r.brand,"sku":r.model,"memory":r.memory,"mrp":nullable(r.get("mrp")),"discountPct":nullable(r.discount_pct),"darazPrice":nullable(r.daraz_price),"darazUrl":nullable(r.get("daraz_url")) or None,"competitorPlatform":nullable(r.competitor_platform),"competitorPrice":nullable(r.competitor_price),"competitorUrl":nullable(r.get("competitor_url")) or None,"gapAmount":nullable(r.gap_amount),"gapPct":nullable(r.gap_pct),"alert":nullable(r.alert)})
     return {"rows":rows,"pagination":{"page":page,"pageSize":size,"total":total,"totalPages":max(1,(total+size-1)//size)},"meta":meta(snapshot)}

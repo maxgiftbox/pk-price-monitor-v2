@@ -23,6 +23,9 @@ def prepared():
     master=pd.DataFrame([{"platform":"PriceOye","country":"PK","brand":"","model":"","memory":"","product_url":"https://priceoye/a55","standard_model":"Galaxy A55","standard_memory":"8/256"},{"platform":"Daraz","country":"PK","brand":"Samsung","model":"A55 raw","memory":"8/256","product_url":"https://daraz/a55","standard_model":"Galaxy A55","standard_memory":"8/256"}])
     return enrich_with_sku_master(prepare_price_daily_df(fixture()),master)
 
+def missing_competitor_url_fixture():
+    return prepared()[lambda rows: rows.country.eq("BD") & rows.memory.eq("8/256")]
+
 def test_parity_mapping_latest_competitors_memories_and_missing_price():
     result=calculate_gap_table(prepared())
     pk=result[result.country.eq("PK")].iloc[0]
@@ -44,3 +47,10 @@ def test_endpoints_cascade_and_paginate():
     assert opts["brands"]==["Samsung"] and opts["skus"]==["Galaxy A55"]
     response=client.get("/api/pricing/gap",params={"pageSize":1}).json()
     assert len(response["rows"])==1 and response["pagination"]["total"]==3
+
+def test_gap_endpoint_serializes_missing_competitor_url_as_null():
+    snap=Snapshot(missing_competitor_url_fixture(),datetime.now(timezone.utc))
+    app.state.repository=type("Repo",(),{"get":lambda self:snap})()
+    response=TestClient(app).get("/api/pricing/gap")
+    assert response.status_code == 200
+    assert response.json()["rows"][0]["competitorUrl"] is None
