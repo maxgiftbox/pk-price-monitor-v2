@@ -1,0 +1,1 @@
+export function ComingSoon(){return <section className="rounded-xl border bg-white p-12 text-center"><h1 className="text-2xl font-bold">Product Intelligence</h1><p className="mt-2 text-slate-500">Coming Soon</p></section>}
