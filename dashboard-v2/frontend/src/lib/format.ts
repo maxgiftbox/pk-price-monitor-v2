@@ -1,0 +1,1 @@
+export const money=new Intl.NumberFormat('en-US',{maximumFractionDigits:0}); export const percent=new Intl.NumberFormat('en-US',{style:'percent',minimumFractionDigits:1,maximumFractionDigits:2}); export const date=(value:string)=>new Intl.DateTimeFormat('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(`${value}T00:00:00Z`));

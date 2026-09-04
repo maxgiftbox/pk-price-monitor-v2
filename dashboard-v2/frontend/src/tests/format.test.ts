@@ -1,0 +1,1 @@
+import {describe,expect,it} from 'vitest';import {money,percent} from '../lib/format';describe('raw numeric formatting',()=>{it('formats in React',()=>{expect(money.format(129999)).toBe('129,999');expect(percent.format(.03)).toBe('3.0%')})});
