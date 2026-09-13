@@ -1,2 +1,10 @@
 __pycache__/
 *.py[cod]
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/.env*
+!frontend/.env.example
+api/.env*
+!api/.env.example
+.pytest_cache/
