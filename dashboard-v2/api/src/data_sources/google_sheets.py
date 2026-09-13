@@ -8,7 +8,10 @@ import pandas as pd
 from google.oauth2.service_account import Credentials
 from src.domain.pricing import enrich_with_sku_master, prepare_price_daily_df
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
 
 class DataSourceUnavailable(RuntimeError): pass
 
@@ -20,7 +23,9 @@ class Snapshot:
 
 class GoogleSheetsRepository:
     def __init__(self, ttl_seconds: int = 300):
-        self.ttl_seconds = ttl_seconds; self._snapshot: Snapshot | None = None; self._lock = threading.Lock()
+        self.ttl_seconds = ttl_seconds
+        self._snapshot: Snapshot | None = None
+        self._lock = threading.Lock()
 
     def get(self) -> Snapshot:
         now = datetime.now(timezone.utc)
@@ -29,9 +34,15 @@ class GoogleSheetsRepository:
         with self._lock:
             if self._snapshot and time.monotonic() - self._monotonic < self.ttl_seconds: return self._snapshot
             try:
-                raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-                if not raw: raise ValueError("credentials not configured")
-                credentials = Credentials.from_service_account_info(json.loads(raw), scopes=SCOPES)
+                service_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
+
+                if not service_file:
+                    raise ValueError("credentials file not configured")
+
+                credentials = Credentials.from_service_account_file(
+                    service_file,
+                    scopes=SCOPES
+                )
                 sheet = gspread.authorize(credentials).open(os.getenv("GOOGLE_SHEET_NAME", "Mob Price Monitor"))
                 prices = pd.DataFrame(sheet.worksheet("price_daily").get_all_records())
                 try: master = pd.DataFrame(sheet.worksheet("sku_master").get_all_records())
@@ -39,6 +50,10 @@ class GoogleSheetsRepository:
                 data = enrich_with_sku_master(prepare_price_daily_df(prices), master) if not prices.empty else prices
                 self._snapshot = Snapshot(data, now); self._monotonic = time.monotonic()
             except Exception as exc:
+                print("===== GOOGLE SHEET ERROR =====")
+                print(type(exc))
+                print(repr(exc))
+                print("==============================")               
                 if self._snapshot:
                     self._snapshot = Snapshot(self._snapshot.data, self._snapshot.generated_at, True)
                 else: raise DataSourceUnavailable("Pricing data is temporarily unavailable.") from exc

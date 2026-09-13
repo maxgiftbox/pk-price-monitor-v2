@@ -30,17 +30,226 @@ def filters(snapshot, country=None, brand=None, sku=None, memory=None, date_from
 
 def gap(snapshot, params):
     frame = calculate_gap_table(snapshot.data)
-    for col, key in [("country","country"),("brand","brand"),("model","sku"),("memory","memory"),("competitor_platform","competitor"),("alert","alert")]: frame = _filter(frame, col, params.get(key))
-    if params.get("date_from"): frame = frame[pd.to_datetime(frame.crawl_date) >= pd.Timestamp(params["date_from"])]
-    if params.get("date_to"): frame = frame[pd.to_datetime(frame.crawl_date) <= pd.Timestamp(params["date_to"])]
-    sort = SORTS.get(params.get("sort"), "crawl_date"); ascending = params.get("direction") == "asc"
-    frame = frame.sort_values(sort, ascending=ascending, na_position="last", kind="stable")
-    total = len(frame); page=params["page"]; size=params["page_size"]; frame=frame.iloc[(page-1)*size:page*size]
+
+    for col, key in [
+        ("country", "country"),
+        ("brand", "brand"),
+        ("model", "sku"),
+        ("memory", "memory"),
+        ("competitor_platform", "competitor"),
+        ("alert", "alert"),
+    ]:
+        if params.get(key):
+            frame = frame[frame[col].isin(params[key])]
+
+    # Date filter
+    if params.get("date_from"):
+
+        frame = frame[
+            pd.to_datetime(frame["crawl_date"])
+            >= pd.Timestamp(params["date_from"])
+        ]
+
+    elif params.get("date_to"):
+
+        frame = frame[
+            pd.to_datetime(frame["crawl_date"])
+            <= pd.Timestamp(params["date_to"])
+        ]
+
+    else:
+        # Default: latest available date only
+        latest_date = pd.to_datetime(
+            frame["crawl_date"],
+            errors="coerce"
+        ).max()
+
+        if pd.notna(latest_date):
+            frame = frame[
+                pd.to_datetime(frame["crawl_date"])
+                == latest_date
+            ]
+
+    page = params.get("page", 1)
+    size = params.get("page_size", 50)
+
+    total = len(frame)
+
+    frame = frame.iloc[
+        (page - 1) * size : page * size
+    ]
+
     def nullable(value):
-        if pd.isna(value): return None
-        if hasattr(value, "item"): value=value.item()
+        if pd.isna(value):
+            return None
+
+        if hasattr(value, "item"):
+            return value.item()
+
         return value
-    rows=[]
+
+
+    rows = []
+
     for _, r in frame.iterrows():
-        rows.append({"productId":r.product_id,"date":r.crawl_date.isoformat(),"country":r.country,"brand":r.brand,"sku":r.model,"memory":r.memory,"mrp":nullable(r.get("mrp")),"discountPct":nullable(r.discount_pct),"darazPrice":nullable(r.daraz_price),"darazUrl":nullable(r.get("daraz_url")) or None,"competitorPlatform":nullable(r.competitor_platform),"competitorPrice":nullable(r.competitor_price),"competitorUrl":nullable(r.get("competitor_url")) or None,"gapAmount":nullable(r.gap_amount),"gapPct":nullable(r.gap_pct),"alert":nullable(r.alert)})
-    return {"rows":rows,"pagination":{"page":page,"pageSize":size,"total":total,"totalPages":max(1,(total+size-1)//size)},"meta":meta(snapshot)}
+
+        rows.append(
+            {
+                "productId": nullable(
+                    r.get("product_id")
+                ),
+
+                "date": nullable(
+                    r.get("crawl_date")
+                ),
+
+                "country": nullable(
+                    r.get("country")
+                ),
+
+                "brand": nullable(
+                    r.get("brand")
+                ),
+
+                "sku": nullable(
+                    r.get("model")
+                ),
+
+                "memory": nullable(
+                    r.get("memory")
+                ),
+
+
+                # MRP
+                "mrp": nullable(
+                    r.get("mrp")
+                ),
+
+
+                # Discount %
+                "discountPct": nullable(
+                    r.get("discount_pct")
+                ),
+
+
+                # Daraz
+                "darazPrice": nullable(
+                    r.get("daraz_price")
+                ),
+
+                "darazUrl": nullable(
+                    r.get("daraz_url")
+                ),
+
+
+                # Competitor
+                "competitorPlatform": nullable(
+                    r.get("competitor_platform")
+                ),
+
+                "competitorPrice": nullable(
+                    r.get("competitor_price")
+                ),
+
+                "competitorUrl": nullable(
+                    r.get("competitor_url")
+                ),
+
+
+                # Gap
+                "gapAmount": nullable(
+                    r.get("gap_amount")
+                ),
+
+                "gapPct": nullable(
+                    r.get("gap_pct")
+                ),
+
+                "alert": nullable(
+                    r.get("alert")
+                ),
+            }
+        )
+
+
+    return {
+        "rows": rows,
+
+        "pagination": {
+            "page": page,
+            "pageSize": size,
+            "total": total,
+            "totalPages": max(
+                1,
+                (total + size - 1) // size
+            ),
+        },
+
+        "meta": meta(snapshot),
+    }
+
+def trend(snapshot, params):
+    print(snapshot.data.columns.tolist())
+    df = snapshot.data.copy()
+
+    # filter
+    for col, key in [
+        ("country", "country"),
+        ("brand", "brand"),
+        ("model", "sku"),
+        ("memory", "memory"),
+    ]:
+        values = params.get(key)
+        if values and col in df:
+            df = df[df[col].isin(values)]
+
+    # platform filter
+    if params.get("platform"):
+        df = df[df["competitor_platform"].isin(params["platform"])]
+
+    # date range
+    if params.get("date_from"):
+        df = df[
+            pd.to_datetime(df["crawl_date"])
+            >= pd.Timestamp(params["date_from"])
+        ]
+
+    if params.get("date_to"):
+        df = df[
+            pd.to_datetime(df["crawl_date"])
+            <= pd.Timestamp(params["date_to"])
+        ]
+
+    result = []
+
+    for _, r in df.iterrows():
+
+        price = r.get("product_price")
+
+        # Skip rows without a valid price
+        if pd.isna(price):
+            continue
+
+        crawl_date = r.get("crawl_date")
+
+        if pd.isna(crawl_date):
+            continue
+
+        result.append({
+            "date": (
+                crawl_date.isoformat()
+                if hasattr(crawl_date, "isoformat")
+                else str(crawl_date)
+             ),
+             "country": r.get("country"),
+             "brand": r.get("brand"),
+             "platform": str(r.get("platform")).lower(),
+             "sku": r.get("model"),
+             "memory": r.get("memory"),
+             "price": float(price),
+         })
+
+    return {
+        "rows": result,
+        "total": len(result)
+    }

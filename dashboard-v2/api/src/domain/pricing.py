@@ -113,20 +113,161 @@ def enrich_with_sku_master(df: pd.DataFrame, master: pd.DataFrame) -> pd.DataFra
 
 
 def calculate_gap_table(df: pd.DataFrame) -> pd.DataFrame:
+
     if df.empty:
         return pd.DataFrame()
+
     work = df.copy()
+
     work["_platform"] = work["platform"].str.casefold()
-    identity = ["crawl_date", "country", "brand", "model", "memory", "_platform"]
-    priced = work[work["effective_price"].notna()].sort_values("crawl_datetime", ascending=False).drop_duplicates(identity)
-    join = ["crawl_date", "country", "brand", "model", "memory"]
-    daraz = priced[priced["_platform"].eq("daraz")].rename(columns={"effective_price":"daraz_price", "original_price":"mrp", "product_url":"daraz_url"})
-    comp = priced[priced["_platform"].isin(COMPETITORS)].rename(columns={"effective_price":"competitor_price", "product_url":"competitor_url", "_platform":"competitor_platform"})
-    cols = join + ["competitor_platform", "competitor_price", "competitor_url"]
-    gap = daraz.merge(comp[cols], on=join, how="left")
-    gap["gap_amount"] = gap["daraz_price"] - gap["competitor_price"]
-    gap["gap_pct"] = gap["gap_amount"] / gap["daraz_price"]
-    gap["discount_pct"] = (1 - gap["daraz_price"] / gap["mrp"]).where(gap["mrp"].gt(0))
-    gap["alert"] = gap["gap_pct"].apply(alert_level)
-    gap["product_id"] = gap.apply(lambda r: product_id(r.country, r.brand, r.model, r.memory), axis=1)
+
+    identity = [
+        "crawl_date",
+        "country",
+        "brand",
+        "model",
+        "memory",
+        "_platform"
+    ]
+
+    priced = (
+        work[
+            work["effective_price"].notna()
+        ]
+        .sort_values(
+            "crawl_datetime",
+            ascending=False
+        )
+        .drop_duplicates(identity)
+    )
+
+
+    join = [
+        "crawl_date",
+        "country",
+        "brand",
+        "model",
+        "memory"
+    ]
+
+
+    # ==========================
+    # Daraz price source
+    # ==========================
+
+    daraz = (
+        priced[
+            priced["_platform"].eq("daraz")
+        ]
+        .rename(
+            columns={
+                "effective_price": "daraz_price",
+                "original_price": "mrp",
+                "product_url": "daraz_url"
+            }
+        )
+    )
+
+
+    # keep only required Daraz columns
+    daraz_cols = join + [
+        "daraz_price",
+        "mrp",
+        "daraz_url"
+    ]
+
+    daraz = daraz[daraz_cols]
+
+
+    # ==========================
+    # Competitor price source
+    # ==========================
+
+    comp = (
+        priced[
+            priced["_platform"].isin(COMPETITORS)
+        ]
+        .rename(
+            columns={
+                "effective_price": "competitor_price",
+                "product_url": "competitor_url",
+                "_platform": "competitor_platform"
+            }
+        )
+    )
+
+
+    comp_cols = join + [
+        "competitor_platform",
+        "competitor_price",
+        "competitor_url"
+    ]
+
+
+    comp = comp[comp_cols]
+
+
+    # ==========================
+    # Merge Daraz + Competitor
+    # ==========================
+
+    gap = daraz.merge(
+        comp,
+        on=join,
+        how="left"
+    )
+
+
+    # ==========================
+    # Calculate gap
+    # ==========================
+
+    gap["gap_amount"] = (
+        gap["daraz_price"]
+        -
+        gap["competitor_price"]
+    )
+
+
+    gap["gap_pct"] = (
+        gap["gap_amount"]
+        /
+        gap["daraz_price"]
+    )
+
+
+    # ==========================
+    # Discount %
+    # Formula:
+    # 1 - Effective Price / Original Price
+    # ==========================
+
+    gap["discount_pct"] = (
+        1
+        -
+        gap["daraz_price"]
+        /
+        gap["mrp"]
+    ).where(
+        gap["mrp"].gt(0)
+    )
+
+
+    gap["alert"] = (
+        gap["gap_pct"]
+        .apply(alert_level)
+    )
+
+
+    gap["product_id"] = gap.apply(
+        lambda r: product_id(
+            r.country,
+            r.brand,
+            r.model,
+            r.memory
+        ),
+        axis=1
+    )
+
+
     return gap
