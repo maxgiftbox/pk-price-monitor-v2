@@ -7,6 +7,7 @@ import { Shell } from './app/Shell';
 import { GapPage } from './routes/GapPage';
 import { PricingDashboard } from './routes/PricingDashboard';
 import { ComingSoon } from './routes/ComingSoon';
+import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
 
 import './styles.css';
 
@@ -26,6 +27,10 @@ const router = createBrowserRouter([
       {
         path: '/pricing/gap',
         element: <GapPage />,
+      },
+      {
+        path: '/consumer-voice',
+        element: <ConsumerVoiceDashboard />,
       },
       {
         path: '/products',

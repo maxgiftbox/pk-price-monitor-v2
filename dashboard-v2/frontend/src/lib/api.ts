@@ -3,6 +3,7 @@ import type {
   GapResponse,
   TrendResponse,
 } from "../types/pricing";
+import type { ConsumerVoiceDashboard, ConsumerVoiceFilters } from "../types/consumerVoice";
 
 // Production:
 // VITE_API_BASE_URL=https://your-api-service.onrender.com
@@ -61,4 +62,10 @@ export const api = {
       params
     ),
 
+};
+
+export const consumerVoiceApi = {
+  filters: () => request<ConsumerVoiceFilters>("/api/consumer-voice/filters", new URLSearchParams()),
+  dashboard: (params: URLSearchParams) =>
+    request<ConsumerVoiceDashboard>("/api/consumer-voice/dashboard", params),
 };

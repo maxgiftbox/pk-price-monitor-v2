@@ -14,6 +14,9 @@ from src.data_sources.google_sheets import (
     GoogleSheetsRepository,
 )
 from src.services.pricing import filters, gap, trend
+from src.data_sources.consumer_voice import ConsumerVoiceRepository
+from src.services.consumer_voice import dashboard as consumer_voice_dashboard
+from src.services.consumer_voice import filters as consumer_voice_filters
 
 
 app = FastAPI(
@@ -43,6 +46,7 @@ app.add_middleware(
 
 
 app.state.repository = GoogleSheetsRepository()
+app.state.consumer_voice_repository = ConsumerVoiceRepository()
 
 
 @app.exception_handler(DataSourceUnavailable)
@@ -134,6 +138,35 @@ def pricing_trend(
             "sku": sku,
             "memory": memory,
             "platform": platform,
+            "date_from": dateFrom,
+            "date_to": dateTo,
+        },
+    )
+
+
+@app.get("/api/consumer-voice/filters")
+def consumer_voice_filter_options():
+    return consumer_voice_filters(app.state.consumer_voice_repository.get())
+
+
+@app.get("/api/consumer-voice/dashboard")
+def consumer_voice_dashboard_data(
+    venture: list[str] = Query([]),
+    brand: list[str] = Query([]),
+    productId: list[str] = Query([]),
+    sentiment: str = "all",
+    sort: str = "recent",
+    dateFrom: str | None = None,
+    dateTo: str | None = None,
+):
+    return consumer_voice_dashboard(
+        app.state.consumer_voice_repository.get(),
+        {
+            "venture": venture,
+            "brand": brand,
+            "product_id": productId,
+            "sentiment": sentiment,
+            "sort": sort,
             "date_from": dateFrom,
             "date_to": dateTo,
         },
