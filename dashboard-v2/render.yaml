@@ -15,3 +15,7 @@ services:
         value: Mob Price Monitor
       - key: FRONTEND_ORIGINS
         sync: false
+      - key: PRICING_CACHE_TTL_SECONDS
+        value: 900
+      - key: PRICING_INITIAL_LOAD_TIMEOUT_SECONDS
+        value: 12

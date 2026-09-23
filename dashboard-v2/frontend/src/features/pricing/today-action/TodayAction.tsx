@@ -144,7 +144,10 @@ export function TodayAction(){
 
   const {
 
-    data
+    data,
+    isLoading,
+    isError,
+    refetch
 
   } = useQuery({
 
@@ -177,6 +180,11 @@ export function TodayAction(){
       params.set(
         "pageSize",
         "500"
+      );
+
+      params.set(
+        "windowDays",
+        "1"
       );
 
 
@@ -461,6 +469,24 @@ const orangeRows = useMemo(
     ]
 
   );
+
+  if (isLoading) {
+    return <div className="rounded-xl border bg-white p-6 text-slate-500">Loading today action SKUs…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-xl border bg-white p-6 text-center">
+        <h3 className="font-bold text-red-700">Today action data unavailable</h3>
+        <button
+          className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+          onClick={() => refetch()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
   return (
 
     <div>

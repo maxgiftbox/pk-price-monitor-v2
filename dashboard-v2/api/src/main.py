@@ -45,7 +45,12 @@ app.add_middleware(
 )
 
 
-app.state.repository = GoogleSheetsRepository()
+app.state.repository = GoogleSheetsRepository(
+    ttl_seconds=int(os.getenv("PRICING_CACHE_TTL_SECONDS", "900")),
+    initial_load_timeout_seconds=int(
+        os.getenv("PRICING_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
+    ),
+)
 app.state.consumer_voice_repository = ConsumerVoiceRepository()
 
 
@@ -101,7 +106,10 @@ def pricing_gap(
     dateFrom: str | None = None,
     dateTo: str | None = None,
     page: int = 1,
-    pageSize: int = 100,
+    pageSize: int = Query(100, ge=1, le=500),
+    windowDays: int = Query(7, ge=1, le=7),
+    sort: str | None = None,
+    direction: str = Query("desc", pattern="^(asc|desc)$"),
 ):
     return gap(
         app.state.repository.get(),
@@ -116,6 +124,9 @@ def pricing_gap(
             "date_to": dateTo,
             "page": page,
             "page_size": pageSize,
+            "window_days": windowDays,
+            "sort": sort,
+            "direction": direction,
         },
     )
 

@@ -45,7 +45,7 @@ const getDefaultDateRange = () => {
     new Date();
 
   startDate.setDate(
-    today.getDate()-7
+    today.getDate()-6
   );
 
 
@@ -87,10 +87,6 @@ const [dateTo,setDateTo] =
 
 
   const rows = trend.data?.rows ?? [];
-  console.log("Trend API response:", trend.data);
-  console.log("Trend full object:", trend);
-
-  console.log("Trend rows:", rows.length);
 
 
   /*
@@ -682,6 +678,23 @@ const [dateTo,setDateTo] =
     );
 
 
+  }
+
+  if(trend.isError){
+    return (
+      <div className="rounded-xl border bg-white p-6 text-center">
+        <h3 className="font-bold text-red-700">Price trend unavailable</h3>
+        <p className="mt-2 text-sm text-slate-500">
+          The request timed out or the pricing service could not respond.
+        </p>
+        <button
+          className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+          onClick={() => trend.refetch()}
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
 

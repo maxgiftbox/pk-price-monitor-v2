@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -54,8 +55,9 @@ class GoogleSheetsRepository:
        Keep serving the last successful snapshot.
     """
 
-    def __init__(self, ttl_seconds: int = 300):
+    def __init__(self, ttl_seconds: int = 900, initial_load_timeout_seconds: int = 12):
         self.ttl_seconds = ttl_seconds
+        self.initial_load_timeout_seconds = initial_load_timeout_seconds
 
         self._snapshot: Snapshot | None = None
         self._monotonic = 0.0
@@ -63,6 +65,11 @@ class GoogleSheetsRepository:
         self._lock = threading.Lock()
         self._refresh_lock = threading.Lock()
         self._refreshing = False
+        self._load_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="google-sheets-initial-load",
+        )
+        self._load_future: Future[Snapshot] | None = None
 
     def _is_fresh(self) -> bool:
         return (
@@ -132,11 +139,40 @@ class GoogleSheetsRepository:
             else prices
         )
 
+        required_columns = {
+            "crawl_date",
+            "country",
+            "brand",
+            "model",
+            "memory",
+            "platform",
+        }
+        if data.empty or not required_columns.issubset(data.columns):
+            raise DataSourceUnavailable("Google Sheet contains no usable pricing data")
+
         return Snapshot(
             data=data,
             generated_at=datetime.now(timezone.utc),
             stale=False,
         )
+
+    def _load_initial_snapshot(self) -> Snapshot:
+        if self._load_future is None or (
+            self._load_future.done() and self._load_future.exception() is not None
+        ):
+            self._load_future = self._load_executor.submit(self._load_from_google)
+
+        try:
+            snapshot = self._load_future.result(
+                timeout=self.initial_load_timeout_seconds
+            )
+        except FutureTimeoutError as exc:
+            raise DataSourceUnavailable(
+                "Pricing data source timed out during initial load."
+            ) from exc
+
+        self._load_future = None
+        return snapshot
 
     def _background_refresh(self) -> None:
         try:
@@ -199,7 +235,7 @@ class GoogleSheetsRepository:
                 return self._snapshot
 
             try:
-                self._snapshot = self._load_from_google()
+                self._snapshot = self._load_initial_snapshot()
                 self._monotonic = time.monotonic()
 
             except Exception as exc:

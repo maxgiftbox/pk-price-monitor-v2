@@ -14,15 +14,30 @@ const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL ?? ""
 ).replace(/\/$/, "");
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 
 async function request<T>(
   path: string,
   params: URLSearchParams
 ): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
 
-  const response = await fetch(
-    `${apiBaseUrl}${path}?${params.toString()}`
-  );
+  try {
+    response = await fetch(
+      `${apiBaseUrl}${path}?${params.toString()}`,
+      { signal: controller.signal }
+    );
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Pricing data request timed out.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(
