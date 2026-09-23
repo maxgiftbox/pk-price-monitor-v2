@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
@@ -38,6 +38,38 @@ SORTS = {
 
 _gap_cache_key = None
 _gap_cache_frame = None
+
+DEFAULT_PRICING_WINDOW_DAYS = 7
+MAX_TREND_WINDOW_DAYS = 31
+
+
+def _apply_date_window(
+    df,
+    params,
+    default_days=DEFAULT_PRICING_WINDOW_DAYS,
+    max_days=None,
+):
+    """Apply an explicit date range or a bounded window ending at latest data."""
+    if "crawl_date" not in df or df.empty:
+        return df
+
+    dates = pd.to_datetime(df["crawl_date"], errors="coerce")
+    latest_date = dates.max()
+    if pd.isna(latest_date):
+        return df.iloc[0:0]
+
+    end = pd.Timestamp(params["date_to"]) if params.get("date_to") else latest_date
+    start = (
+        pd.Timestamp(params["date_from"])
+        if params.get("date_from")
+        else end - timedelta(days=default_days - 1)
+    )
+    if max_days is not None:
+        start = max(start, end - timedelta(days=max_days - 1))
+
+    df = df[(dates >= start) & (dates <= end)]
+
+    return df
 
 
 def _get_gap_frame(snapshot):
@@ -192,31 +224,22 @@ def gap(snapshot, params):
                 frame[col].isin(params[key])
             ]
 
-    # Date filter
-    if params.get("date_from"):
-        frame = frame[
-            pd.to_datetime(frame["crawl_date"])
-            >= pd.Timestamp(params["date_from"])
-        ]
+    # Keep the initial payload bounded while still showing a useful history.
+    frame = _apply_date_window(
+        frame,
+        params,
+        default_days=params.get("window_days", DEFAULT_PRICING_WINDOW_DAYS),
+    )
 
-    elif params.get("date_to"):
-        frame = frame[
-            pd.to_datetime(frame["crawl_date"])
-            <= pd.Timestamp(params["date_to"])
-        ]
-
-    else:
-        # Default: latest available date only
-        latest_date = pd.to_datetime(
-            frame["crawl_date"],
-            errors="coerce",
-        ).max()
-
-        if pd.notna(latest_date):
-            frame = frame[
-                pd.to_datetime(frame["crawl_date"])
-                == latest_date
-            ]
+    sort_column = SORTS.get(params.get("sort"))
+    if sort_column and sort_column in frame:
+        frame = frame.sort_values(
+            sort_column,
+            ascending=params.get("direction") == "asc",
+            kind="stable",
+        )
+    elif "crawl_date" in frame:
+        frame = frame.sort_values("crawl_date", ascending=False, kind="stable")
 
     page = params.get("page", 1)
     size = params.get("page_size", 50)
@@ -330,7 +353,10 @@ def gap(snapshot, params):
 
 
 def trend(snapshot, params):
-    df = snapshot.data.copy()
+    df = snapshot.data
+    price_column = (
+        "product_price" if "product_price" in df else "effective_price"
+    )
 
     # filter
     for col, key in [
@@ -349,28 +375,33 @@ def trend(snapshot, params):
     # platform filter
     if params.get("platform"):
         df = df[
-            df["competitor_platform"].isin(
-                params["platform"]
+            df["platform"].str.casefold().isin(
+                [value.casefold() for value in params["platform"]]
             )
         ]
 
-    # date range
-    if params.get("date_from"):
-        df = df[
-            pd.to_datetime(df["crawl_date"])
-            >= pd.Timestamp(params["date_from"])
-        ]
+    df = _apply_date_window(df, params, max_days=MAX_TREND_WINDOW_DAYS)
 
-    if params.get("date_to"):
-        df = df[
-            pd.to_datetime(df["crawl_date"])
-            <= pd.Timestamp(params["date_to"])
-        ]
+    # Multiple crawls can exist for the same product/platform/day. The chart
+    # needs only the latest observation, not every raw crawl.
+    identity = [
+        "crawl_date",
+        "country",
+        "brand",
+        "platform",
+        "model",
+        "memory",
+    ]
+    if "crawl_datetime" in df:
+        df = (
+            df.sort_values("crawl_datetime", ascending=False)
+            .drop_duplicates(identity)
+        )
 
     result = []
 
     for _, r in df.iterrows():
-        price = r.get("product_price")
+        price = r.get(price_column)
 
         # Skip rows without a valid price
         if pd.isna(price):
@@ -402,4 +433,5 @@ def trend(snapshot, params):
     return {
         "rows": result,
         "total": len(result),
+        "meta": meta(snapshot),
     }

@@ -218,6 +218,15 @@ export function GapPage() {
           set={setParams}
         />
 
+        {filters.isError && (
+          <div className="mt-3 flex items-center justify-between rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>Filter options are temporarily unavailable.</span>
+            <button className="font-semibold underline" onClick={() => filters.refetch()}>
+              Retry
+            </button>
+          </div>
+        )}
+
 
       </section>
 

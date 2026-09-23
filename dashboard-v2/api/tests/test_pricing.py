@@ -54,3 +54,45 @@ def test_gap_endpoint_serializes_missing_competitor_url_as_null():
     response=TestClient(app).get("/api/pricing/gap")
     assert response.status_code == 200
     assert response.json()["rows"][0]["competitorUrl"] is None
+
+
+def dated_history(days=9):
+    frames = []
+    for offset in range(days):
+        frame = prepared().copy()
+        day = (pd.Timestamp("2026-09-01") + pd.Timedelta(days=offset)).date()
+        frame["crawl_date"] = day
+        frame["crawl_datetime"] = pd.Timestamp(day) + pd.Timedelta(hours=10)
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_gap_defaults_to_latest_seven_calendar_days_and_action_can_request_one():
+    snap = Snapshot(dated_history(), datetime.now(timezone.utc))
+    app.state.repository = type("Repo", (), {"get": lambda self: snap})()
+    client = TestClient(app)
+
+    default_rows = client.get(
+        "/api/pricing/gap", params={"pageSize": 500}
+    ).json()["rows"]
+    assert {row["date"] for row in default_rows} == {
+        f"2026-09-{day:02d}" for day in range(3, 10)
+    }
+    assert default_rows[0]["date"] == "2026-09-09"
+
+    latest_rows = client.get(
+        "/api/pricing/gap", params={"pageSize": 500, "windowDays": 1}
+    ).json()["rows"]
+    assert {row["date"] for row in latest_rows} == {"2026-09-09"}
+
+
+def test_trend_defaults_to_latest_seven_days_and_includes_meta():
+    snap = Snapshot(dated_history(), datetime.now(timezone.utc))
+    app.state.repository = type("Repo", (), {"get": lambda self: snap})()
+    payload = TestClient(app).get("/api/pricing/trend").json()
+
+    assert {row["date"] for row in payload["rows"]} == {
+        f"2026-09-{day:02d}" for day in range(3, 10)
+    }
+    assert payload["total"] == len(payload["rows"])
+    assert payload["meta"]["dataAsOf"] == "2026-09-09"

@@ -7,7 +7,7 @@ Read-only vertical slice: Google Sheets (`price_daily`, `sku_master`) → FastAP
 cd dashboard-v2/api && python -m uvicorn src.main:app --reload
 cd dashboard-v2/frontend && npm install && npm run dev
 ```
-The API requires `GOOGLE_SERVICE_ACCOUNT_JSON`; `GOOGLE_SHEET_NAME` defaults to `Mob Price Monitor`. `FRONTEND_ORIGINS` is a comma-separated allowlist and defaults to local Vite only. Credentials never reach the browser. Sheet reads use a 300-second in-process TTL. A previous snapshot is served with `stale: true` if refresh fails; without one the API returns a sanitized 503.
+The API requires `GOOGLE_SERVICE_ACCOUNT_JSON`; `GOOGLE_SHEET_NAME` defaults to `Mob Price Monitor`. `FRONTEND_ORIGINS` is a comma-separated allowlist and defaults to local Vite only. Credentials never reach the browser. Sheet reads use a configurable 900-second in-process TTL (`PRICING_CACHE_TTL_SECONDS`). The initial load has a 12-second response budget (`PRICING_INITIAL_LOAD_TIMEOUT_SECONDS`); the single background load is allowed to finish so a retry can reuse it. A previous snapshot is served with `stale: true` if refresh fails; without one the API returns a sanitized 503.
 
 ## Production deployment preparation
 
@@ -59,4 +59,9 @@ The framework-neutral domain module safely copies/adapts V1 preparation, `sku_ma
 ## Endpoints
 - `GET /api/health` (never accesses Sheets)
 - `GET /api/pricing/filters`
-- `GET /api/pricing/gap` (server filtered/sorted; 100 rows by default, maximum 250)
+- `GET /api/pricing/gap` (server filtered; 100 rows by default, maximum 500)
+- `GET /api/pricing/trend`
+
+Gap and trend endpoints default to the latest seven calendar days available in
+the data. Today Action requests a one-day window. Trend responses are capped to
+a maximum 31-day window even when a wider explicit range is supplied.

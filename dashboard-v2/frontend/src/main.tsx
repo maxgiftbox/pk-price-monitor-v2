@@ -11,6 +11,17 @@ import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
 
 import './styles.css';
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (failureCount >= 1) return false;
+        return !(error instanceof Error && error.message.includes('timed out'));
+      },
+      staleTime: 60_000,
+    },
+  },
+});
 
 const router = createBrowserRouter([
   {
@@ -45,7 +56,7 @@ ReactDOM.createRoot(
   document.getElementById('root')!
 ).render(
   <React.StrictMode>
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   </React.StrictMode>
