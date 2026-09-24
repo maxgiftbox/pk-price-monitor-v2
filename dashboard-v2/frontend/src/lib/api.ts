@@ -14,7 +14,24 @@ const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL ?? ""
 ).replace(/\/$/, "");
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 35_000;
+
+export class ApiError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function isRetryableApiError(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof ApiError && (error.status === 503 || error.status === undefined))
+  );
+}
 
 
 async function request<T>(
@@ -32,7 +49,7 @@ async function request<T>(
     );
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("Pricing data request timed out.");
+      throw new ApiError("Data request timed out.");
     }
     throw error;
   } finally {
@@ -40,9 +57,7 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    throw new Error(
-      "Pricing data is temporarily unavailable."
-    );
+    throw new ApiError("Data is temporarily unavailable.", response.status);
   }
 
   return response.json() as Promise<T>;

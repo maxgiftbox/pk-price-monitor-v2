@@ -474,7 +474,7 @@ const orangeRows = useMemo(
     return <div className="rounded-xl border bg-white p-6 text-slate-500">Loading today action SKUs…</div>;
   }
 
-  if (isError) {
+  if (isError && !data) {
     return (
       <div className="rounded-xl border bg-white p-6 text-center">
         <h3 className="font-bold text-red-700">Today action data unavailable</h3>
@@ -490,6 +490,13 @@ const orangeRows = useMemo(
   return (
 
     <div>
+
+      {isError && (
+        <div className="mb-4 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span>Could not refresh today action data. Showing the last successful result.</span>
+          <button className="font-semibold underline" onClick={() => refetch()}>Retry</button>
+        </div>
+      )}
 
 
       {/* Venture / Country Selector */}
