@@ -680,7 +680,7 @@ const [dateTo,setDateTo] =
 
   }
 
-  if(trend.isError){
+  if(trend.isError && !trend.data){
     return (
       <div className="rounded-xl border bg-white p-6 text-center">
         <h3 className="font-bold text-red-700">Price trend unavailable</h3>
@@ -711,6 +711,13 @@ bg-white
 p-6
 "
 >
+
+{trend.isError && (
+  <div className="mb-4 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+    <span>Could not refresh price trends. Showing the last successful result.</span>
+    <button className="font-semibold underline" onClick={() => trend.refetch()}>Retry</button>
+  </div>
+)}
 
 
 <h3

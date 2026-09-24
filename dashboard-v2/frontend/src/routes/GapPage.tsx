@@ -220,7 +220,7 @@ export function GapPage() {
 
         {filters.isError && (
           <div className="mt-3 flex items-center justify-between rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-            <span>Filter options are temporarily unavailable.</span>
+            <span>{filters.data ? 'Could not refresh filter options. Showing saved options.' : 'Filter options are temporarily unavailable.'}</span>
             <button className="font-semibold underline" onClick={() => filters.refetch()}>
               Retry
             </button>
@@ -248,7 +248,7 @@ export function GapPage() {
 
           :
 
-          gaps.isError
+          gaps.isError && !gaps.data
 
           ?
 
@@ -281,11 +281,19 @@ export function GapPage() {
 
           :
 
-          <GapTable
-            rows={gaps.data?.rows ?? []}
-            sort={sort}
-            onSort={onSort}
-          />
+          <>
+            {gaps.isError && (
+              <div className="m-4 flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <span>Could not refresh pricing data. Showing the last successful result.</span>
+                <button className="font-semibold underline" onClick={() => gaps.refetch()}>Retry</button>
+              </div>
+            )}
+            <GapTable
+              rows={gaps.data?.rows ?? []}
+              sort={sort}
+              onSort={onSort}
+            />
+          </>
 
         }
 

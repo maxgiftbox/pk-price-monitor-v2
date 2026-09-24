@@ -50,9 +50,10 @@ export function ConsumerVoiceDashboard() {
   const products = options?.products.filter((product) => !brand || product.brand === brand) ?? [];
   const totalStars = data?.stars.reduce((sum, row) => sum + row.count, 0) ?? 0;
 
-  if (filters.isError || dashboard.isError) return <div className="error-panel">Consumer Voice data is temporarily unavailable.</div>;
+  if (dashboard.isError && !dashboard.data) return <div className="error-panel"><p>Consumer Voice data is temporarily unavailable.</p><button onClick={() => { filters.refetch(); dashboard.refetch(); }}>Retry</button></div>;
 
   return <div className="consumer-page">
+    {(filters.isError || dashboard.isError) && <div className="refresh-warning"><span>{dashboard.isError && dashboard.data ? "Could not refresh Consumer Voice data. Showing the last successful result." : "Filter options could not be refreshed."}</span><button onClick={() => { filters.refetch(); dashboard.refetch(); }}>Retry</button></div>}
     <section className="consumer-hero">
       <div>
         <div className="eyebrow">Consumer Voice Intelligence</div>

@@ -12,7 +12,7 @@ export function Shell() {
           <NavLink className={navClass} to="/products">Product</NavLink>
           <NavLink className={navClass} to="/consumer-voice">Consumer Voice</NavLink>
         </nav>
-        <div className="topbar-status"><i /> Data connected</div>
+        <div className="topbar-status"><i /> Dashboard loaded</div>
       </div>
     </header>
     <main className="main-content"><Outlet /></main>

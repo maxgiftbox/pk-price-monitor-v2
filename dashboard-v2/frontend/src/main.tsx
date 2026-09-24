@@ -8,6 +8,7 @@ import { GapPage } from './routes/GapPage';
 import { PricingDashboard } from './routes/PricingDashboard';
 import { ComingSoon } from './routes/ComingSoon';
 import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
+import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
 
@@ -16,9 +17,12 @@ const queryClient = new QueryClient({
     queries: {
       retry: (failureCount, error) => {
         if (failureCount >= 1) return false;
-        return !(error instanceof Error && error.message.includes('timed out'));
+        return isRetryableApiError(error);
       },
-      staleTime: 60_000,
+      retryDelay: 1_000,
+      staleTime: 10 * 60_000,
+      gcTime: 30 * 60_000,
+      refetchOnWindowFocus: false,
     },
   },
 });
