@@ -37,3 +37,17 @@ def test_consumer_voice_endpoints():
     response = client.get("/api/consumer-voice/dashboard", params={"venture": "PK"})
     assert response.status_code == 200
     assert response.json()["metrics"]["reviewCount"] == 2
+
+
+def test_dashboard_section_only_returns_required_payload():
+    overview = dashboard(fixture(), {"section": "overview"})
+    signals = dashboard(fixture(), {"section": "signals"})
+    reviews = dashboard(fixture(), {"section": "reviews"})
+    assert set(overview) == {"metrics", "dimensions", "stars", "meta"}
+    assert set(signals) == {"tags", "alerts", "meta"}
+    assert set(reviews) == {"reviews", "meta"}
+
+
+def test_review_payload_respects_limit():
+    result = dashboard(fixture(), {"section": "reviews", "limit": 1})
+    assert len(result["reviews"]) == 1

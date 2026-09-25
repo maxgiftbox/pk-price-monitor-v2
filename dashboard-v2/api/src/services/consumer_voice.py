@@ -98,6 +98,7 @@ def dashboard(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
         review_frame = frame.sort_values(["upvotes", "created_at"], ascending=[False, False])
     else:
         review_frame = frame.sort_values("created_at", ascending=False)
+    review_frame = review_frame.head(params.get("limit", 100))
 
     reviews = []
     for row in review_frame.itertuples():
@@ -117,7 +118,7 @@ def dashboard(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
             "images": [image for image in images if image],
         })
 
-    return {
+    result = {
         "metrics": {
             "averageRating": round(average_rating, 2) if average_rating is not None else None,
             "positiveRate": round(positive_rate, 4) if positive_rate is not None else None,
@@ -132,3 +133,12 @@ def dashboard(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
         "reviews": reviews,
         "meta": {"filteredCount": total, "sourceCount": len(data)},
     }
+
+    section = params.get("section", "all")
+    section_fields = {
+        "overview": ("metrics", "dimensions", "stars", "meta"),
+        "signals": ("tags", "alerts", "meta"),
+        "reviews": ("reviews", "meta"),
+    }
+    fields = section_fields.get(section)
+    return {field: result[field] for field in fields} if fields else result

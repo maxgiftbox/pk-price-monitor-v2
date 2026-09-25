@@ -231,6 +231,8 @@ def consumer_voice_dashboard_data(
     sort: str = "recent",
     dateFrom: str | None = None,
     dateTo: str | None = None,
+    section: str = "all",
+    limit: int = Query(100, ge=1, le=100),
 ):
     params = {
             "venture": venture,
@@ -240,10 +242,12 @@ def consumer_voice_dashboard_data(
             "sort": sort,
             "date_from": dateFrom,
             "date_to": dateTo,
+            "section": section,
+            "limit": limit,
     }
     key = (
         "consumer-voice-dashboard", _values(venture), _values(brand),
-        _values(productId), sentiment, sort, dateFrom, dateTo,
+        _values(productId), sentiment, sort, dateFrom, dateTo, section, limit,
     )
     return app.state.response_cache.get_or_compute(
         key,

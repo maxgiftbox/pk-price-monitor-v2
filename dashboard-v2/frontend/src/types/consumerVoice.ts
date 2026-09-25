@@ -8,17 +8,17 @@ export type ConsumerVoiceFilters = {
 };
 
 export type ConsumerVoiceDashboard = {
-  metrics: {
+  metrics?: {
     averageRating: number | null;
     positiveRate: number | null;
     reviewCount: number;
     ratedReviewCount: number;
     imageReviewCount: number;
   };
-  dimensions: { dimension: string; score: number | null }[];
-  stars: { rating: number; count: number }[];
-  tags: { label: string; count: number; sentiment: "positive" | "neutral" | "negative" }[];
-  alerts: {
+  dimensions?: { dimension: string; score: number | null }[];
+  stars?: { rating: number; count: number }[];
+  tags?: { label: string; count: number; sentiment: "positive" | "neutral" | "negative" }[];
+  alerts?: {
     productId: string;
     productName: string;
     venture: string;
@@ -27,7 +27,7 @@ export type ConsumerVoiceDashboard = {
     reasons: string[];
     date: string | null;
   }[];
-  reviews: {
+  reviews?: {
     id: string;
     productId: string;
     productName: string;
@@ -41,5 +41,5 @@ export type ConsumerVoiceDashboard = {
     tags: string[];
     images: string[];
   }[];
-  meta: { filteredCount: number; sourceCount: number };
+  meta?: { filteredCount: number; sourceCount: number };
 };
