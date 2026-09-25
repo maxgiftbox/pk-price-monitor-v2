@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../lib/api";
+import type { GapResponse } from "../../../types/pricing";
 
 
 type GapRow = {
@@ -117,7 +118,7 @@ function GapBadge({
 
 
 
-export function TodayAction(){
+export function TodayAction({ initialData }: { initialData?: GapResponse }){
 
 
   const [
@@ -159,6 +160,8 @@ export function TodayAction(){
       country
 
     ],
+
+    initialData: country === "PK" ? initialData : undefined,
 
 
 

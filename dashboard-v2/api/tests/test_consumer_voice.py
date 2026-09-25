@@ -31,6 +31,7 @@ def test_alerts_and_images_are_serialized():
 
 def test_consumer_voice_endpoints():
     app.state.consumer_voice_repository = type("Repo", (), {"get": lambda self: fixture()})()
+    app.state.response_cache.clear()
     client = TestClient(app)
     assert client.get("/api/consumer-voice/filters").status_code == 200
     response = client.get("/api/consumer-voice/dashboard", params={"venture": "PK"})

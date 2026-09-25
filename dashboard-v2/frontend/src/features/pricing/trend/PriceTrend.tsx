@@ -22,10 +22,11 @@ import {
 import {
   api
 } from "../../../lib/api";
+import type { TrendResponse } from "../../../types/pricing";
 
 
 
-export function PriceTrend() {
+export function PriceTrend({ initialData }: { initialData?: TrendResponse }) {
 
 const [country,setCountry] = useState("pk");
 const [brand,setBrand] = useState("samsung");
@@ -82,7 +83,8 @@ const [dateTo,setDateTo] =
     queryKey:[
       "price-trend"
     ],
-    queryFn:()=>api.trend(new URLSearchParams())
+    queryFn:()=>api.trend(new URLSearchParams()),
+    initialData
   });
 
 

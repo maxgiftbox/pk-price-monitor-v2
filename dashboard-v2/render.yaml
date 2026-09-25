@@ -19,3 +19,7 @@ services:
         value: 900
       - key: PRICING_INITIAL_LOAD_TIMEOUT_SECONDS
         value: 12
+      - key: PRICING_RESPONSE_CACHE_TTL_SECONDS
+        value: 900
+      - key: PRICING_RESPONSE_CACHE_MAX_ENTRIES
+        value: 256

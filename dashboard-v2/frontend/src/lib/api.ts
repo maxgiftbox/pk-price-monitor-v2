@@ -1,6 +1,7 @@
 import type {
   FilterResponse,
   GapResponse,
+  PricingDashboardResponse,
   TrendResponse,
 } from "../types/pricing";
 import type { ConsumerVoiceDashboard, ConsumerVoiceFilters } from "../types/consumerVoice";
@@ -65,6 +66,12 @@ async function request<T>(
 
 
 export const api = {
+
+  dashboard: () =>
+    request<PricingDashboardResponse>(
+      "/api/pricing/dashboard",
+      new URLSearchParams()
+    ),
 
   filters: (
     params: URLSearchParams
