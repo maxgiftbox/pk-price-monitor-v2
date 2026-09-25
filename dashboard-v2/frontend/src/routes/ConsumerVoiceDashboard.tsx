@@ -77,12 +77,16 @@ export function ConsumerVoiceDashboard() {
   const allQueries = [overview, signals, reviews];
   const hasFatalError = allQueries.some((query) => query.isError && !query.data);
   const hasRefreshError = filters.isError || allQueries.some((query) => query.isError && query.data);
+  const sourceMeta = overviewData?.meta ?? filters.data?.meta;
+  const refreshedAt = sourceMeta?.cacheGeneratedAt
+    ? new Date(sourceMeta.cacheGeneratedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : null;
 
   if (hasFatalError) return <div className="error-panel"><p>Consumer Voice data is temporarily unavailable.</p><button onClick={() => { filters.refetch(); overview.refetch(); signals.refetch(); reviews.refetch(); }}>Retry</button></div>;
 
   return <div className="consumer-page compact-consumer-page">
     {hasRefreshError && <div className="refresh-warning"><span>Could not refresh all Consumer Voice modules. Showing the last successful result where available.</span><button onClick={() => { filters.refetch(); overview.refetch(); signals.refetch(); reviews.refetch(); }}>Retry</button></div>}
-    <div className="page-intro"><div><span>Consumer Voice Intelligence</span><h1>Customer experience at a glance</h1></div><p>Each section has independent filters.</p></div>
+    <div className="page-intro"><div><span>Consumer Voice Intelligence</span><h1>Customer experience at a glance</h1></div><p>{sourceMeta?.stale ? "Using the latest saved snapshot" : "Google Sheet synced"}{refreshedAt ? ` · ${refreshedAt}` : ""}</p></div>
 
     <section className="dashboard-module overview-module">
       <SectionHeader eyebrow="Business overview" title="Ratings and experience health" count={overviewData?.meta?.filteredCount} filter={<LocalFilters label="Business overview" value={overviewFilter} onChange={setOverviewFilter} options={options} />} />

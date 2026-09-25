@@ -13,6 +13,14 @@ services:
         sync: false
       - key: GOOGLE_SHEET_NAME
         value: Mob Price Monitor
+      - key: CONSUMER_VOICE_GOOGLE_SHEET_ID
+        value: 1g0dDuowGUAGYiuIzG8dlKrvnruqMxaYUw_JfURCY0qU
+      - key: CONSUMER_VOICE_WORKSHEET
+        value: Consumer_voice_dump
+      - key: CONSUMER_VOICE_CACHE_TTL_SECONDS
+        value: 21600
+      - key: CONSUMER_VOICE_INITIAL_LOAD_TIMEOUT_SECONDS
+        value: 12
       - key: FRONTEND_ORIGINS
         sync: false
       - key: PRICING_CACHE_TTL_SECONDS

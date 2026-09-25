@@ -1,6 +1,9 @@
 import pandas as pd
+from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
+from src.data_sources.google_sheets import Snapshot
+from src.data_sources.consumer_voice import ConsumerVoiceRepository
 from src.domain.consumer_voice import prepare_reviews
 from src.main import app
 from src.services.consumer_voice import dashboard
@@ -29,14 +32,28 @@ def test_alerts_and_images_are_serialized():
     assert result["reviews"][1]["images"] == ["https://example.com/a.jpg"]
 
 
-def test_consumer_voice_endpoints():
-    app.state.consumer_voice_repository = type("Repo", (), {"get": lambda self: fixture()})()
+def test_consumer_voice_endpoints(monkeypatch):
+    snapshot = Snapshot(fixture(), datetime(2026, 9, 25, tzinfo=timezone.utc))
+    monkeypatch.setattr(app.state, "consumer_voice_repository", type("Repo", (), {"get": lambda self: snapshot})())
     app.state.response_cache.clear()
     client = TestClient(app)
     assert client.get("/api/consumer-voice/filters").status_code == 200
     response = client.get("/api/consumer-voice/dashboard", params={"venture": "PK"})
     assert response.status_code == 200
     assert response.json()["metrics"]["reviewCount"] == 2
+    assert response.json()["meta"]["dataAsOf"] == "2026-09-03"
+    assert response.json()["meta"]["stale"] is False
+
+
+def test_official_sheet_schema_uses_supplied_brand_and_product_name():
+    raw = pd.DataFrame([{
+        "venture": "PK", "create_date_short": "2026-09-25", "user_id": 1,
+        "product_id": 9, "standard_product_name": "A model without a brand",
+        "Brand": "Honor", "rating": 5, "review_content": "Excellent",
+    }])
+    prepared = ConsumerVoiceRepository._validate(raw)
+    assert prepared.iloc[0]["product_name"] == "A model without a brand"
+    assert prepared.iloc[0]["brand"] == "Honor"
 
 
 def test_dashboard_section_only_returns_required_payload():

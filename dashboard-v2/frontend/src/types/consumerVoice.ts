@@ -5,6 +5,15 @@ export type ConsumerVoiceFilters = {
     products: { id: string; name: string; brand: string }[];
     dateRange: { min: string | null; max: string | null };
   };
+  meta?: ConsumerVoiceMeta;
+};
+
+export type ConsumerVoiceMeta = {
+  filteredCount?: number;
+  sourceCount?: number;
+  dataAsOf?: string | null;
+  cacheGeneratedAt?: string;
+  stale?: boolean;
 };
 
 export type ConsumerVoiceDashboard = {
@@ -41,5 +50,5 @@ export type ConsumerVoiceDashboard = {
     tags: string[];
     images: string[];
   }[];
-  meta?: { filteredCount: number; sourceCount: number };
+  meta?: ConsumerVoiceMeta;
 };

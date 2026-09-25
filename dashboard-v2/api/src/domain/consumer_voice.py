@@ -72,13 +72,24 @@ def _sentiment(rating: float | None, text: str) -> str:
 def prepare_reviews(raw: pd.DataFrame) -> pd.DataFrame:
     data = raw.copy()
     data.columns = [str(column).strip().casefold() for column in data.columns]
+    if "product_name" not in data.columns and "standard_product_name" in data.columns:
+        data["product_name"] = data["standard_product_name"]
+    if "brand" not in data.columns:
+        data["brand"] = ""
+    for column in ["product_rating", "seller_rating", "logistics_rating", "upvotes", "downvotes", "image_count"]:
+        if column not in data.columns:
+            data[column] = None
+    for column in [f"image_{index}" for index in range(1, 7)]:
+        if column not in data.columns:
+            data[column] = ""
     for column in ["rating", "product_rating", "seller_rating", "logistics_rating", "upvotes", "downvotes", "image_count"]:
         data[column] = pd.to_numeric(data[column].replace("\\N", None), errors="coerce")
     data["created_at"] = pd.to_datetime(data["create_date_short"], errors="coerce")
     data["product_id"] = data["product_id"].astype(str).str.replace(r"\.0$", "", regex=True)
     data["product_name"] = data["product_name"].map(_clean_text)
     data["review_content"] = data["review_content"].map(_clean_text)
-    data["brand"] = data["product_name"].map(_brand)
+    supplied_brand = data["brand"].map(_clean_text)
+    data["brand"] = supplied_brand.where(supplied_brand != "", data["product_name"].map(_brand))
     data["rating_valid"] = data["rating"].between(1, 5)
     data["tags"] = data["review_content"].map(_tags)
     data["sensitive_terms"] = data["review_content"].map(_sensitive)

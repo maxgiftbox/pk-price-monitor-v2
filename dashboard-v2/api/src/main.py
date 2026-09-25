@@ -52,7 +52,12 @@ app.state.repository = GoogleSheetsRepository(
         os.getenv("PRICING_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
     ),
 )
-app.state.consumer_voice_repository = ConsumerVoiceRepository()
+app.state.consumer_voice_repository = ConsumerVoiceRepository(
+    ttl_seconds=int(os.getenv("CONSUMER_VOICE_CACHE_TTL_SECONDS", "21600")),
+    initial_load_timeout_seconds=int(
+        os.getenv("CONSUMER_VOICE_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
+    ),
+)
 app.state.response_cache = ResponseCache(
     ttl_seconds=int(os.getenv("PRICING_RESPONSE_CACHE_TTL_SECONDS", "900")),
     max_entries=int(os.getenv("PRICING_RESPONSE_CACHE_MAX_ENTRIES", "256")),
@@ -216,10 +221,24 @@ def pricing_dashboard():
 
 @app.get("/api/consumer-voice/filters")
 def consumer_voice_filter_options():
+    snapshot = app.state.consumer_voice_repository.get()
+    key = _cache_key("consumer-voice-filters", snapshot)
     return app.state.response_cache.get_or_compute(
-        ("consumer-voice-filters",),
-        lambda: consumer_voice_filters(app.state.consumer_voice_repository.get()),
+        key,
+        lambda: {
+            **consumer_voice_filters(snapshot.data),
+            "meta": _consumer_voice_meta(snapshot),
+        },
     )
+
+
+def _consumer_voice_meta(snapshot):
+    dates = snapshot.data["created_at"].dropna()
+    return {
+        "dataAsOf": dates.max().date().isoformat() if not dates.empty else None,
+        "cacheGeneratedAt": snapshot.generated_at.isoformat(),
+        "stale": snapshot.stale,
+    }
 
 
 @app.get("/api/consumer-voice/dashboard")
@@ -234,6 +253,7 @@ def consumer_voice_dashboard_data(
     section: str = "all",
     limit: int = Query(100, ge=1, le=100),
 ):
+    snapshot = app.state.consumer_voice_repository.get()
     params = {
             "venture": venture,
             "brand": brand,
@@ -245,16 +265,20 @@ def consumer_voice_dashboard_data(
             "section": section,
             "limit": limit,
     }
-    key = (
-        "consumer-voice-dashboard", _values(venture), _values(brand),
+    key = _cache_key(
+        "consumer-voice-dashboard", snapshot, _values(venture), _values(brand),
         _values(productId), sentiment, sort, dateFrom, dateTo, section, limit,
     )
     return app.state.response_cache.get_or_compute(
         key,
-        lambda: consumer_voice_dashboard(
-            app.state.consumer_voice_repository.get(), params
-        ),
+        lambda: _consumer_voice_payload(snapshot, params),
     )
+
+
+def _consumer_voice_payload(snapshot, params):
+    payload = consumer_voice_dashboard(snapshot.data, params)
+    payload.setdefault("meta", {}).update(_consumer_voice_meta(snapshot))
+    return payload
 
 
 # ==============================

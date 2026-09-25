@@ -33,6 +33,12 @@ Set these Render environment variables before the first deployment:
 The spreadsheet must be shared with the service account's `client_email` as a
 viewer. The API already reads credentials exclusively from the environment.
 
+Consumer Voice reads `Consumer_voice_dump` from
+`CONSUMER_VOICE_GOOGLE_SHEET_ID`. Its in-process snapshot refreshes every six
+hours by default. If Google Sheets is temporarily unavailable, the API serves
+the bundled `data/consumer_voice_reviews.csv` snapshot and marks the response
+as stale.
+
 ### Vercel frontend
 
 Import the repository into Vercel and set the root directory to
