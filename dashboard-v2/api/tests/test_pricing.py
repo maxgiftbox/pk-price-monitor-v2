@@ -96,3 +96,15 @@ def test_trend_defaults_to_latest_seven_days_and_includes_meta():
     }
     assert payload["total"] == len(payload["rows"])
     assert payload["meta"]["dataAsOf"] == "2026-09-09"
+
+
+def test_dashboard_endpoint_combines_default_pricing_payloads():
+    snap = Snapshot(dated_history(), datetime.now(timezone.utc))
+    app.state.repository = type("Repo", (), {"get": lambda self: snap})()
+    app.state.response_cache.clear()
+    payload = TestClient(app).get("/api/pricing/dashboard").json()
+
+    assert set(payload) == {"filters", "todayAction", "gap", "trend", "meta"}
+    assert {row["date"] for row in payload["todayAction"]["rows"]} == {"2026-09-09"}
+    assert payload["gap"]["pagination"]["pageSize"] == 15
+    assert len({row["date"] for row in payload["trend"]["rows"]}) == 7

@@ -14,3 +14,11 @@ export interface TrendResponse {
   total: number;
   meta?: Meta;
 }
+
+export interface PricingDashboardResponse {
+  filters: FilterResponse;
+  todayAction: GapResponse;
+  gap: GapResponse;
+  trend: TrendResponse;
+  meta: Meta;
+}

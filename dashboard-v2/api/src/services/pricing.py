@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import threading
 from typing import Any
 
 import pandas as pd
@@ -38,6 +39,7 @@ SORTS = {
 
 _gap_cache_key = None
 _gap_cache_frame = None
+_gap_cache_lock = threading.Lock()
 
 DEFAULT_PRICING_WINDOW_DAYS = 7
 MAX_TREND_WINDOW_DAYS = 31
@@ -77,12 +79,11 @@ def _get_gap_frame(snapshot):
 
     cache_key = snapshot.generated_at
 
-    if (
-        _gap_cache_frame is None
-        or _gap_cache_key != cache_key
-    ):
-        _gap_cache_frame = calculate_gap_table(snapshot.data)
-        _gap_cache_key = cache_key
+    if _gap_cache_frame is None or _gap_cache_key != cache_key:
+        with _gap_cache_lock:
+            if _gap_cache_frame is None or _gap_cache_key != cache_key:
+                _gap_cache_frame = calculate_gap_table(snapshot.data)
+                _gap_cache_key = cache_key
 
     # Return a shallow copy so filtering/pagination in gap()
     # does not mutate the cached DataFrame itself.

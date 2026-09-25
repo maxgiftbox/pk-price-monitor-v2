@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Filters } from '../features/pricing/gap-analysis/Filters';
 import { GapTable } from '../features/pricing/gap-analysis/GapTable';
+import type { FilterResponse, GapResponse } from '../types/pricing';
 
 
 const filterKeys = [
@@ -17,7 +18,7 @@ const filterKeys = [
 ];
 
 
-export function GapPage() {
+export function GapPage({ initialFilters, initialGap }: { initialFilters?: FilterResponse; initialGap?: GapResponse }) {
 
   const [params, setParams] = useSearchParams();
 
@@ -41,6 +42,8 @@ export function GapPage() {
 
     queryFn: () =>
       api.filters(filterParams),
+
+    initialData: filterParams.toString() ? undefined : initialFilters,
   });
 
 
@@ -68,6 +71,8 @@ export function GapPage() {
 
     queryFn: () =>
       api.gap(request),
+
+    initialData: params.toString() ? undefined : initialGap,
 
     placeholderData: (p) => p,
   });

@@ -13,10 +13,11 @@ from src.data_sources.google_sheets import (
     DataSourceUnavailable,
     GoogleSheetsRepository,
 )
-from src.services.pricing import filters, gap, trend
+from src.services.pricing import filters, gap, meta, trend
 from src.data_sources.consumer_voice import ConsumerVoiceRepository
 from src.services.consumer_voice import dashboard as consumer_voice_dashboard
 from src.services.consumer_voice import filters as consumer_voice_filters
+from src.services.response_cache import ResponseCache
 
 
 app = FastAPI(
@@ -52,6 +53,23 @@ app.state.repository = GoogleSheetsRepository(
     ),
 )
 app.state.consumer_voice_repository = ConsumerVoiceRepository()
+app.state.response_cache = ResponseCache(
+    ttl_seconds=int(os.getenv("PRICING_RESPONSE_CACHE_TTL_SECONDS", "900")),
+    max_entries=int(os.getenv("PRICING_RESPONSE_CACHE_MAX_ENTRIES", "256")),
+)
+
+
+def _cache_key(endpoint: str, snapshot, *parts):
+    return (
+        endpoint,
+        snapshot.generated_at.isoformat(),
+        snapshot.stale,
+        *parts,
+    )
+
+
+def _values(values):
+    return tuple(sorted(values or []))
 
 
 @app.exception_handler(DataSourceUnavailable)
@@ -84,14 +102,14 @@ def pricing_filters(
     dateFrom: str | None = None,
     dateTo: str | None = None,
 ):
-    return filters(
-        app.state.repository.get(),
-        country,
-        brand,
-        sku,
-        memory,
-        dateFrom,
-        dateTo,
+    snapshot = app.state.repository.get()
+    key = _cache_key(
+        "filters", snapshot, _values(country), _values(brand),
+        _values(sku), _values(memory), dateFrom, dateTo,
+    )
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: filters(snapshot, country, brand, sku, memory, dateFrom, dateTo),
     )
 
 
@@ -111,9 +129,8 @@ def pricing_gap(
     sort: str | None = None,
     direction: str = Query("desc", pattern="^(asc|desc)$"),
 ):
-    return gap(
-        app.state.repository.get(),
-        {
+    snapshot = app.state.repository.get()
+    params = {
             "country": country,
             "brand": brand,
             "sku": sku,
@@ -127,7 +144,15 @@ def pricing_gap(
             "window_days": windowDays,
             "sort": sort,
             "direction": direction,
-        },
+    }
+    key = _cache_key(
+        "gap", snapshot, _values(country), _values(brand), _values(sku),
+        _values(memory), _values(competitor), _values(alert), dateFrom, dateTo,
+        page, pageSize, windowDays, sort, direction,
+    )
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: gap(snapshot, params),
     )
 
 
@@ -141,9 +166,8 @@ def pricing_trend(
     dateFrom: str | None = None,
     dateTo: str | None = None,
 ):
-    return trend(
-        app.state.repository.get(),
-        {
+    snapshot = app.state.repository.get()
+    params = {
             "country": country,
             "brand": brand,
             "sku": sku,
@@ -151,13 +175,51 @@ def pricing_trend(
             "platform": platform,
             "date_from": dateFrom,
             "date_to": dateTo,
-        },
+    }
+    key = _cache_key(
+        "trend", snapshot, _values(country), _values(brand), _values(sku),
+        _values(memory), _values(platform), dateFrom, dateTo,
     )
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: trend(snapshot, params),
+    )
+
+
+@app.get("/api/pricing/dashboard")
+def pricing_dashboard():
+    snapshot = app.state.repository.get()
+    key = _cache_key("dashboard", snapshot)
+
+    def build_dashboard():
+        country_values = snapshot.data["country"].dropna().astype(str).unique()
+        pk_country = next(
+            (value for value in country_values if value.casefold() == "pk"),
+            "pk",
+        )
+        return {
+            "filters": filters(snapshot),
+            "todayAction": gap(snapshot, {
+                "country": [pk_country], "page": 1, "page_size": 500,
+                "window_days": 1, "direction": "desc",
+            }),
+            "gap": gap(snapshot, {
+                "page": 1, "page_size": 15, "window_days": 7,
+                "direction": "desc",
+            }),
+            "trend": trend(snapshot, {}),
+            "meta": meta(snapshot),
+        }
+
+    return app.state.response_cache.get_or_compute(key, build_dashboard)
 
 
 @app.get("/api/consumer-voice/filters")
 def consumer_voice_filter_options():
-    return consumer_voice_filters(app.state.consumer_voice_repository.get())
+    return app.state.response_cache.get_or_compute(
+        ("consumer-voice-filters",),
+        lambda: consumer_voice_filters(app.state.consumer_voice_repository.get()),
+    )
 
 
 @app.get("/api/consumer-voice/dashboard")
@@ -170,9 +232,7 @@ def consumer_voice_dashboard_data(
     dateFrom: str | None = None,
     dateTo: str | None = None,
 ):
-    return consumer_voice_dashboard(
-        app.state.consumer_voice_repository.get(),
-        {
+    params = {
             "venture": venture,
             "brand": brand,
             "product_id": productId,
@@ -180,7 +240,16 @@ def consumer_voice_dashboard_data(
             "sort": sort,
             "date_from": dateFrom,
             "date_to": dateTo,
-        },
+    }
+    key = (
+        "consumer-voice-dashboard", _values(venture), _values(brand),
+        _values(productId), sentiment, sort, dateFrom, dateTo,
+    )
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: consumer_voice_dashboard(
+            app.state.consumer_voice_repository.get(), params
+        ),
     )
 
 
