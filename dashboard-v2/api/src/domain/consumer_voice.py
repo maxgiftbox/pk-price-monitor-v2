@@ -8,20 +8,38 @@ import pandas as pd
 
 MISSING = {"", "\\n", "nan", "none", "null"}
 
-TAG_RULES: dict[str, tuple[str, list[str]]] = {
-    "Good quality": ("positive", ["good quality", "great product", "excellent", "original", "ভালো", "ভাল"]),
-    "Good value": ("positive", ["best deal", "price is low", "reasonable price", "worth", "value for money"]),
-    "Fast delivery": ("positive", ["fast delivery", "quick delivery", "on time", "two day", "দুই দিনের ভিতরে"]),
-    "Battery": ("neutral", ["battery", "battery timing", "backup"]),
-    "Camera": ("neutral", ["camera", "picture quality"]),
-    "Display": ("neutral", ["display", "screen", "brightness", "sharpness"]),
-    "Overheating": ("negative", ["heat up", "heating", "overheat", "garam"]),
-    "Warranty issue": ("negative", ["warranty", "expire", "activation"]),
-    "Voucher or gift issue": ("negative", ["voucher", "gift deynai", "no gift", "did not get", "out of stock"]),
-    "Poor quality": ("negative", ["bad quality", "poor quality", "pathetic", "ghatiya", "not recommend"]),
-    "Delivery issue": ("negative", ["late delivery", "delay", "damaged", "missing", "out of stock"]),
-    "Non PTA": ("negative", ["non pta", "non-pta"]),
+TOPIC_RULES: dict[str, list[str]] = {
+    "Performance & processor": ["performance", "processor", "chipset", "smooth", "lag", "hanging", "gaming"],
+    "Camera quality": ["camera", "picture quality", "photo", "zoom"],
+    "Battery life": ["battery", "battery life", "battery timing", "backup"],
+    "Display & touch": ["display", "screen", "touch", "brightness", "amoled"],
+    "Charging & adapter": ["charging", "charger", "adapter", "adaptor", "cable"],
+    "Build & design": ["build quality", "design", "stylish", "slim", "premium look"],
+    "Audio & speaker": ["speaker", "sound", "audio"],
+    "Software & UI": ["software", "android", "one ui", "update", "interface"],
+    "Network & PTA": ["pta", "network", "signal", "sim"],
+    "Storage & memory": ["storage", "memory", " ram", " rom"],
+    "Price & value": ["price", "value for money", "value of money", "worth", "budget"],
+    "Authenticity": ["original", "authentic", "genuine", "brand new", "sealed"],
+    "Packaging": ["packaging", "packed", "packing", "sealed pack"],
+    "Delivery": ["delivery", "delivered"],
+    "Seller service": ["seller", "customer service"],
+    "Warranty": ["warranty"],
+    "Gifts & vouchers": ["voucher", "gift", "powerbank", "power bank"],
+    "Returns & refunds": ["return", "refund"],
 }
+
+NEGATIVE_CUES = [
+    "not good", "not impressive", "not recommend", "no ", "missing", "without",
+    "slow", "late", "delay", "poor", "bad", "worst", "issue", "problem",
+    "defect", "does not", "doesn't", "drain", "heating", "overheat", "garam",
+    "older", "out of stock", "damaged",
+]
+POSITIVE_CUES = [
+    "good", "great", "best", "excellent", "fast", "smooth", "long", "bright",
+    "vibrant", "crisp", "original", "authentic", "satisfied", "nice", "well",
+    "safe", "recommended", "zabardast", "acha", "ভালো", "ভাল",
+]
 
 SENSITIVE_TERMS = {
     "Non PTA": ["non pta", "non-pta"],
@@ -51,8 +69,30 @@ def _matches(text: str, terms: Iterable[str]) -> bool:
     return any(term in haystack for term in terms)
 
 
-def _tags(text: str) -> list[str]:
-    return [label for label, (_, terms) in TAG_RULES.items() if _matches(text, terms)]
+def _is_seller_reply(text: str) -> bool:
+    value = re.sub(r"\s+", " ", text.casefold()).strip()
+    return value.startswith(("dear customer", "moaziz sarif")) or "your kind review" in value
+
+
+def _topic_signals(rating: float | None, text: str) -> list[tuple[str, str]]:
+    if not text or _is_seller_reply(text):
+        return []
+    haystack = re.sub(r"\s+", " ", text.casefold())
+    fallback = "negative" if rating and rating <= 2 else "positive" if rating and rating >= 4 else "neutral"
+    signals = []
+    for label, terms in TOPIC_RULES.items():
+        positions = [haystack.find(term) for term in terms if term in haystack]
+        if not positions:
+            continue
+        position = min(positions)
+        window = haystack[max(0, position - 70):position + 130]
+        sentiment = (
+            "negative" if any(cue in window for cue in NEGATIVE_CUES)
+            else "positive" if any(cue in window for cue in POSITIVE_CUES)
+            else fallback
+        )
+        signals.append((label, sentiment))
+    return signals
 
 
 def _sensitive(text: str) -> list[str]:
@@ -60,11 +100,14 @@ def _sensitive(text: str) -> list[str]:
 
 
 def _sentiment(rating: float | None, text: str) -> str:
-    negative_text = any(_matches(text, terms) for sentiment, terms in TAG_RULES.values() if sentiment == "negative")
-    positive_text = any(_matches(text, terms) for sentiment, terms in TAG_RULES.values() if sentiment == "positive")
-    if rating and rating <= 2 or negative_text:
+    if rating and rating <= 2:
         return "negative"
-    if rating and rating >= 4 or positive_text:
+    if rating and rating >= 4:
+        return "positive"
+    haystack = re.sub(r"\s+", " ", text.casefold())
+    if any(cue in haystack for cue in NEGATIVE_CUES):
+        return "negative"
+    if any(cue in haystack for cue in POSITIVE_CUES):
         return "positive"
     return "neutral"
 
@@ -91,12 +134,16 @@ def prepare_reviews(raw: pd.DataFrame) -> pd.DataFrame:
     supplied_brand = data["brand"].map(_clean_text)
     data["brand"] = supplied_brand.where(supplied_brand != "", data["product_name"].map(_brand))
     data["rating_valid"] = data["rating"].between(1, 5)
-    data["tags"] = data["review_content"].map(_tags)
     data["sensitive_terms"] = data["review_content"].map(_sensitive)
     data["sentiment"] = [
         _sentiment(rating if valid else None, text)
         for rating, valid, text in zip(data["rating"], data["rating_valid"], data["review_content"])
     ]
+    data["topic_signals"] = [
+        _topic_signals(rating if valid else None, text)
+        for rating, valid, text in zip(data["rating"], data["rating_valid"], data["review_content"])
+    ]
+    data["tags"] = data["topic_signals"].map(lambda signals: [label for label, _sentiment in signals])
     data["rating_sentiment_mismatch"] = (
         (data["rating_valid"])
         & (((data["rating"] >= 4) & (data["sentiment"] == "negative")) | ((data["rating"] <= 2) & (data["sentiment"] == "positive")))

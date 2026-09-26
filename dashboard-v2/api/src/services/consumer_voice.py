@@ -5,8 +5,6 @@ from typing import Any
 
 import pandas as pd
 
-from src.domain.consumer_voice import TAG_RULES
-
 
 def _filter(data: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
     frame = data
@@ -26,18 +24,22 @@ def _filter(data: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
 
 def _options(frame: pd.DataFrame) -> dict[str, Any]:
     dates = frame["created_at"].dropna()
-    products = (
-        frame[["product_id", "product_name", "brand"]]
-        .drop_duplicates("product_id")
-        .sort_values(["brand", "product_name"])
-    )
+    products = frame[["venture", "product_id", "product_name", "brand"]].drop_duplicates()
+    products["model_key"] = products["product_name"].str.casefold().str.replace(r"\s+", " ", regex=True).str.strip()
+    grouped_products = []
+    for (venture, brand, _model_key), rows in products.groupby(["venture", "brand", "model_key"], sort=True):
+        ids = sorted(rows["product_id"].astype(str).unique().tolist())
+        grouped_products.append({
+            "id": ids[0],
+            "ids": ids,
+            "name": rows.iloc[0]["product_name"],
+            "brand": brand,
+            "venture": venture,
+        })
     return {
         "ventures": sorted(frame["venture"].dropna().astype(str).unique().tolist()),
         "brands": sorted(frame["brand"].dropna().astype(str).unique().tolist()),
-        "products": [
-            {"id": row.product_id, "name": row.product_name, "brand": row.brand}
-            for row in products.itertuples()
-        ],
+        "products": grouped_products,
         "dateRange": {
             "min": dates.min().date().isoformat() if not dates.empty else None,
             "max": dates.max().date().isoformat() if not dates.empty else None,
@@ -66,10 +68,12 @@ def dashboard(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
         for rating in range(1, 6)
     ]
 
-    tag_counts: Counter[str] = Counter(tag for tags in frame["tags"] for tag in tags)
+    tag_counts: Counter[tuple[str, str]] = Counter(
+        signal for signals in frame["topic_signals"] for signal in signals
+    )
     tags = [
-        {"label": label, "count": count, "sentiment": TAG_RULES[label][0]}
-        for label, count in tag_counts.most_common(18)
+        {"label": label, "count": count, "sentiment": sentiment}
+        for (label, sentiment), count in tag_counts.most_common(18)
     ]
 
     alerts = []
@@ -113,7 +117,7 @@ def dashboard(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
             "rating": int(row.rating) if row.rating_valid else None,
             "sentiment": row.sentiment,
             "review": row.review_content,
-            "upvotes": int(row.upvotes or 0),
+            "upvotes": int(row.upvotes) if pd.notna(row.upvotes) else 0,
             "tags": row.tags,
             "images": [image for image in images if image],
         })

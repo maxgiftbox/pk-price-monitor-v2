@@ -6,7 +6,7 @@ from src.data_sources.google_sheets import Snapshot
 from src.data_sources.consumer_voice import ConsumerVoiceRepository
 from src.domain.consumer_voice import prepare_reviews
 from src.main import app
-from src.services.consumer_voice import dashboard
+from src.services.consumer_voice import dashboard, filters
 
 
 def fixture() -> pd.DataFrame:
@@ -68,3 +68,29 @@ def test_dashboard_section_only_returns_required_payload():
 def test_review_payload_respects_limit():
     result = dashboard(fixture(), {"section": "reviews", "limit": 1})
     assert len(result["reviews"]) == 1
+
+
+def test_topics_keep_aspect_and_sentiment_granular():
+    data = prepare_reviews(pd.DataFrame([
+        {"venture": "PK", "create_date_short": "2026-09-01", "product_id": 1, "product_name": "Phone A", "brand": "Brand", "rating": 5, "review_content": "Camera is crisp and performance is smooth"},
+        {"venture": "PK", "create_date_short": "2026-09-02", "product_id": 1, "product_name": "Phone A", "brand": "Brand", "rating": 1, "review_content": "Camera is poor and processor is slow"},
+    ]))
+    topics = dashboard(data, {"section": "signals"})["tags"]
+    assert {("Camera quality", "positive"), ("Camera quality", "negative")} <= {
+        (topic["label"], topic["sentiment"]) for topic in topics
+    }
+    assert {("Performance & processor", "positive"), ("Performance & processor", "negative")} <= {
+        (topic["label"], topic["sentiment"]) for topic in topics
+    }
+
+
+def test_filter_options_cascade_and_group_duplicate_model_names():
+    data = prepare_reviews(pd.DataFrame([
+        {"venture": "PK", "create_date_short": "2026-09-01", "product_id": 1, "product_name": "Infinix Note 60 8/256", "brand": "Infinix", "rating": 5, "review_content": "Good"},
+        {"venture": "PK", "create_date_short": "2026-09-02", "product_id": 2, "product_name": "Infinix Note 60 8/256", "brand": "Infinix", "rating": 5, "review_content": "Good"},
+        {"venture": "BD", "create_date_short": "2026-09-03", "product_id": 3, "product_name": "Infinix Note 60 8/256", "brand": "Infinix", "rating": 5, "review_content": "Good"},
+    ]))
+    products = filters(data)["options"]["products"]
+    assert len(products) == 2
+    pk_product = next(product for product in products if product["venture"] == "PK")
+    assert pk_product["ids"] == ["1", "2"]

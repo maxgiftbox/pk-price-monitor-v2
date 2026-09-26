@@ -2,7 +2,7 @@ export type ConsumerVoiceFilters = {
   options: {
     ventures: string[];
     brands: string[];
-    products: { id: string; name: string; brand: string }[];
+    products: { id: string; ids: string[]; name: string; brand: string; venture: string }[];
     dateRange: { min: string | null; max: string | null };
   };
   meta?: ConsumerVoiceMeta;
