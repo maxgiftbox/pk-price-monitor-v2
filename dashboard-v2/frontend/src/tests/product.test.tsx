@@ -33,11 +33,13 @@ const comparison: ProductComparisonResponse = {
   meta: { dataAsOf: '2026-09-27', cacheGeneratedAt: '2026-09-27T00:00:00Z', stale: false },
 };
 
-test('renders products, grouped fields and missing values', () => {
+test('renders populated grouped fields and hides empty groups', () => {
   render(<ComparisonBoard data={comparison} loading={false} />);
   expect(screen.getByText('Galaxy A56')).toBeInTheDocument();
   expect(screen.getByText('Redmi 15')).toBeInTheDocument();
-  expect(screen.getByText('Commercial')).toBeInTheDocument();
+  expect(screen.queryByText('Commercial')).not.toBeInTheDocument();
+  expect(screen.queryByText('Selling Price')).not.toBeInTheDocument();
+  expect(screen.getByText('Display')).toBeInTheDocument();
   expect(screen.getByText('AMOLED')).toBeInTheDocument();
-  expect(screen.getAllByText('—')).toHaveLength(2);
+  expect(screen.queryByText('—')).not.toBeInTheDocument();
 });

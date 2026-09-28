@@ -20,13 +20,26 @@ export function ComparisonBoard({ data, loading }: {
     </section>;
   }
 
+  const visibleGroups = data.groups.flatMap((group) => {
+    const fields = group.fields.filter((field) => {
+      if (field.key === 'memory') return false;
+      return data.products.some((product) => {
+        const value = product.specs[field.key];
+        return value !== null && value !== undefined && value !== '';
+      });
+    });
+    return fields.length ? [{ ...group, fields }] : [];
+  });
+
   return <section className="product-board-card">
     <div className="product-card-heading product-board-heading">
       <div>
         <p className="product-eyebrow">FEATURE COMPARISON</p>
         <h2>Comparison board</h2>
       </div>
-      <span className="product-selection-count">{data.products.length} products</span>
+      <span className="product-selection-count">
+        {data.products.length} product{data.products.length === 1 ? '' : 's'}
+      </span>
     </div>
     <div className="product-table-scroll">
       <table className="product-comparison-table">
@@ -41,7 +54,7 @@ export function ComparisonBoard({ data, loading }: {
           </tr>
         </thead>
         <tbody>
-          {data.groups.map((group) => [
+          {visibleGroups.map((group) => [
             <tr className="product-group-row" key={`${group.id}-heading`}>
               <th colSpan={data.products.length + 1}>{group.label}</th>
             </tr>,
@@ -57,4 +70,3 @@ export function ComparisonBoard({ data, loading }: {
     </div>
   </section>;
 }
-
