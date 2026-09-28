@@ -21,6 +21,16 @@ services:
         value: 21600
       - key: CONSUMER_VOICE_INITIAL_LOAD_TIMEOUT_SECONDS
         value: 12
+      - key: PRODUCT_FEATURES_GOOGLE_SHEET_ID
+        value: 1g0dDuowGUAGYiuIzG8dlKrvnruqMxaYUw_JfURCY0qU
+      - key: PRODUCT_FEATURES_SOURCE
+        value: bundle
+      - key: PRODUCT_FEATURES_WORKSHEET
+        value: sku_features_master
+      - key: PRODUCT_FEATURES_CACHE_TTL_SECONDS
+        value: 21600
+      - key: PRODUCT_FEATURES_INITIAL_LOAD_TIMEOUT_SECONDS
+        value: 12
       - key: FRONTEND_ORIGINS
         sync: false
       - key: PRICING_CACHE_TTL_SECONDS

@@ -5,6 +5,7 @@ import type {
   TrendResponse,
 } from "../types/pricing";
 import type { ConsumerVoiceDashboard, ConsumerVoiceFilters } from "../types/consumerVoice";
+import type { ProductComparisonResponse, ProductFiltersResponse } from "../types/product";
 
 // Production:
 // VITE_API_BASE_URL=https://your-api-service.onrender.com
@@ -105,4 +106,14 @@ export const consumerVoiceApi = {
   filters: () => request<ConsumerVoiceFilters>("/api/consumer-voice/filters", new URLSearchParams()),
   dashboard: (params: URLSearchParams) =>
     request<ConsumerVoiceDashboard>("/api/consumer-voice/dashboard", params),
+};
+
+export const productApi = {
+  filters: (params = new URLSearchParams()) =>
+    request<ProductFiltersResponse>("/api/products/filters", params),
+  compare: (skuIds: string[]) => {
+    const params = new URLSearchParams();
+    skuIds.forEach((skuId) => params.append("skuId", skuId));
+    return request<ProductComparisonResponse>("/api/products/compare", params);
+  },
 };

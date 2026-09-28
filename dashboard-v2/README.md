@@ -39,6 +39,14 @@ hours by default. If Google Sheets is temporarily unavailable, the API serves
 the bundled `data/consumer_voice_reviews.csv` snapshot and marks the response
 as stale.
 
+Product Intelligence uses the reviewed `api/data/product_features.csv` snapshot
+by default (`PRODUCT_FEATURES_SOURCE=bundle`). Once the Google Sheet is updated
+to the same schema and data version, set `PRODUCT_FEATURES_SOURCE=google` to
+read `sku_features_master` from `PRODUCT_FEATURES_GOOGLE_SHEET_ID`. Google mode
+uses an isolated six-hour cache and falls back to the bundled snapshot when the
+sheet is unavailable. The `/products` page supports multi-SKU feature comparison
+only; price-based recommendations and similarity scoring remain outside Phase 1.
+
 ### Vercel frontend
 
 Import the repository into Vercel and set the root directory to
@@ -68,6 +76,8 @@ The framework-neutral domain module safely copies/adapts V1 preparation, `sku_ma
 - `GET /api/pricing/gap` (server filtered; 100 rows by default, maximum 500)
 - `GET /api/pricing/trend`
 - `GET /api/pricing/dashboard` (cached combined first-screen payload)
+- `GET /api/products/filters` (cascading Brand, Model, Memory and SKU options)
+- `GET /api/products/compare` (one to six repeated `skuId` query parameters)
 
 Gap and trend endpoints default to the latest seven calendar days available in
 the data. Today Action requests a one-day window. Trend responses are capped to

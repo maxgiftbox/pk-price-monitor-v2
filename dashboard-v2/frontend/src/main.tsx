@@ -6,8 +6,8 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { Shell } from './app/Shell';
 import { GapPage } from './routes/GapPage';
 import { PricingDashboard } from './routes/PricingDashboard';
-import { ComingSoon } from './routes/ComingSoon';
 import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
+import { ProductIntelligencePage } from './routes/ProductIntelligencePage';
 import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
@@ -49,7 +49,7 @@ const router = createBrowserRouter([
       },
       {
         path: '/products',
-        element: <ComingSoon />,
+        element: <ProductIntelligencePage />,
       },
     ],
   },

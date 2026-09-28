@@ -15,8 +15,11 @@ from src.data_sources.google_sheets import (
 )
 from src.services.pricing import filters, gap, meta, trend
 from src.data_sources.consumer_voice import ConsumerVoiceRepository
+from src.data_sources.product_features import ProductFeaturesRepository
 from src.services.consumer_voice import dashboard as consumer_voice_dashboard
 from src.services.consumer_voice import filters as consumer_voice_filters
+from src.services.product import compare as product_compare
+from src.services.product import filters as product_filters
 from src.services.response_cache import ResponseCache
 
 
@@ -56,6 +59,12 @@ app.state.consumer_voice_repository = ConsumerVoiceRepository(
     ttl_seconds=int(os.getenv("CONSUMER_VOICE_CACHE_TTL_SECONDS", "21600")),
     initial_load_timeout_seconds=int(
         os.getenv("CONSUMER_VOICE_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
+    ),
+)
+app.state.product_repository = ProductFeaturesRepository(
+    ttl_seconds=int(os.getenv("PRODUCT_FEATURES_CACHE_TTL_SECONDS", "21600")),
+    initial_load_timeout_seconds=int(
+        os.getenv("PRODUCT_FEATURES_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
     ),
 )
 app.state.response_cache = ResponseCache(
@@ -279,6 +288,33 @@ def _consumer_voice_payload(snapshot, params):
     payload = consumer_voice_dashboard(snapshot.data, params)
     payload.setdefault("meta", {}).update(_consumer_voice_meta(snapshot))
     return payload
+
+
+@app.get("/api/products/filters")
+def product_filter_options(
+    brand: list[str] = Query([]),
+    model: list[str] = Query([]),
+):
+    snapshot = app.state.product_repository.get()
+    key = _cache_key(
+        "product-filters", snapshot, _values(brand), _values(model)
+    )
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: product_filters(snapshot, brand, model),
+    )
+
+
+@app.get("/api/products/compare")
+def product_comparison(
+    skuId: list[str] = Query(..., min_length=1, max_length=6),
+):
+    snapshot = app.state.product_repository.get()
+    key = _cache_key("product-compare", snapshot, _values(skuId))
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: product_compare(snapshot, skuId),
+    )
 
 
 # ==============================
