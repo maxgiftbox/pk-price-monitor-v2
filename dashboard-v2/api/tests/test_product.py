@@ -77,8 +77,11 @@ def test_bundled_phase_one_dataset_is_the_default(monkeypatch):
     monkeypatch.delenv("PRODUCT_FEATURES_SOURCE", raising=False)
     snapshot = ProductFeaturesRepository()._load_from_google()
     assert snapshot.stale is False
-    assert len(snapshot.data) == 196
+    assert len(snapshot.data) == 279
     assert set(snapshot.data["brand"]) == {
-        "Infinix", "Itel", "Oppo", "realme", "Samsung", "Tecno", "Vivo", "Xiaomi"
+        "Apple", "HONOR", "Infinix", "Itel", "Oppo", "realme", "Samsung",
+        "Tecno", "Vivo", "Xiaomi",
     }
     assert snapshot.data["sku_id"].is_unique
+    smart_20 = snapshot.data[snapshot.data["model"] == "Infinix Smart 20"]
+    assert set(smart_20["memory"]) == {"4/64", "4/128"}
