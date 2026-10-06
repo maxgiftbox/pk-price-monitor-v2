@@ -6,6 +6,7 @@ import type {
 } from "../types/pricing";
 import type { ConsumerVoiceDashboard, ConsumerVoiceFilters } from "../types/consumerVoice";
 import type { ProductComparisonResponse, ProductFiltersResponse } from "../types/product";
+import type { SocialDashboard, SocialFilters } from "../types/socialIntelligence";
 
 // Production:
 // VITE_API_BASE_URL=https://your-api-service.onrender.com
@@ -15,6 +16,11 @@ import type { ProductComparisonResponse, ProductFiltersResponse } from "../types
 const apiBaseUrl = (
   import.meta.env.VITE_API_BASE_URL ?? ""
 ).replace(/\/$/, "");
+
+export function resolveApiAssetUrl(url: string): string {
+  if (!url || !url.startsWith("/api/")) return url;
+  return `${apiBaseUrl}${url}`;
+}
 
 const REQUEST_TIMEOUT_MS = 35_000;
 
@@ -116,4 +122,9 @@ export const productApi = {
     skuIds.forEach((skuId) => params.append("skuId", skuId));
     return request<ProductComparisonResponse>("/api/products/compare", params);
   },
+};
+
+export const socialIntelligenceApi = {
+  filters: () => request<SocialFilters>("/api/social-intelligence/filters", new URLSearchParams()),
+  dashboard: (params: URLSearchParams) => request<SocialDashboard>("/api/social-intelligence/dashboard", params),
 };

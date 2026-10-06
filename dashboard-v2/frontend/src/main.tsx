@@ -8,6 +8,7 @@ import { GapPage } from './routes/GapPage';
 import { PricingDashboard } from './routes/PricingDashboard';
 import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
 import { ProductIntelligencePage } from './routes/ProductIntelligencePage';
+import { SocialIntelligenceDashboard } from './routes/SocialIntelligenceDashboard';
 import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
@@ -50,6 +51,10 @@ const router = createBrowserRouter([
       {
         path: '/products',
         element: <ProductIntelligencePage />,
+      },
+      {
+        path: '/social-intelligence',
+        element: <SocialIntelligenceDashboard />,
       },
     ],
   },

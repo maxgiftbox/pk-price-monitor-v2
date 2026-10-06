@@ -47,6 +47,13 @@ uses an isolated six-hour cache and falls back to the bundled snapshot when the
 sheet is unavailable. The `/products` page supports multi-SKU feature comparison
 only; price-based recommendations and similarity scoring remain outside Phase 1.
 
+Social Voice reads `social_intelligence_master` from the same Google Sheet and
+refreshes its in-process snapshot every 15 minutes. The bundled
+`api/data/social_intelligence_v2_2.csv` is used only when Google Sheets is
+temporarily unavailable. Historical social images are deployed from
+`api/data/social_media_assets`; future crawler output should move to object
+storage so new media can be published without a redeploy.
+
 ### Vercel frontend
 
 Import the repository into Vercel and set the root directory to
@@ -78,6 +85,9 @@ The framework-neutral domain module safely copies/adapts V1 preparation, `sku_ma
 - `GET /api/pricing/dashboard` (cached combined first-screen payload)
 - `GET /api/products/filters` (cascading Brand, Model, Memory and SKU options)
 - `GET /api/products/compare` (one to six repeated `skuId` query parameters)
+- `GET /api/social-intelligence/filters`
+- `GET /api/social-intelligence/dashboard`
+- `GET /api/social-intelligence/media/{filename}`
 
 Gap and trend endpoints default to the latest seven calendar days available in
 the data. Today Action requests a one-day window. Trend responses are capped to

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -16,11 +17,14 @@ from src.data_sources.google_sheets import (
 from src.services.pricing import filters, gap, meta, trend
 from src.data_sources.consumer_voice import ConsumerVoiceRepository
 from src.data_sources.product_features import ProductFeaturesRepository
+from src.data_sources.social_intelligence import SocialIntelligenceRepository
 from src.services.consumer_voice import dashboard as consumer_voice_dashboard
 from src.services.consumer_voice import filters as consumer_voice_filters
 from src.services.product import compare as product_compare
 from src.services.product import filters as product_filters
 from src.services.response_cache import ResponseCache
+from src.services.social_intelligence import dashboard as social_intelligence_dashboard
+from src.services.social_intelligence import filters as social_intelligence_filters
 
 
 app = FastAPI(
@@ -34,7 +38,7 @@ origins = [
     x.strip()
     for x in os.getenv(
         "FRONTEND_ORIGINS",
-        "http://localhost:5173"
+        "http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5176"
     ).split(",")
     if x.strip()
 ]
@@ -67,9 +71,26 @@ app.state.product_repository = ProductFeaturesRepository(
         os.getenv("PRODUCT_FEATURES_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
     ),
 )
+app.state.social_intelligence_repository = SocialIntelligenceRepository(
+    ttl_seconds=int(os.getenv("SOCIAL_INTELLIGENCE_CACHE_TTL_SECONDS", "900")),
+    initial_load_timeout_seconds=int(os.getenv("SOCIAL_INTELLIGENCE_INITIAL_LOAD_TIMEOUT_SECONDS", "30")),
+)
 app.state.response_cache = ResponseCache(
     ttl_seconds=int(os.getenv("PRICING_RESPONSE_CACHE_TTL_SECONDS", "900")),
     max_entries=int(os.getenv("PRICING_RESPONSE_CACHE_MAX_ENTRIES", "256")),
+)
+
+SOCIAL_MEDIA_DIR = Path(
+    os.getenv(
+        "SOCIAL_INTELLIGENCE_MEDIA_DIR",
+        str(Path(__file__).resolve().parents[1] / "data" / "social_media_assets"),
+    )
+)
+SOCIAL_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/api/social-intelligence/media",
+    StaticFiles(directory=str(SOCIAL_MEDIA_DIR)),
+    name="social-intelligence-media",
 )
 
 
@@ -288,6 +309,35 @@ def _consumer_voice_payload(snapshot, params):
     payload = consumer_voice_dashboard(snapshot.data, params)
     payload.setdefault("meta", {}).update(_consumer_voice_meta(snapshot))
     return payload
+
+
+def _social_meta(snapshot):
+    dates = snapshot.data["published_at"].dropna()
+    return {"dataAsOf": dates.max().isoformat() if not dates.empty else None, "cacheGeneratedAt": snapshot.generated_at.isoformat(), "stale": snapshot.stale}
+
+
+@app.get("/api/social-intelligence/filters")
+def social_intelligence_filter_options():
+    snapshot = app.state.social_intelligence_repository.get()
+    key = _cache_key("social-intelligence-filters", snapshot)
+    return app.state.response_cache.get_or_compute(key, lambda: {**social_intelligence_filters(snapshot.data), "meta": _social_meta(snapshot)})
+
+
+@app.get("/api/social-intelligence/dashboard")
+def social_intelligence_dashboard_data(
+    country: list[str] = Query([]), platform: list[str] = Query([]), monitorType: list[str] = Query([]),
+    brand: list[str] = Query([]), accountType: list[str] = Query([]), mediaType: list[str] = Query([]),
+    dateFrom: str | None = None, dateTo: str | None = None, query: str = "", sort: str = "recent",
+    limit: int = Query(40, ge=1, le=100),
+):
+    snapshot = app.state.social_intelligence_repository.get()
+    params = {"country": country, "platform": platform, "monitor_type": monitorType, "brand": brand, "account_type": accountType, "media_type": mediaType, "date_from": dateFrom, "date_to": dateTo, "query": query, "sort": sort, "limit": limit}
+    key = _cache_key("social-intelligence-dashboard", snapshot, _values(country), _values(platform), _values(monitorType), _values(brand), _values(accountType), _values(mediaType), dateFrom, dateTo, query, sort, limit)
+    def build_social_dashboard():
+        payload = social_intelligence_dashboard(snapshot.data, params)
+        payload["meta"].update(_social_meta(snapshot))
+        return payload
+    return app.state.response_cache.get_or_compute(key, build_social_dashboard)
 
 
 @app.get("/api/products/filters")
