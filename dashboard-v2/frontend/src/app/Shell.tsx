@@ -11,6 +11,7 @@ export function Shell() {
           <NavLink className={navClass} to="/pricing">Pricing</NavLink>
           <NavLink className={navClass} to="/products">Product</NavLink>
           <NavLink className={navClass} to="/consumer-voice">Consumer Voice</NavLink>
+          <NavLink className={navClass} to="/social-intelligence">Social Voice</NavLink>
         </nav>
         <div className="topbar-status"><i /> Dashboard loaded</div>
       </div>
