@@ -95,6 +95,8 @@ def _has_pricing_access(request: Request) -> bool:
 @app.middleware("http")
 async def protect_pricing_api(request: Request, call_next):
     if (
+        request.method != "OPTIONS"
+        and
         request.url.path.startswith("/api/pricing/")
         and request.url.path != "/api/pricing/auth"
         and not _has_pricing_access(request)
