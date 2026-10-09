@@ -9,6 +9,7 @@ import { PricingDashboard } from './routes/PricingDashboard';
 import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
 import { ProductIntelligencePage } from './routes/ProductIntelligencePage';
 import { SocialIntelligenceDashboard } from './routes/SocialIntelligenceDashboard';
+import { PricingAccessGate } from './routes/PricingAccessGate';
 import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
@@ -38,11 +39,11 @@ const router = createBrowserRouter([
       },
       {
         path: '/pricing',
-        element: <PricingDashboard />,
+        element: <PricingAccessGate><PricingDashboard /></PricingAccessGate>,
       },
       {
         path: '/pricing/gap',
-        element: <GapPage />,
+        element: <PricingAccessGate><GapPage /></PricingAccessGate>,
       },
       {
         path: '/consumer-voice',

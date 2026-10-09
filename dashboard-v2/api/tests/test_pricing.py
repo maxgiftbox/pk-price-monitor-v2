@@ -6,6 +6,13 @@ from src.data_sources.google_sheets import Snapshot
 from src.domain.pricing import alert_level, calculate_gap_table, enrich_with_sku_master, prepare_price_daily_df, product_id
 from src.main import app
 
+
+def authenticated_client():
+    client = TestClient(app)
+    response = client.post("/api/pricing/auth", json={"password": "test-password"})
+    assert response.status_code == 200
+    return client
+
 @pytest.mark.parametrize("value, expected", [(-.01,"Green"),(0,"Green"),(.0001,"Orange"),(.0299,"Orange"),(.03,"Red"),(.031,"Red")])
 def test_alert_boundaries(value, expected): assert alert_level(value) == expected
 
@@ -41,7 +48,7 @@ def test_product_id_is_order_independent():
 def test_endpoints_cascade_and_paginate():
     snap=Snapshot(prepared(),datetime.now(timezone.utc))
     app.state.repository=type("Repo",(),{"get":lambda self:snap})()
-    client=TestClient(app)
+    client=authenticated_client()
     assert client.get("/api/health").json()=={"status":"ok"}
     opts=client.get("/api/pricing/filters",params={"country":"PK"}).json()["options"]
     assert opts["brands"]==["Samsung"] and opts["skus"]==["Galaxy A55"]
@@ -51,7 +58,7 @@ def test_endpoints_cascade_and_paginate():
 def test_gap_endpoint_serializes_missing_competitor_url_as_null():
     snap=Snapshot(missing_competitor_url_fixture(),datetime.now(timezone.utc))
     app.state.repository=type("Repo",(),{"get":lambda self:snap})()
-    response=TestClient(app).get("/api/pricing/gap")
+    response=authenticated_client().get("/api/pricing/gap")
     assert response.status_code == 200
     assert response.json()["rows"][0]["competitorUrl"] is None
 
@@ -70,7 +77,7 @@ def dated_history(days=9):
 def test_gap_defaults_to_latest_seven_calendar_days_and_action_can_request_one():
     snap = Snapshot(dated_history(), datetime.now(timezone.utc))
     app.state.repository = type("Repo", (), {"get": lambda self: snap})()
-    client = TestClient(app)
+    client = authenticated_client()
 
     default_rows = client.get(
         "/api/pricing/gap", params={"pageSize": 500}
@@ -89,7 +96,7 @@ def test_gap_defaults_to_latest_seven_calendar_days_and_action_can_request_one()
 def test_trend_defaults_to_latest_seven_days_and_includes_meta():
     snap = Snapshot(dated_history(), datetime.now(timezone.utc))
     app.state.repository = type("Repo", (), {"get": lambda self: snap})()
-    payload = TestClient(app).get("/api/pricing/trend").json()
+    payload = authenticated_client().get("/api/pricing/trend").json()
 
     assert {row["date"] for row in payload["rows"]} == {
         f"2026-09-{day:02d}" for day in range(3, 10)
@@ -102,7 +109,7 @@ def test_dashboard_endpoint_combines_default_pricing_payloads():
     snap = Snapshot(dated_history(), datetime.now(timezone.utc))
     app.state.repository = type("Repo", (), {"get": lambda self: snap})()
     app.state.response_cache.clear()
-    payload = TestClient(app).get("/api/pricing/dashboard").json()
+    payload = authenticated_client().get("/api/pricing/dashboard").json()
 
     assert set(payload) == {"filters", "todayAction", "gap", "trend", "meta"}
     assert {row["date"] for row in payload["todayAction"]["rows"]} == {"2026-09-09"}

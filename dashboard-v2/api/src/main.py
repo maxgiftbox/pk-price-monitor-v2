@@ -1,14 +1,20 @@
+import base64
+import binascii
+import hashlib
+import hmac
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from src.data_sources.google_sheets import (
     DataSourceUnavailable,
@@ -48,9 +54,90 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET"],
-    allow_headers=["Accept", "Content-Type"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Accept", "Authorization", "Content-Type"],
 )
+
+PRICING_ACCESS_PASSWORD = os.getenv("PRICING_ACCESS_PASSWORD", "")
+PRICING_SESSION_SECONDS = int(os.getenv("PRICING_SESSION_SECONDS", "28800"))
+PRICING_COOKIE_NAME = "el_pricing_session"
+
+
+def _pricing_signature(expires_at: str) -> str:
+    return hmac.new(
+        PRICING_ACCESS_PASSWORD.encode(), expires_at.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def _pricing_session_token(expires_at: int) -> str:
+    payload = str(expires_at)
+    raw = f"{payload}.{_pricing_signature(payload)}".encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _has_pricing_access(request: Request) -> bool:
+    if not PRICING_ACCESS_PASSWORD:
+        return False
+    authorization = request.headers.get("authorization", "")
+    bearer_token = authorization[7:] if authorization.lower().startswith("bearer ") else ""
+    token = bearer_token or request.cookies.get(PRICING_COOKIE_NAME, "")
+    try:
+        decoded = base64.urlsafe_b64decode(token.encode()).decode()
+        expires_at, signature = decoded.split(".", 1)
+        return (
+            int(expires_at) > int(time.time())
+            and hmac.compare_digest(signature, _pricing_signature(expires_at))
+        )
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return False
+
+
+@app.middleware("http")
+async def protect_pricing_api(request: Request, call_next):
+    if (
+        request.url.path.startswith("/api/pricing/")
+        and request.url.path != "/api/pricing/auth"
+        and not _has_pricing_access(request)
+    ):
+        return JSONResponse(
+            status_code=401,
+            content={"error": {"code": "PRICING_AUTH_REQUIRED", "message": "Pricing access requires a password."}},
+        )
+    return await call_next(request)
+
+
+class PricingLogin(BaseModel):
+    password: str
+
+
+@app.get("/api/pricing/auth")
+def pricing_auth_status(request: Request):
+    return {"authenticated": _has_pricing_access(request)}
+
+
+@app.post("/api/pricing/auth")
+def pricing_auth_login(credentials: PricingLogin, request: Request, response: Response):
+    if not PRICING_ACCESS_PASSWORD:
+        return JSONResponse(
+            status_code=503,
+            content={"error": {"code": "PRICING_AUTH_NOT_CONFIGURED", "message": "Pricing access is not configured."}},
+        )
+    if not hmac.compare_digest(credentials.password, PRICING_ACCESS_PASSWORD):
+        return JSONResponse(
+            status_code=401,
+            content={"error": {"code": "INVALID_PASSWORD", "message": "Incorrect password."}},
+        )
+    expires_at = int(time.time()) + PRICING_SESSION_SECONDS
+    response.set_cookie(
+        PRICING_COOKIE_NAME,
+        _pricing_session_token(expires_at),
+        max_age=PRICING_SESSION_SECONDS,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="none" if request.url.scheme == "https" else "lax",
+        path="/api/pricing",
+    )
+    return {"authenticated": True, "token": _pricing_session_token(expires_at)}
 
 
 app.state.repository = GoogleSheetsRepository(

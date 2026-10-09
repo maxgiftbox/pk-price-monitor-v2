@@ -23,6 +23,12 @@ export function resolveApiAssetUrl(url: string): string {
 }
 
 const REQUEST_TIMEOUT_MS = 35_000;
+const PRICING_TOKEN_KEY = "el-pricing-session";
+
+function pricingAuthHeaders(): HeadersInit {
+  const token = window.sessionStorage.getItem(PRICING_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export class ApiError extends Error {
   status?: number;
@@ -53,7 +59,7 @@ async function request<T>(
   try {
     response = await fetch(
       `${apiBaseUrl}${path}?${params.toString()}`,
-      { signal: controller.signal }
+      { signal: controller.signal, credentials: "include", headers: pricingAuthHeaders() }
     );
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -70,6 +76,29 @@ async function request<T>(
 
   return response.json() as Promise<T>;
 }
+
+export const pricingAuthApi = {
+  status: async (): Promise<{ authenticated: boolean }> => {
+    const response = await fetch(`${apiBaseUrl}/api/pricing/auth`, {
+      credentials: "include",
+      headers: pricingAuthHeaders(),
+    });
+    if (!response.ok) throw new ApiError("Could not check access.", response.status);
+    return response.json();
+  },
+  login: async (password: string): Promise<{ authenticated: boolean; token: string }> => {
+    const response = await fetch(`${apiBaseUrl}/api/pricing/auth`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!response.ok) throw new ApiError("Incorrect password.", response.status);
+    const result = await response.json() as { authenticated: boolean; token: string };
+    window.sessionStorage.setItem(PRICING_TOKEN_KEY, result.token);
+    return result;
+  },
+};
 
 
 export const api = {

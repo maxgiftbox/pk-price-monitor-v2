@@ -47,3 +47,7 @@ services:
         value: 900
       - key: PRICING_RESPONSE_CACHE_MAX_ENTRIES
         value: 256
+      - key: PRICING_ACCESS_PASSWORD
+        sync: false
+      - key: PRICING_SESSION_SECONDS
+        value: 28800

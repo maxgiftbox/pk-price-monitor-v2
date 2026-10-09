@@ -67,6 +67,15 @@ credentials. A trailing slash is accepted and normalized. When the variable is
 unset, requests remain relative so local development continues to use Vite's
 localhost-only development proxy.
 
+## Pricing access password
+
+Pricing pages and every `/api/pricing/*` data endpoint are protected by a
+server-validated password. Set `PRICING_ACCESS_PASSWORD` on the Render service;
+the application fails closed when this variable is missing. Successful login
+creates an eight-hour session by default. Override `PRICING_SESSION_SECONDS` if
+a different duration is required. Never add the real password to a frontend
+environment variable or commit it to this repository.
+
 After both services have URLs, update `FRONTEND_ORIGINS` on Render with the
 final Vercel origin and redeploy the API. Verify `/api/health`, then open Price
 Gap Analysis in the deployed frontend and confirm browser requests target the
