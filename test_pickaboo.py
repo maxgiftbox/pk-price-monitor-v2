@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from scraper import crawl_pickaboo_page, extract_pickaboo_product_price
+from scraper import (
+    crawl_pickaboo_page,
+    crawl_pickaboo_with_retries,
+    extract_pickaboo_product_price,
+    extract_pickaboo_stock_status,
+)
 
 
 class FakeLocator:
@@ -13,11 +18,19 @@ class FakeLocator:
 
 
 class FakePage:
-    def __init__(self, status=200, body="", candidates=None, title="Product"):
+    def __init__(
+        self,
+        status=200,
+        body="",
+        candidates=None,
+        title="Product",
+        stock_signals=None,
+    ):
         self.response = type("Response", (), {"status": status})()
         self.body = body
         self.candidates = candidates or []
         self._title = title
+        self.stock_signals = stock_signals or {}
         self.url = "https://www.pickaboo.com/product-detail/example"
 
     def set_default_navigation_timeout(self, _timeout):
@@ -36,6 +49,8 @@ class FakePage:
         return FakeLocator(self.body)
 
     def evaluate(self, script):
+        if "purchaseControls" in script:
+            return self.stock_signals
         if "querySelectorAll('img')" in script:
             return []
         return self.candidates
@@ -81,7 +96,13 @@ class PickabooCrawlerTests(unittest.TestCase):
 
     @patch("scraper.extract_pickaboo_product_price")
     def test_out_of_stock_page_does_not_parse_addon_price(self, extract_price):
-        page = FakePage(body="realme C85 Pro\nOut of Stock\nDevice Insurance\n৳280")
+        page = FakePage(
+            body="realme C85 Pro\nOut of Stock\nDevice Insurance\n৳280",
+            stock_signals={
+                "availability": "https://schema.org/OutOfStock",
+                "purchaseControls": False,
+            },
+        )
 
         result = crawl_pickaboo_page(FakeContext(page), "https://example.test")
 
@@ -91,7 +112,13 @@ class PickabooCrawlerTests(unittest.TestCase):
         extract_price.assert_not_called()
 
     def test_active_product_uses_current_and_regular_prices(self):
-        page = FakePage(body="Phone\n৳19,999\n৳20,999\nAdd to Cart")
+        page = FakePage(
+            body="Phone\n৳19,999\n৳20,999\nAdd to Cart",
+            stock_signals={
+                "availability": "https://schema.org/InStock",
+                "purchaseControls": True,
+            },
+        )
         page.candidates = [
             {"text": "৳19,999", "context": "৳19,999 5% discount", "isPrimary": True}
         ]
@@ -111,7 +138,36 @@ class PickabooCrawlerTests(unittest.TestCase):
         self.assertEqual(result["effective_price"], 19999)
         self.assertEqual(result["stock_status"], "active")
 
+    def test_product_json_ld_wins_over_unrelated_out_of_stock_text(self):
+        page = FakePage(
+            body="Phone\nOut of Stock\nAdd to Cart",
+            stock_signals={
+                "availability": "https://schema.org/InStock",
+                "purchaseControls": True,
+            },
+        )
+
+        self.assertEqual(extract_pickaboo_stock_status(page, page.body), "active")
+
+    def test_purchase_controls_win_in_legacy_body_fallback(self):
+        page = FakePage(body="Phone\nOut of Stock\nAdd to Cart")
+
+        self.assertEqual(extract_pickaboo_stock_status(page, page.body), "active")
+
+    @patch("scraper.time.sleep")
+    @patch("scraper.crawl_pickaboo_page")
+    def test_http_429_gets_one_cooldown_retry(self, crawl_page, sleep):
+        crawl_page.side_effect = [
+            {"error_message": "Pickaboo HTTP 429 blocked"},
+            {"product_price": 19999, "stock_status": "active"},
+        ]
+
+        result = crawl_pickaboo_with_retries(object(), "https://example.test")
+
+        self.assertEqual(result["product_price"], 19999)
+        self.assertEqual(crawl_page.call_count, 2)
+        sleep.assert_called_once_with(60.0)
+
 
 if __name__ == "__main__":
     unittest.main()
-

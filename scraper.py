@@ -183,6 +183,8 @@ PICKABOO_BROWSER_USER_AGENT = (
 )
 PICKABOO_PRICE_FAIL_ARTIFACT_COUNT = 0
 PICKABOO_PRICE_FAIL_ARTIFACT_LIMIT = 5
+PICKABOO_REQUEST_DELAY_SECONDS = (7.0, 11.0)
+PICKABOO_429_RETRY_DELAYS_SECONDS = (60.0,)
 
 PICKABOO_PRICE_PATTERN = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)|\b(\d{1,3}(?:,\d{3})+)\b")
 PICKABOO_OFFER_CONTEXT_PATTERN = re.compile(
@@ -302,6 +304,55 @@ def extract_pickaboo_voucher_amount(text: str) -> int:
         if isinstance(parsed, int) and parsed > 0:
             return parsed
     return 0
+
+
+def extract_pickaboo_stock_status(page: Any, body_text: str) -> str:
+    signals = page.evaluate(
+        r"""
+        () => {
+            let availability = '';
+            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+                try {
+                    const value = JSON.parse(script.textContent || 'null');
+                    const items = Array.isArray(value) ? value : [value];
+                    for (const item of items) {
+                        if (!item || item['@type'] !== 'Product') continue;
+                        const offers = Array.isArray(item.offers) ? item.offers : [item.offers];
+                        const offer = offers.find(Boolean);
+                        if (offer && offer.availability) availability = String(offer.availability);
+                    }
+                } catch (_) {}
+            }
+            const purchaseControls = Array.from(document.querySelectorAll('button, a'))
+                .filter((el) => {
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return style && style.display !== 'none' && style.visibility !== 'hidden'
+                        && rect.width > 0 && rect.height > 0 && !el.disabled;
+                })
+                .some((el) => /^(add to cart|buy now)$/i.test(
+                    (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
+                ));
+            return { availability, purchaseControls };
+        }
+        """
+    )
+    if isinstance(signals, dict):
+        availability = str(signals.get("availability", "")).casefold()
+        if availability.endswith("/instock") or availability == "instock":
+            return "active"
+        if availability.endswith("/outofstock") or availability == "outofstock":
+            return "out_of_stock"
+        if bool(signals.get("purchaseControls")):
+            return "active"
+
+    # Fallback for legacy pages without structured availability. Purchase
+    # controls take precedence because unrelated product cards can say sold out.
+    if re.search(r"(?i)(add to cart|buy now)", body_text or ""):
+        return "active"
+    if re.search(r"(?i)(out of stock|sold out)", body_text or ""):
+        return "out_of_stock"
+    return "unknown"
 
 
 def save_pickaboo_failure_artifacts(
@@ -1370,11 +1421,7 @@ def crawl_pickaboo_page(
         attr_text = clean_price(" ".join([str(v) for v in attr_values])) if isinstance(attr_values, list) else ""
         combined_text = clean_price(f"{body_text} {attr_text}")
 
-        stock_status = "unknown"
-        if re.search(r"(?i)(out of stock|sold out)", body_text):
-            stock_status = "out_of_stock"
-        elif re.search(r"(?i)(add to cart|buy now)", body_text):
-            stock_status = "active"
+        stock_status = extract_pickaboo_stock_status(page, raw_body_text)
 
         # Out-of-stock PDPs can still contain insurance, add-on, or installment
         # amounts. Do not treat those unrelated values as the product price.
@@ -1443,6 +1490,34 @@ def crawl_pickaboo_page(
         }
     finally:
         page.close()
+
+
+def crawl_pickaboo_with_retries(
+    browser_context: Any,
+    product_url: str,
+    debug_identity: Optional[Dict[str, str]] = None,
+    debug_dir: str = "debug_pickaboo",
+) -> Dict[str, Any]:
+    attempts = len(PICKABOO_429_RETRY_DELAYS_SECONDS) + 1
+    result: Dict[str, Any] = {}
+    for attempt in range(attempts):
+        result = crawl_pickaboo_page(
+            browser_context,
+            product_url,
+            debug_identity=debug_identity,
+            debug_dir=debug_dir,
+        )
+        if result.get("error_message") != "Pickaboo HTTP 429 blocked":
+            return result
+        if attempt >= len(PICKABOO_429_RETRY_DELAYS_SECONDS):
+            break
+        delay = PICKABOO_429_RETRY_DELAYS_SECONDS[attempt]
+        print(
+            f"[PICKABOO RATE LIMIT] HTTP 429 | attempt={attempt + 1}/{attempts} | "
+            f"cooldown={delay:g}s | url={product_url}"
+        )
+        time.sleep(delay)
+    return result
 
 def build_price_daily_row(base: Dict[str, str], crawl_result: Dict[str, Any]) -> Dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
@@ -1604,7 +1679,13 @@ def main() -> None:
                     },
                 )
             elif platform == "pickaboo":
-                crawl_result = crawl_pickaboo_page(
+                request_delay = random.uniform(*PICKABOO_REQUEST_DELAY_SECONDS)
+                print(
+                    f"[PICKABOO PACE] waiting={request_delay:.1f}s before request | "
+                    f"url={product_url}"
+                )
+                time.sleep(request_delay)
+                crawl_result = crawl_pickaboo_with_retries(
                     pickaboo_context,
                     product_url,
                     debug_identity={
