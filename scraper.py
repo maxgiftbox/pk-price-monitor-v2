@@ -177,6 +177,12 @@ PICKABOO_MAX_PROCESSING_SECONDS = 20
 PICKABOO_NAVIGATION_TIMEOUT_MS = 15000
 PICKABOO_POST_GOTO_WAIT_MS = 3000
 PICKABOO_PARSE_TIMEOUT_MS = 2000
+PICKABOO_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+)
+PICKABOO_PRICE_FAIL_ARTIFACT_COUNT = 0
+PICKABOO_PRICE_FAIL_ARTIFACT_LIMIT = 5
 
 PICKABOO_PRICE_PATTERN = re.compile(r"(?i)(?:৳|tk|bdt)\s*([\d,]+)|\b(\d{1,3}(?:,\d{3})+)\b")
 PICKABOO_OFFER_CONTEXT_PATTERN = re.compile(
@@ -197,6 +203,7 @@ def extract_pickaboo_product_price(page: Any, body_text: str) -> Any:
         r"""
         () => {
             const selectors = [
+                '.current-price',
                 '.product-price',
                 '.product_price',
                 '.special-price',
@@ -223,7 +230,7 @@ def extract_pickaboo_product_price(page: Any, body_text: str) -> Any:
                     const context = (el.closest('section, article, div')?.innerText || text)
                         .replace(/\s+/g, ' ')
                         .trim();
-                    return { text, context };
+                    return { text, context, isPrimary: el.matches('.current-price') };
                 })
                 .filter((item) => item.text);
         }
@@ -237,7 +244,8 @@ def extract_pickaboo_product_price(page: Any, body_text: str) -> Any:
             context = clean_price(str(item.get("context", "")))
             if not text:
                 continue
-            if PICKABOO_OFFER_CONTEXT_PATTERN.search(context) and not re.search(
+            is_primary_price = bool(item.get("isPrimary"))
+            if not is_primary_price and PICKABOO_OFFER_CONTEXT_PATTERN.search(context) and not re.search(
                 r"(?i)(regular price|special price|sale price|current price)", context
             ):
                 continue
@@ -294,6 +302,37 @@ def extract_pickaboo_voucher_amount(text: str) -> int:
         if isinstance(parsed, int) and parsed > 0:
             return parsed
     return 0
+
+
+def save_pickaboo_failure_artifacts(
+    page: Any,
+    debug_identity: Dict[str, str],
+    debug_dir: str = "debug_pickaboo",
+) -> None:
+    global PICKABOO_PRICE_FAIL_ARTIFACT_COUNT
+    if PICKABOO_PRICE_FAIL_ARTIFACT_COUNT >= PICKABOO_PRICE_FAIL_ARTIFACT_LIMIT:
+        return
+
+    PICKABOO_PRICE_FAIL_ARTIFACT_COUNT += 1
+    os.makedirs(debug_dir, exist_ok=True)
+    safe_brand = sanitize_filename(debug_identity.get("brand", ""), "unknown_brand")
+    safe_model = sanitize_filename(debug_identity.get("model", ""), "unknown_model")
+    prefix = os.path.join(
+        debug_dir,
+        f"{safe_brand}_{safe_model}_{PICKABOO_PRICE_FAIL_ARTIFACT_COUNT}",
+    )
+    try:
+        with open(f"{prefix}.html", "w", encoding="utf-8") as handle:
+            handle.write(page.content())
+        print(f"[PICKABOO DEBUG] Saved HTML: {prefix}.html")
+    except Exception as exc:
+        print(f"[PICKABOO DEBUG] Failed to save HTML: {exc}")
+
+    try:
+        page.screenshot(path=f"{prefix}.png", full_page=True)
+        print(f"[PICKABOO DEBUG] Saved screenshot: {prefix}.png")
+    except Exception as exc:
+        print(f"[PICKABOO DEBUG] Failed to save screenshot: {exc}")
 
 def extract_price_data(page_html: str) -> Dict[str, str]:
     soup = BeautifulSoup(page_html, "html.parser")
@@ -1279,14 +1318,39 @@ def parse_daraz(
         page.close()
 
 
-def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any]:
+def crawl_pickaboo_page(
+    browser_context: Any,
+    product_url: str,
+    debug_identity: Optional[Dict[str, str]] = None,
+    debug_dir: str = "debug_pickaboo",
+) -> Dict[str, Any]:
     started_at = time.monotonic()
     page = browser_context.new_page()
     try:
         page.set_default_navigation_timeout(PICKABOO_NAVIGATION_TIMEOUT_MS)
         page.set_default_timeout(PICKABOO_PARSE_TIMEOUT_MS)
-        page.goto(product_url, wait_until="domcontentloaded", timeout=PICKABOO_NAVIGATION_TIMEOUT_MS)
+        response = page.goto(
+            product_url,
+            wait_until="domcontentloaded",
+            timeout=PICKABOO_NAVIGATION_TIMEOUT_MS,
+        )
         page.wait_for_timeout(PICKABOO_POST_GOTO_WAIT_MS)
+
+        navigation_status = response.status if response is not None else None
+        if navigation_status is not None and navigation_status >= 400:
+            print(
+                f"[PICKABOO DEBUG] HTTP {navigation_status} | "
+                f"input_url={product_url} | final_url={page.url}"
+            )
+            save_pickaboo_failure_artifacts(page, debug_identity or {}, debug_dir)
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": "unknown",
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": f"Pickaboo HTTP {navigation_status} blocked",
+            }
 
         elapsed_ms = int((time.monotonic() - started_at) * 1000)
         if elapsed_ms >= PICKABOO_MAX_PROCESSING_SECONDS * 1000:
@@ -1306,16 +1370,34 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
         attr_text = clean_price(" ".join([str(v) for v in attr_values])) if isinstance(attr_values, list) else ""
         combined_text = clean_price(f"{body_text} {attr_text}")
 
-        product_price = extract_pickaboo_product_price(page, raw_body_text)
-        voucher_amount = extract_pickaboo_voucher_amount(combined_text)
-
         stock_status = "unknown"
         if re.search(r"(?i)(out of stock|sold out)", body_text):
             stock_status = "out_of_stock"
         elif re.search(r"(?i)(add to cart|buy now)", body_text):
             stock_status = "active"
 
+        # Out-of-stock PDPs can still contain insurance, add-on, or installment
+        # amounts. Do not treat those unrelated values as the product price.
+        if stock_status == "out_of_stock":
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": stock_status,
+                "voucher_amount": 0,
+                "effective_price": "",
+                "error_message": "Product out of stock",
+            }
+
+        product_price = extract_pickaboo_product_price(page, raw_body_text)
+        voucher_amount = extract_pickaboo_voucher_amount(combined_text)
+
         if not isinstance(product_price, int):
+            print(
+                f"[PICKABOO DEBUG] Product price not parsed | "
+                f"http_status={navigation_status} | input_url={product_url} | "
+                f"final_url={page.url} | title={clean_price(page.title())}"
+            )
+            save_pickaboo_failure_artifacts(page, debug_identity or {}, debug_dir)
             return {
                 "product_price": "",
                 "original_price": "",
@@ -1340,6 +1422,7 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
             "effective_price": effective_price,
         }
     except PlaywrightTimeoutError:
+        save_pickaboo_failure_artifacts(page, debug_identity or {}, debug_dir)
         return {
             "product_price": "",
             "original_price": "",
@@ -1349,6 +1432,7 @@ def crawl_pickaboo_page(browser_context: Any, product_url: str) -> Dict[str, Any
             "error_message": "Timeout while loading page",
         }
     except Exception as exc:  # noqa: BLE001
+        save_pickaboo_failure_artifacts(page, debug_identity or {}, debug_dir)
         return {
             "product_price": "",
             "original_price": "",
@@ -1482,6 +1566,15 @@ def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
+        pickaboo_context = browser.new_context(
+            user_agent=PICKABOO_BROWSER_USER_AGENT,
+            locale="en-US",
+            viewport={"width": 1365, "height": 900},
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Upgrade-Insecure-Requests": "1",
+            },
+        )
         for row in active_rows:
             product_url = str(row.get("product_url", "")).strip()
             platform = str(row.get("platform", "")).strip().lower()
@@ -1511,7 +1604,14 @@ def main() -> None:
                     },
                 )
             elif platform == "pickaboo":
-                crawl_result = crawl_pickaboo_page(context, product_url)
+                crawl_result = crawl_pickaboo_page(
+                    pickaboo_context,
+                    product_url,
+                    debug_identity={
+                        "brand": str(row.get("brand", "")).strip(),
+                        "model": str(row.get("model", "")).strip(),
+                    },
+                )
             elif platform == "daraz":
                 crawl_result = parse_daraz(
                     context,
@@ -1551,6 +1651,8 @@ def main() -> None:
             )
             output_rows.append(output_row)
 
+        pickaboo_context.close()
+        context.close()
         browser.close()
 
     df = pd.DataFrame(output_rows, columns=PRICE_DAILY_COLUMNS).fillna("")
