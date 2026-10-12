@@ -453,24 +453,131 @@ def parse_memory_to_ram_storage(text: str) -> Tuple[Optional[str], Optional[str]
     if not value:
         return (None, None)
 
-    nums = [int(n) for n in re.findall(r"\d+", value)]
-    if len(nums) < 2:
+    capacity_tokens = re.findall(r"(\d+)\s*(tb|gb)?", value)
+    capacities = [
+        int(number) * (1024 if unit == "tb" else 1)
+        for number, unit in capacity_tokens
+    ]
+    if not capacities:
         return (None, None)
+
+    # Apple and laptop pages often expose storage-only controls such as
+    # "256GB", "1TB", or "512". Keep RAM unknown and normalize TB to GB.
+    if len(capacities) == 1:
+        return (None, str(capacities[0]))
 
     # PriceOye-like format: "256GB - 8GB RAM" => storage first then RAM.
     if "ram" in value and "-" in value:
         left_part, right_part = value.split("-", 1)
-        left_nums = [int(n) for n in re.findall(r"\d+", left_part)]
-        right_nums = [int(n) for n in re.findall(r"\d+", right_part)]
-        if left_nums and right_nums:
-            storage = str(left_nums[0])
-            ram = str(right_nums[0])
+        left_tokens = re.findall(r"(\d+)\s*(tb|gb)?", left_part)
+        right_tokens = re.findall(r"(\d+)\s*(tb|gb)?", right_part)
+        if left_tokens and right_tokens:
+            left_number, left_unit = left_tokens[0]
+            right_number, right_unit = right_tokens[0]
+            storage = str(int(left_number) * (1024 if left_unit == "tb" else 1))
+            ram = str(int(right_number) * (1024 if right_unit == "tb" else 1))
             return (ram, storage)
 
     # sku_master format and related variants: "8/256", "8GB/256GB", "8GB + 256GB" => RAM first then storage.
-    ram = str(nums[0])
-    storage = str(nums[1])
+    ram = str(capacities[0])
+    storage = str(capacities[1])
     return (ram, storage)
+
+
+def priceoye_memory_matches(requested_memory: str, candidate_memory: str) -> bool:
+    requested_ram, requested_storage = parse_memory_to_ram_storage(requested_memory)
+    candidate_ram, candidate_storage = parse_memory_to_ram_storage(candidate_memory)
+    if not requested_storage or not candidate_storage:
+        return False
+    if requested_storage != candidate_storage:
+        return False
+    # iPhone/MacBook controls contain storage only. Android controls generally
+    # include RAM, in which case require an exact RAM match to avoid collisions.
+    if candidate_ram:
+        return bool(requested_ram and requested_ram == candidate_ram)
+    return True
+
+
+def normalize_priceoye_product_title(value: str) -> str:
+    normalized = (value or "").lower().replace("+", " plus ")
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    return " ".join(token for token in tokens if token not in {"4g", "5g"})
+
+
+def priceoye_product_title_matches(expected: str, actual: str) -> bool:
+    expected_normalized = normalize_priceoye_product_title(expected)
+    actual_normalized = normalize_priceoye_product_title(actual)
+    if not expected_normalized or not actual_normalized:
+        return True
+    return (
+        expected_normalized == actual_normalized
+        or expected_normalized in actual_normalized
+        or actual_normalized in expected_normalized
+    )
+
+
+def extract_priceoye_variant_from_product_data(
+    product_data: Any, requested_memory: str
+) -> Dict[str, str]:
+    if not isinstance(product_data, dict):
+        return {}
+    product_config = product_data.get("product_config")
+    if not isinstance(product_config, dict):
+        return {}
+    data_prices = product_config.get("dataPrices")
+    if not isinstance(data_prices, dict):
+        return {}
+
+    matching_offers: List[Tuple[str, Dict[str, Any]]] = []
+    for color, sizes in data_prices.items():
+        if not isinstance(sizes, dict):
+            continue
+        for candidate_memory, offers in sizes.items():
+            if not priceoye_memory_matches(requested_memory, str(candidate_memory)):
+                continue
+            if not isinstance(offers, list):
+                offers = [offers]
+            for offer in offers:
+                if isinstance(offer, dict):
+                    matching_offers.append((str(color), offer))
+
+    if not matching_offers:
+        return {}
+
+    def offer_price(item: Tuple[str, Dict[str, Any]]) -> int:
+        parsed = parse_price_to_int(item[1].get("product_price", ""))
+        return parsed if isinstance(parsed, int) and parsed > 0 else 10**18
+
+    def is_in_stock(offer: Dict[str, Any]) -> bool:
+        availability = str(offer.get("product_availability", "")).strip().lower()
+        stock_qty = offer.get("stock_qty")
+        availability_index = offer.get("product_availability_index")
+        return (
+            "in stock" in availability
+            or availability_index in (1, "1")
+            or (isinstance(stock_qty, (int, float)) and stock_qty > 0)
+        )
+
+    in_stock_offers = [item for item in matching_offers if is_in_stock(item[1])]
+    candidates = in_stock_offers or matching_offers
+    selected_color = str(product_config.get("selectedColor", ""))
+    selected_color_candidates = [item for item in candidates if item[0] == selected_color]
+    chosen_color, chosen = min(selected_color_candidates or candidates, key=offer_price)
+
+    product_price = parse_price_to_int(chosen.get("product_price", ""))
+    original_price = parse_price_to_int(chosen.get("retail_price", ""))
+    if not isinstance(product_price, int) or product_price <= 0:
+        return {}
+    if not isinstance(original_price, int) or original_price < product_price:
+        original_price = product_price
+
+    return {
+        "product_price": str(product_price),
+        "original_price": str(original_price),
+        "stock_status": "active" if in_stock_offers else "out_of_stock",
+        "matched_memory": str(chosen.get("product_size", requested_memory)),
+        "matched_color": chosen_color,
+    }
 
 
 def sanitize_filename(value: str, fallback: str) -> str:
@@ -783,6 +890,72 @@ def crawl_priceoye_page(
             "[DEBUG][PriceOye] requested memory parsed as "
             f"RAM={requested_ram or 'unknown'}, storage={requested_storage or 'unknown'}"
         )
+        safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
+        safe_model = sanitize_filename(
+            (debug_identity or {}).get("model", "") or product_url.rstrip("/").split("/")[-1],
+            "unknown_model",
+        )
+        safe_memory = sanitize_filename(memory or "default", "default_memory")
+        debug_prefix = os.path.join("debug_screenshots", f"{safe_brand}_{safe_model}_{safe_memory}")
+
+        # PriceOye publishes the complete color/size offer matrix in
+        # window.product_data. Reading it directly is both more reliable and
+        # faster than clicking a control and scraping arbitrary body prices.
+        product_data = page.evaluate(
+            """() => {
+                const config = window.product_data?.product_config;
+                if (!config) return null;
+                return {
+                    product_config: {
+                        dataPrices: config.dataPrices || null,
+                        selectedColor: config.selectedColor || ''
+                    },
+                    product_title: window.product_data?.dataSet?.title || ''
+                };
+            }"""
+        )
+        product_config = product_data.get("product_config", {}) if isinstance(product_data, dict) else {}
+        has_variant_catalog = isinstance(product_config.get("dataPrices"), dict)
+        if normalized_requested_memory and has_variant_catalog:
+            expected_title = str((debug_identity or {}).get("model", "")).strip()
+            actual_title = str(product_data.get("product_title", "")).strip()
+            if not priceoye_product_title_matches(expected_title, actual_title):
+                print(
+                    "[DEBUG][PriceOye] Product title mismatch: "
+                    f"expected={expected_title}, actual={actual_title}"
+                )
+                return {
+                    "product_price": "",
+                    "original_price": "",
+                    "stock_status": "unknown",
+                    "error_message": (
+                        f"PriceOye product mismatch: expected {expected_title}, got {actual_title}"
+                    ),
+                }
+            catalog_result = extract_priceoye_variant_from_product_data(product_data, memory)
+            if force_debug_artifacts:
+                save_debug_artifacts(
+                    page,
+                    screenshot_path=f"{debug_prefix}_catalog.png",
+                    html_path=f"{debug_prefix}.html",
+                )
+            if catalog_result:
+                print(
+                    "[DEBUG][PriceOye] Product catalog match: "
+                    f"requested={memory}, matched={catalog_result.get('matched_memory', '')}, "
+                    f"color={catalog_result.get('matched_color', '')}, "
+                    f"product_price={catalog_result.get('product_price', '')}, "
+                    f"original_price={catalog_result.get('original_price', '')}, "
+                    f"stock_status={catalog_result.get('stock_status', '')}"
+                )
+                return catalog_result
+            print(f"[DEBUG][PriceOye] Product catalog has no exact variant for {memory}")
+            return {
+                "product_price": "",
+                "original_price": "",
+                "stock_status": "unknown",
+                "error_message": f"Requested memory {memory} not found in PriceOye product catalog",
+            }
 
         parsed_data = extract_price_data(html)
         base_product_price = parsed_data.get("product_price", "")
@@ -794,14 +967,6 @@ def crawl_priceoye_page(
         error_message = ""
         selected_button_text_after_click = ""
         matched_button_text = ""
-        safe_brand = sanitize_filename((debug_identity or {}).get("brand", ""), "unknown_brand")
-        safe_model = sanitize_filename(
-            (debug_identity or {}).get("model", "") or product_url.rstrip("/").split("/")[-1],
-            "unknown_model",
-        )
-        safe_memory = sanitize_filename(memory or "default", "default_memory")
-        debug_prefix = os.path.join("debug_screenshots", f"{safe_brand}_{safe_model}_{safe_memory}")
-
         if force_debug_artifacts:
             save_debug_artifacts(page, screenshot_path=f"{debug_prefix}_before.png")
 
