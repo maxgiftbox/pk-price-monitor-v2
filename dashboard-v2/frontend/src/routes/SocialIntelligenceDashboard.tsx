@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { resolveApiAssetUrl, socialIntelligenceApi } from "../lib/api";
-import type { SocialRecord } from "../types/socialIntelligence";
+import type { SocialRatingPoint, SocialRecord } from "../types/socialIntelligence";
 
 type FeedFilter = { query: string; country: string; platform: string; monitorType: string; brand: string; accountType: string; mediaType: string; dateFrom: string; dateTo: string; sort: string };
-type OverviewFilter = { period: string; country: string; platform: string; monitorType: string };
+type RatingFilter = { period: string; country: string; platform: string; monitorType: string };
 type RankingFilter = { period: string; country: string; metric: "views" | "likes" };
 type CloudFilter = { period: string; country: string };
 const emptyFeed = (): FeedFilter => ({ query: "", country: "", platform: "", monitorType: "", brand: "", accountType: "", mediaType: "", dateFrom: "", dateTo: "", sort: "recent" });
@@ -15,31 +16,53 @@ function number(value: number | null | undefined) { return value == null ? "—"
 function engagement(record: SocialRecord, metric: "views" | "likes") { return record.viewsStatus === "not_applicable" ? "N/A" : number(record[metric]); }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label>{label}<select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>; }
 
+const BRAND_COLORS = ["#7c3aed", "#0f766e", "#ea580c", "#2563eb", "#db2777", "#ca8a04", "#0891b2", "#64748b", "#16a34a", "#9333ea"];
+
+function BrandRatingChart({ points, brands, dates }: { points: SocialRatingPoint[]; brands: string[]; dates: string[] }) {
+  const data = dates.map((date) => {
+    const row: Record<string, string | number | undefined> = { date };
+    points.filter((point) => point.date === date).forEach((point) => { row[`${point.brand}Rank`] = point.rank; row[`${point.brand}Score`] = point.socialRating; });
+    return row;
+  });
+  const latest = new Map(points.filter((point) => point.date === dates.at(-1)).map((point) => [point.brand, point]));
+  const rankMax = Math.max(brands.length, ...points.map((point) => point.rank));
+  return <>
+    <div className="rating-legend">{brands.map((brand, index) => <span key={brand}><i style={{ background: BRAND_COLORS[index % BRAND_COLORS.length] }} />{brand}<b>{latest.get(brand)?.socialRating ?? "—"}</b></span>)}</div>
+    <div className="rating-chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 24, right: 24, bottom: 4, left: 0 }}>
+      <CartesianGrid stroke="#eef1f6" vertical={true} horizontal={true} />
+      <XAxis dataKey="date" tickFormatter={(value) => new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric" })} tick={{ fill: "#7b8799", fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
+      <YAxis reversed domain={[1, Math.max(3, rankMax)]} allowDecimals={false} width={34} tickFormatter={(value) => `#${value}`} tick={{ fill: "#94a3b8", fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
+      <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; return <div className="rating-tooltip"><strong>{new Date(`${label}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: "medium" })}</strong>{payload.map((entry) => { const brand = String(entry.dataKey).replace(/Rank$/, ""); const point = points.find((item) => item.date === label && item.brand === brand); return point ? <div key={brand}><i style={{ background: entry.color }} /><b>{brand}</b><span>#{point.rank} · {point.socialRating}/100</span><small>{point.voicePosts} posts · {point.earnedMentions} mentions · {number(point.totalLikes)} likes · {point.confidenceLevel} confidence</small></div> : null; })}</div>; }} />
+      {brands.map((brand, index) => <Line key={brand} type="monotone" dataKey={`${brand}Rank`} name={brand} connectNulls stroke={BRAND_COLORS[index % BRAND_COLORS.length]} strokeWidth={2.5} activeDot={{ r: 5 }} dot={(props: any) => { const score = props.payload?.[`${brand}Score`]; return score == null ? <g key={`${brand}-${props.index}`} /> : <g key={`${brand}-${props.index}`}><circle cx={props.cx} cy={props.cy} r="4" fill="white" stroke={BRAND_COLORS[index % BRAND_COLORS.length]} strokeWidth="2.5" /><text x={props.cx} y={props.cy - 8} textAnchor="middle" fill={BRAND_COLORS[index % BRAND_COLORS.length]} fontSize="8" fontWeight="800">{Math.round(score)}</text></g>; }} />)}
+    </LineChart></ResponsiveContainer></div>
+  </>;
+}
+
 function SignalCard({ record, onOpen }: { record: SocialRecord; onOpen: () => void }) {
   return <article className="social-signal-card" onClick={onOpen}>{record.mediaUrl && <div className="social-card-media"><img src={resolveApiAssetUrl(record.mediaUrl)} alt="" loading="lazy" onError={(event) => { event.currentTarget.parentElement!.style.display = "none"; }} /></div>}<div className="social-card-body"><div className="social-badges"><span>{record.country}</span><span className={`platform-${record.platform.toLowerCase()}`}>{record.platform}</span><span className={`monitor-${record.monitorType}`}>{record.monitorType === "trend_discovery" ? "Trend" : "Watchlist"}</span>{record.accountType && <span>{record.accountType}</span>}</div><h3>{record.title}</h3><p>{record.contentSummary || record.content}</p>{record.whyItMatters && <div className="social-why"><b>Why it matters</b>{record.whyItMatters}</div>}<footer><span>{record.accountName || record.brand} · {record.publishedAt ? new Date(record.publishedAt).toLocaleDateString() : "Date unavailable"}</span><span>Views {engagement(record, "views")} · Likes {engagement(record, "likes")}</span></footer></div></article>;
 }
 
 export function SocialIntelligenceDashboard() {
-  const [overviewFilter, setOverviewFilter] = useState<OverviewFilter>({ period: "7", country: "", platform: "", monitorType: "" });
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>({ period: "7", country: "BD", platform: "", monitorType: "" });
   const [rankingFilter, setRankingFilter] = useState<RankingFilter>({ period: "7", country: "", metric: "views" });
   const [cloudFilter, setCloudFilter] = useState<CloudFilter>({ period: "7", country: "" });
   const [feedFilter, setFeedFilter] = useState<FeedFilter>(emptyFeed);
   const [selected, setSelected] = useState<SocialRecord | null>(null);
   const filters = useQuery({ queryKey: ["social-intelligence-filters"], queryFn: socialIntelligenceApi.filters });
-  const overviewParams = useMemo(() => buildParams(overviewFilter as unknown as Record<string, string>, { limit: "1" }), [overviewFilter]);
+  const ratingParams = useMemo(() => { const params = new URLSearchParams({ periodDays: ratingFilter.period, topN: "6" }); if (ratingFilter.country) params.set("country", ratingFilter.country); if (ratingFilter.platform) params.set("platform", ratingFilter.platform); if (ratingFilter.monitorType) params.set("monitorType", ratingFilter.monitorType); return params; }, [ratingFilter]);
   const rankingParams = useMemo(() => buildParams(rankingFilter as unknown as Record<string, string>, { limit: "5", sort: rankingFilter.metric }), [rankingFilter]);
   const cloudParams = useMemo(() => buildParams(cloudFilter as unknown as Record<string, string>, { limit: "1" }), [cloudFilter]);
   const feedParams = useMemo(() => buildParams(feedFilter as unknown as Record<string, string>, { limit: "40", sort: feedFilter.sort }), [feedFilter]);
-  const overview = useQuery({ queryKey: ["social-overview", overviewParams.toString()], queryFn: () => socialIntelligenceApi.dashboard(overviewParams) });
+  const ratings = useQuery({ queryKey: ["social-ratings", ratingParams.toString()], queryFn: () => socialIntelligenceApi.ratings(ratingParams) });
   const ranking = useQuery({ queryKey: ["social-ranking", rankingParams.toString()], queryFn: () => socialIntelligenceApi.dashboard(rankingParams) });
   const cloud = useQuery({ queryKey: ["social-cloud", cloudParams.toString()], queryFn: () => socialIntelligenceApi.dashboard(cloudParams) });
   const feed = useQuery({ queryKey: ["social-feed", feedParams.toString()], queryFn: () => socialIntelligenceApi.dashboard(feedParams) });
   const options = filters.data?.options;
   const countries = [{ value: "", label: "All countries" }, ...(options?.countries ?? []).map((value) => ({ value, label: value }))];
-  const periods = [{ value: "1", label: "Past 1 day" }, { value: "7", label: "Past 7 days" }, { value: "30", label: "Past 30 days" }];
+  const periods = [{ value: "1", label: "Past 1 day" }, { value: "7", label: "Past 7 days" }, { value: "14", label: "Past 14 days" }, { value: "30", label: "Past 30 days" }];
   const refreshed = feed.data?.meta.cacheGeneratedAt ? new Date(feed.data.meta.cacheGeneratedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
-  const fatal = [overview, ranking, cloud, feed].some((query) => query.isError && !query.data);
-  if (fatal) return <div className="error-panel"><p>Social Voice data is temporarily unavailable.</p><button onClick={() => { overview.refetch(); ranking.refetch(); cloud.refetch(); feed.refetch(); }}>Retry</button></div>;
+  const fatal = [ratings, ranking, cloud, feed].some((query) => query.isError && !query.data);
+  if (fatal) return <div className="error-panel"><p>Social Voice data is temporarily unavailable.</p><button onClick={() => { ratings.refetch(); ranking.refetch(); cloud.refetch(); feed.refetch(); }}>Retry</button></div>;
   const updateFeed = (key: keyof FeedFilter, value: string) => setFeedFilter((current) => ({ ...current, [key]: value }));
   const keywords = cloud.data?.keywordCloud ?? [];
   const featuredKeywords = keywords.slice(0, 3);
@@ -48,7 +71,7 @@ export function SocialIntelligenceDashboard() {
 
   return <div className="social-page">
     <div className="social-page-intro"><div><span>Social Voice</span><h1>Market signals and brand activity</h1></div><p>{feed.data?.meta.stale ? `Using local pipeline snapshot${refreshed ? ` · ${refreshed}` : ""}` : `Data Synced${refreshed ? ` - ${refreshed}` : ""}`}</p></div>
-    <section className="social-overview-module"><header><div><span>Market overview</span><strong>Signals and engagement</strong></div><div className="social-mini-filters"><Select label="Period" value={overviewFilter.period} onChange={(period) => setOverviewFilter({ ...overviewFilter, period })} options={periods} /><Select label="Country" value={overviewFilter.country} onChange={(country) => setOverviewFilter({ ...overviewFilter, country })} options={countries} /><Select label="Platform" value={overviewFilter.platform} onChange={(platform) => setOverviewFilter({ ...overviewFilter, platform })} options={[{ value: "", label: "All platforms" }, ...(options?.platforms ?? []).map((value) => ({ value, label: value }))]} /><Select label="Monitor" value={overviewFilter.monitorType} onChange={(monitorType) => setOverviewFilter({ ...overviewFilter, monitorType })} options={[{ value: "", label: "All sources" }, ...(options?.monitorTypes ?? []).map((value) => ({ value, label: value === "trend_discovery" ? "Trend" : "Watchlist" }))]} /></div></header><div className="social-summary-strip"><div><span>Signals</span><strong>{number(overview.data?.metrics.signalCount)}</strong></div><div><span>Views</span><strong>{number(overview.data?.metrics.totalViews)}</strong></div><div><span>Likes</span><strong>{number(overview.data?.metrics.totalLikes)}</strong></div><div><span>Trend share</span><strong>{overview.data ? `${Math.round(overview.data.metrics.trendShare * 100)}%` : "—"}</strong></div></div></section>
+    <section className="social-overview-module social-rating-module"><header><div><span>Brand social ratings</span><strong>Competitive momentum by market</strong></div><div className="social-mini-filters"><Select label="Period" value={ratingFilter.period} onChange={(period) => setRatingFilter({ ...ratingFilter, period })} options={periods.filter((item) => item.value !== "1")} /><Select label="Country" value={ratingFilter.country} onChange={(country) => setRatingFilter({ ...ratingFilter, country })} options={countries.filter((item) => item.value)} /><Select label="Platform" value={ratingFilter.platform} onChange={(platform) => setRatingFilter({ ...ratingFilter, platform })} options={[{ value: "", label: "All platforms" }, ...(options?.platforms ?? []).map((value) => ({ value, label: value }))]} /><Select label="Monitor" value={ratingFilter.monitorType} onChange={(monitorType) => setRatingFilter({ ...ratingFilter, monitorType })} options={[{ value: "", label: "All sources" }, ...(options?.monitorTypes ?? []).map((value) => ({ value, label: value === "trend_discovery" ? "Trend" : "Watchlist" }))]} /></div></header>{ratings.isLoading ? <div className="module-loading">Calculating brand ratings…</div> : ratings.data?.series.length ? <BrandRatingChart points={ratings.data.series} brands={ratings.data.brands} dates={ratings.data.dates} /> : <p className="empty">Not enough verified brand data for this selection.</p>}<footer className="rating-methodology"><span>Rating V1.0</span><span>Activity 25%</span><span>Reach 20%</span><span>Engagement 30%</span><span>Earned mentions 25%</span><i title="Views are excluded and weights rebalanced when verified reach data is unavailable.">How it works ⓘ</i></footer></section>
     <section className="social-discovery-grid">
       <article className="social-ranking-module"><header><div><span>Top ranking</span><h2>Most popular content</h2></div><div className="social-inline-controls"><select value={rankingFilter.period} onChange={(e) => setRankingFilter({ ...rankingFilter, period: e.target.value })}>{periods.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select value={rankingFilter.country} onChange={(e) => setRankingFilter({ ...rankingFilter, country: e.target.value })}>{countries.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select value={rankingFilter.metric} onChange={(e) => setRankingFilter({ ...rankingFilter, metric: e.target.value as "views" | "likes" })}><option value="views">By views</option><option value="likes">By likes</option></select></div></header><div className="social-ranking-list">{ranking.data?.records.map((record, index) => <button key={record.recordId} onClick={() => setSelected(record)}><b>{index + 1}</b>{record.mediaUrl ? <img src={resolveApiAssetUrl(record.mediaUrl)} alt="" /> : <i>{record.platform}</i>}<span><strong>{record.title}</strong><small>{record.country} · {record.platform} · {record.accountName}</small></span><em>{engagement(record, rankingFilter.metric)}<small>{rankingFilter.metric}</small></em></button>)}</div></article>
       <article className="social-cloud-module"><header><div><span>Hot topics</span><h2>What the market is talking about</h2></div><div className="social-inline-controls"><select value={cloudFilter.period} onChange={(e) => setCloudFilter({ ...cloudFilter, period: e.target.value })}>{periods.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select value={cloudFilter.country} onChange={(e) => setCloudFilter({ ...cloudFilter, country: e.target.value })}>{countries.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div></header><div className="social-topic-leaders">{featuredKeywords.map((item, index) => <div key={item.label}><small>#{index + 1} theme</small><strong>{item.label}</strong><span>{item.count} signals</span></div>)}</div><div className="social-word-cloud">{supportingKeywords.map((item, index) => <span key={item.label} className={`word-tone-${index % 5}`} style={{ fontSize: `${11 + (item.count / maxKeyword) * 11}px` }} title={`${item.count} signals`}>{item.label}<i>{item.count}</i></span>)}</div>{!keywords.length && <p className="empty">No discussion themes found for this period.</p>}</article>

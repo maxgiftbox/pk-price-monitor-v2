@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import timedelta
+import math
 import re
 from typing import Any
 
@@ -29,6 +31,13 @@ PHRASE_RULES = {
     "AI features": r"\b(?:ai|artificial intelligence|google ai)\b",
     "gaming": r"\b(?:gaming|free fire|game)\w*\b",
 }
+
+BRAND_ALIASES = {
+    "apple": "Apple", "honor": "HONOR", "infinix": "Infinix", "itel": "Itel",
+    "nubia": "Nubia", "oppo": "OPPO", "realme": "realme", "redmi": "XIAOMI",
+    "samsung": "Samsung", "tecno": "TECNO", "vivo": "vivo", "xiaomi": "XIAOMI",
+}
+RATING_WEIGHTS = {"activity": 0.25, "reach": 0.20, "engagement": 0.30, "earned": 0.25}
 
 
 def _keyword_cloud(frame: pd.DataFrame) -> list[dict[str, Any]]:
@@ -78,6 +87,129 @@ def _filter(data: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
 
 def _values(frame: pd.DataFrame, column: str) -> list[str]:
     return sorted(value for value in frame[column].dropna().astype(str).str.strip().unique().tolist() if value)
+
+
+def _brands(value: Any) -> list[str]:
+    """Return stable brand entities; a record may legitimately mention multiple brands."""
+    found: list[str] = []
+    for raw in re.split(r"[;,/]", str(value or "")):
+        key = raw.strip().casefold()
+        if not key or key in {"nan", "all brand", "all brands", "other"}:
+            continue
+        brand = BRAND_ALIASES.get(key)
+        if brand and brand not in found:
+            found.append(brand)
+    return found
+
+
+def _scale(values: dict[str, float]) -> dict[str, float]:
+    """Log-normalized 0-100 score so one viral post cannot dominate the market."""
+    transformed = {key: math.log1p(max(0.0, float(value))) for key, value in values.items()}
+    if not transformed:
+        return {}
+    low, high = min(transformed.values()), max(transformed.values())
+    if high == low:
+        score = 100.0 if high > 0 else 0.0
+        return {key: score for key in transformed}
+    return {key: round((value - low) / (high - low) * 100, 2) for key, value in transformed.items()}
+
+
+def _rating_day(frame: pd.DataFrame, day: pd.Timestamp, window_days: int) -> list[dict[str, Any]]:
+    start = day - pd.Timedelta(days=window_days - 1)
+    window = frame[(frame["published_at"] >= start) & (frame["published_at"] < day + pd.Timedelta(days=1))].copy()
+    exploded: list[dict[str, Any]] = []
+    for row in window.to_dict("records"):
+        for brand in _brands(row.get("brand")):
+            exploded.append({**row, "rating_brand": brand})
+    if not exploded:
+        return []
+    rated = pd.DataFrame(exploded)
+    metrics: dict[str, dict[str, Any]] = {}
+    for brand, rows in rated.groupby("rating_brand"):
+        owned = rows[(rows["account_type"].str.casefold() == "brand") & (rows["monitor_type"].str.casefold() == "watchlist")]
+        earned = rows.drop(owned.index)
+        likes = rows["likes"].dropna()
+        views = rows["views"].dropna()
+        metrics[brand] = {
+            "voicePosts": int(owned["source_url"].nunique()),
+            "earnedMentions": int(earned["source_url"].nunique()),
+            "totalViews": int(views.sum()),
+            "totalLikes": int(likes.sum()),
+            "medianLikesPerPost": round(float(likes.median()), 1) if not likes.empty else None,
+            "signalCount": int(rows["source_url"].nunique()),
+            "viewsCoverage": round(float(rows["views"].notna().mean()), 4),
+            "engagementCoverage": round(float(rows["likes"].notna().mean()), 4),
+        }
+    activity = _scale({brand: item["voicePosts"] for brand, item in metrics.items()})
+    reach = _scale({brand: item["totalViews"] for brand, item in metrics.items() if item["viewsCoverage"] > 0})
+    total_likes = _scale({brand: item["totalLikes"] for brand, item in metrics.items()})
+    median_likes = _scale({brand: item["medianLikesPerPost"] or 0 for brand, item in metrics.items()})
+    earned = _scale({brand: item["earnedMentions"] for brand, item in metrics.items()})
+    results = []
+    for brand, item in metrics.items():
+        component = {
+            "activityScore": activity.get(brand, 0.0),
+            "reachScore": reach.get(brand),
+            "engagementScore": round(total_likes.get(brand, 0.0) * .7 + median_likes.get(brand, 0.0) * .3, 2),
+            "earnedScore": earned.get(brand, 0.0),
+        }
+        available = {
+            "activity": component["activityScore"], "engagement": component["engagementScore"],
+            "earned": component["earnedScore"],
+        }
+        if component["reachScore"] is not None:
+            available["reach"] = component["reachScore"]
+        weight_total = sum(RATING_WEIGHTS[key] for key in available)
+        rating = sum(value * RATING_WEIGHTS[key] for key, value in available.items()) / weight_total if weight_total else 0
+        coverage = (item["viewsCoverage"] + item["engagementCoverage"]) / 2
+        confidence = "High" if item["signalCount"] >= 5 and coverage >= .5 else "Medium" if item["signalCount"] >= 2 else "Low"
+        results.append({"date": day.date().isoformat(), "brand": brand, **item, **component, "socialRating": round(rating, 1), "confidenceLevel": confidence})
+    results.sort(key=lambda item: (-item["socialRating"], -item["signalCount"], item["brand"].casefold()))
+    for rank, item in enumerate(results, 1):
+        item["rank"] = rank
+    return results
+
+
+def brand_ratings(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
+    """Calculate a daily rolling brand-rating trajectory from verified intelligence."""
+    period_days = max(1, min(30, int(params.get("period_days") or 7)))
+    top_n = max(3, min(10, int(params.get("top_n") or 6)))
+    base_params = {
+        "country": [params["country"]] if params.get("country") else [],
+        "platform": [params["platform"]] if params.get("platform") else [],
+        "monitor_type": [params["monitor_type"]] if params.get("monitor_type") else [],
+    }
+    frame = _filter(data, base_params)
+    dated = frame["published_at"].dropna()
+    if dated.empty:
+        return {"dates": [], "brands": [], "series": [], "methodology": {"version": "1.0", "weights": RATING_WEIGHTS}}
+    end = pd.Timestamp(params.get("date_to"), tz="UTC") if params.get("date_to") else dated.max().normalize()
+    display_start = end - pd.Timedelta(days=period_days - 1)
+    days = pd.date_range(display_start, end, freq="D", tz="UTC")
+    daily = [_rating_day(frame, day, period_days) for day in days]
+    latest = daily[-1] if daily else []
+    selected = [item["brand"] for item in latest[:top_n]]
+    # When today's latest set is sparse, retain brands that led during the displayed period.
+    if len(selected) < top_n:
+        frequency = Counter(item["brand"] for rows in daily for item in rows)
+        selected.extend(brand for brand, _ in frequency.most_common() if brand not in selected and len(selected) < top_n)
+    previous: dict[str, dict[str, Any]] = {}
+    series = []
+    for rows in daily:
+        by_brand = {item["brand"]: item for item in rows}
+        for brand in selected:
+            item = by_brand.get(brand)
+            if not item:
+                continue
+            prior = previous.get(brand)
+            point = {**item, "rankChange": (prior["rank"] - item["rank"]) if prior else 0, "scoreChange": round(item["socialRating"] - prior["socialRating"], 1) if prior else 0.0}
+            series.append(point)
+            previous[brand] = item
+    leaders = [item for item in latest if item["brand"] in selected]
+    return {
+        "dates": [day.date().isoformat() for day in days], "brands": selected, "series": series, "leaders": leaders,
+        "methodology": {"version": "1.0", "windowDays": period_days, "weights": RATING_WEIGHTS, "missingReach": "Weights are rebalanced when verified views are unavailable."},
+    }
 
 
 def filters(data: pd.DataFrame) -> dict[str, Any]:

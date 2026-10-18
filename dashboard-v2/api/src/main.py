@@ -31,6 +31,7 @@ from src.services.product import filters as product_filters
 from src.services.response_cache import ResponseCache
 from src.services.social_intelligence import dashboard as social_intelligence_dashboard
 from src.services.social_intelligence import filters as social_intelligence_filters
+from src.services.social_intelligence import brand_ratings as social_brand_ratings
 
 
 app = FastAPI(
@@ -427,6 +428,25 @@ def social_intelligence_dashboard_data(
         payload["meta"].update(_social_meta(snapshot))
         return payload
     return app.state.response_cache.get_or_compute(key, build_social_dashboard)
+
+
+@app.get("/api/social-intelligence/ratings")
+def social_intelligence_brand_ratings(
+    periodDays: int = Query(7, ge=1, le=30),
+    country: str = "",
+    platform: str = "",
+    monitorType: str = "",
+    dateTo: str | None = None,
+    topN: int = Query(6, ge=3, le=10),
+):
+    snapshot = app.state.social_intelligence_repository.get()
+    params = {"period_days": periodDays, "country": country, "platform": platform, "monitor_type": monitorType, "date_to": dateTo, "top_n": topN}
+    key = _cache_key("social-intelligence-ratings", snapshot, periodDays, country, platform, monitorType, dateTo, topN)
+    def build_ratings():
+        payload = social_brand_ratings(snapshot.data, params)
+        payload["meta"] = _social_meta(snapshot)
+        return payload
+    return app.state.response_cache.get_or_compute(key, build_ratings)
 
 
 @app.get("/api/products/filters")
