@@ -17,6 +17,23 @@ function engagement(record: SocialRecord, metric: "views" | "likes") { return re
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label>{label}<select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>; }
 
 const BRAND_COLORS = ["#7c3aed", "#0f766e", "#ea580c", "#2563eb", "#db2777", "#ca8a04", "#0891b2", "#64748b", "#16a34a", "#9333ea"];
+const BRAND_MARKS: Record<string, string> = { TECNO: "T", Samsung: "S", XIAOMI: "mi", Xiaomi: "mi", OPPO: "O", vivo: "v", Infinix: "X", realme: "R", HONOR: "H", Honor: "H", Itel: "i", itel: "i", Nubia: "N", nubia: "N", Apple: "A" };
+
+function formatChartDate(value: string) {
+  const date = new Date(`${value}T00:00:00Z`);
+  return `${date.getUTCDate()} ${date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}`;
+}
+
+function spreadBrandLabels(items: { brand: string; score: number; color: string }[]) {
+  const sorted = [...items].sort((a, b) => b.score - a.score);
+  const minimumGap = sorted.length > 7 ? 9 : 11;
+  const positions = sorted.map((item) => Math.max(3, Math.min(97, 100 - item.score)));
+  for (let index = 1; index < positions.length; index += 1) positions[index] = Math.max(positions[index], positions[index - 1] + minimumGap);
+  const overflow = Math.max(0, (positions.at(-1) ?? 97) - 97);
+  if (overflow) for (let index = 0; index < positions.length; index += 1) positions[index] -= overflow;
+  for (let index = positions.length - 2; index >= 0; index -= 1) positions[index] = Math.min(positions[index], positions[index + 1] - minimumGap);
+  return sorted.map((item, index) => ({ ...item, position: Math.max(3, positions[index]) }));
+}
 
 function BrandRatingChart({ points, brands, dates }: { points: SocialRatingPoint[]; brands: string[]; dates: string[] }) {
   const data = dates.map((date) => {
@@ -24,18 +41,21 @@ function BrandRatingChart({ points, brands, dates }: { points: SocialRatingPoint
     points.filter((point) => point.date === date).forEach((point) => { row[`${point.brand}Rank`] = point.rank; row[`${point.brand}Score`] = point.socialRating; });
     return row;
   });
-  const latest = new Map(points.filter((point) => point.date === dates.at(-1)).map((point) => [point.brand, point]));
-  const rankMax = Math.max(brands.length, ...points.map((point) => point.rank));
-  return <>
-    <div className="rating-legend">{brands.map((brand, index) => <span key={brand}><i style={{ background: BRAND_COLORS[index % BRAND_COLORS.length] }} />{brand}<b>{latest.get(brand)?.socialRating ?? "—"}</b></span>)}</div>
-    <div className="rating-chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 24, right: 24, bottom: 4, left: 0 }}>
+  const latestByBrand = brands.map((brand, index) => {
+    const latestPoint = points.filter((point) => point.brand === brand).sort((a, b) => a.date.localeCompare(b.date)).at(-1);
+    return latestPoint ? { brand, score: latestPoint.socialRating, color: BRAND_COLORS[index % BRAND_COLORS.length] } : null;
+  }).filter((item): item is { brand: string; score: number; color: string } => Boolean(item));
+  const brandLabels = spreadBrandLabels(latestByBrand);
+  return <div className="rating-chart-layout">
+    <div className="rating-chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{ top: 18, right: 8, bottom: 4, left: 0 }}>
       <CartesianGrid stroke="#eef1f6" vertical={true} horizontal={true} />
-      <XAxis dataKey="date" tickFormatter={(value) => new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric" })} tick={{ fill: "#7b8799", fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
-      <YAxis reversed domain={[1, Math.max(3, rankMax)]} allowDecimals={false} width={34} tickFormatter={(value) => `#${value}`} tick={{ fill: "#94a3b8", fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
-      <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; return <div className="rating-tooltip"><strong>{new Date(`${label}T00:00:00Z`).toLocaleDateString(undefined, { dateStyle: "medium" })}</strong>{payload.map((entry) => { const brand = String(entry.dataKey).replace(/Rank$/, ""); const point = points.find((item) => item.date === label && item.brand === brand); return point ? <div key={brand}><i style={{ background: entry.color }} /><b>{brand}</b><span>#{point.rank} · {point.socialRating}/100</span><small>{point.voicePosts} posts · {point.earnedMentions} mentions · {number(point.totalLikes)} likes · {point.confidenceLevel} confidence</small></div> : null; })}</div>; }} />
-      {brands.map((brand, index) => <Line key={brand} type="monotone" dataKey={`${brand}Rank`} name={brand} connectNulls stroke={BRAND_COLORS[index % BRAND_COLORS.length]} strokeWidth={2.5} activeDot={{ r: 5 }} dot={(props: any) => { const score = props.payload?.[`${brand}Score`]; return score == null ? <g key={`${brand}-${props.index}`} /> : <g key={`${brand}-${props.index}`}><circle cx={props.cx} cy={props.cy} r="4" fill="white" stroke={BRAND_COLORS[index % BRAND_COLORS.length]} strokeWidth="2.5" /><text x={props.cx} y={props.cy - 8} textAnchor="middle" fill={BRAND_COLORS[index % BRAND_COLORS.length]} fontSize="8" fontWeight="800">{Math.round(score)}</text></g>; }} />)}
+      <XAxis dataKey="date" tickFormatter={formatChartDate} tick={{ fill: "#7b8799", fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
+      <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} width={30} tick={{ fill: "#94a3b8", fontSize: 8, fontWeight: 700 }} axisLine={false} tickLine={false} />
+      <Tooltip content={({ active, payload, label }) => { if (!active || !payload?.length) return null; return <div className="rating-tooltip"><strong>{new Date(`${label}T00:00:00Z`).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" })}</strong>{payload.map((entry) => { const brand = String(entry.dataKey).replace(/Score$/, ""); const point = points.find((item) => item.date === label && item.brand === brand); return point ? <div key={brand}><i style={{ background: entry.color }} /><b>{brand}</b><span>{point.socialRating}/100 · rank #{point.rank}</span><small>{point.voicePosts} posts · {point.earnedMentions} mentions · {number(point.totalLikes)} likes · {point.confidenceLevel} confidence</small></div> : null; })}</div>; }} />
+      {brands.map((brand, index) => <Line key={brand} type="linear" dataKey={`${brand}Score`} name={brand} connectNulls stroke={BRAND_COLORS[index % BRAND_COLORS.length]} strokeWidth={2.5} activeDot={{ r: 5, strokeWidth: 2 }} dot={{ r: 3.25, fill: "white", strokeWidth: 2.25 }} />)}
     </LineChart></ResponsiveContainer></div>
-  </>;
+    <aside className="rating-brand-axis" aria-label="Brands">{brandLabels.map((item) => <span key={item.brand} style={{ top: `${item.position}%`, color: item.color }} title={item.brand}><i style={{ background: item.color }}>{BRAND_MARKS[item.brand] ?? item.brand.slice(0, 1).toUpperCase()}</i><b>{item.brand}</b></span>)}</aside>
+  </div>;
 }
 
 function SignalCard({ record, onOpen }: { record: SocialRecord; onOpen: () => void }) {
