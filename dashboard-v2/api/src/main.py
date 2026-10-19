@@ -329,7 +329,7 @@ def pricing_dashboard():
                 "window_days": 1, "direction": "desc",
             }),
             "gap": gap(snapshot, {
-                "page": 1, "page_size": 15, "window_days": 7,
+                "page": 1, "page_size": 50, "window_days": 7,
                 "direction": "desc",
             }),
             "trend": trend(snapshot, {}),
