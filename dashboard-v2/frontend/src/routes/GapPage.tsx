@@ -59,7 +59,7 @@ export function GapPage({ initialFilters, initialGap }: { initialFilters?: Filte
   // Pagination default page size
   request.set(
     'pageSize',
-    '15'
+    '50'
   );
 
 

@@ -113,5 +113,5 @@ def test_dashboard_endpoint_combines_default_pricing_payloads():
 
     assert set(payload) == {"filters", "todayAction", "gap", "trend", "meta"}
     assert {row["date"] for row in payload["todayAction"]["rows"]} == {"2026-09-09"}
-    assert payload["gap"]["pagination"]["pageSize"] == 15
+    assert payload["gap"]["pagination"]["pageSize"] == 50
     assert len({row["date"] for row in payload["trend"]["rows"]}) == 7

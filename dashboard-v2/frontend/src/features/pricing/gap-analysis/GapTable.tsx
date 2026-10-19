@@ -193,8 +193,6 @@ export function GapTable({
   return (
     <div
       className="
-        max-h-[650px]
-        overflow-y-auto
         overflow-x-auto
       "
     >
