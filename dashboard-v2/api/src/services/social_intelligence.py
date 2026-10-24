@@ -36,6 +36,10 @@ BRAND_ALIASES = {
     "apple": "Apple", "honor": "HONOR", "infinix": "Infinix", "itel": "Itel",
     "nubia": "Nubia", "oppo": "OPPO", "realme": "realme", "redmi": "XIAOMI",
     "samsung": "Samsung", "tecno": "TECNO", "vivo": "vivo", "xiaomi": "XIAOMI",
+    "huawei": "Huawei", "motorola": "Motorola", "nokia": "Nokia", "oneplus": "OnePlus",
+    "google": "Google", "banglalink": "Banglalink", "grameenphone": "Grameenphone",
+    "jazz": "Jazz", "zong": "Zong", "telenor": "Telenor", "ufone": "Ufone",
+    "robi": "Robi", "airtel": "Airtel",
 }
 RATING_WEIGHTS = {"activity": 0.25, "reach": 0.20, "engagement": 0.30, "earned": 0.25}
 
@@ -68,12 +72,25 @@ def _filter(data: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
     frame = data
     for column, key in [
         ("country", "country"), ("platform", "platform"), ("monitor_type", "monitor_type"),
-        ("brand", "brand"), ("account_type", "account_type"), ("media_type", "media_type"),
+        ("account_type", "account_type"), ("media_type", "media_type"),
     ]:
         values = params.get(key) or []
         if values:
             wanted = {str(value).casefold() for value in values}
             frame = frame[frame[column].astype(str).str.casefold().isin(wanted)]
+    brand_values = params.get("brand") or []
+    if brand_values:
+        wanted_brands = {
+            canonical.casefold()
+            for value in brand_values
+            for canonical in (_brands(value) or [str(value).strip()])
+            if canonical
+        }
+        frame = frame[
+            frame["brand"].map(
+                lambda value: bool(wanted_brands.intersection(brand.casefold() for brand in _brands(value)))
+            )
+        ]
     if params.get("date_from"):
         frame = frame[frame["published_at"] >= pd.Timestamp(params["date_from"], tz="UTC")]
     if params.get("date_to"):
@@ -100,6 +117,14 @@ def _brands(value: Any) -> list[str]:
         if brand and brand not in found:
             found.append(brand)
     return found
+
+
+def _brand_values(frame: pd.DataFrame) -> list[str]:
+    """Return one canonical option per brand, never a raw multi-brand cell."""
+    return sorted(
+        {brand for value in frame["brand"].dropna() for brand in _brands(value)},
+        key=str.casefold,
+    )
 
 
 def _scale(values: dict[str, float]) -> dict[str, float]:
@@ -216,7 +241,7 @@ def filters(data: pd.DataFrame) -> dict[str, Any]:
     dates = data["published_at"].dropna()
     return {"options": {
         "countries": _values(data, "country"), "platforms": _values(data, "platform"),
-        "monitorTypes": _values(data, "monitor_type"), "brands": _values(data, "brand"),
+        "monitorTypes": _values(data, "monitor_type"), "brands": _brand_values(data),
         "accountTypes": _values(data, "account_type"), "mediaTypes": _values(data, "media_type"),
         "dateRange": {"min": dates.min().date().isoformat() if not dates.empty else None, "max": dates.max().date().isoformat() if not dates.empty else None},
     }}
