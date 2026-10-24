@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from src.data_sources.google_sheets import Snapshot
 from src.main import app
-from src.services.social_intelligence import brand_ratings
+from src.services.social_intelligence import brand_ratings, dashboard, filters
 
 
 def fixture() -> pd.DataFrame:
@@ -41,3 +41,35 @@ def test_social_ratings_endpoint(monkeypatch):
     assert response.status_code == 200
     assert response.json()["leaders"][0]["brand"] == "vivo"
     assert response.json()["meta"]["stale"] is False
+
+
+def test_brand_filter_options_are_canonical_individual_entities():
+    frame = fixture()
+    extra = frame.iloc[[0]].copy()
+    extra["record_id"] = "multi-brand"
+    extra["source_url"] = "https://example.com/multi-brand"
+    extra["brand"] = "Apple; Samsung; Xiaomi"
+    duplicates = frame.iloc[[0, 0]].copy()
+    duplicates["record_id"] = ["honor-upper", "honor-title"]
+    duplicates["source_url"] = ["https://example.com/honor-upper", "https://example.com/honor-title"]
+    duplicates["brand"] = ["HONOR", "Honor"]
+    data = pd.concat([frame, extra, duplicates], ignore_index=True)
+
+    brands = filters(data)["options"]["brands"]
+
+    assert brands == ["Apple", "HONOR", "OPPO", "Samsung", "vivo", "XIAOMI"]
+    assert "Apple; Samsung; Xiaomi" not in brands
+
+
+def test_single_brand_filter_matches_a_multi_brand_record():
+    frame = fixture()
+    extra = frame.iloc[[0]].copy()
+    extra["record_id"] = "multi-brand"
+    extra["source_url"] = "https://example.com/multi-brand"
+    extra["brand"] = "Apple; Samsung; Xiaomi"
+    data = pd.concat([frame, extra], ignore_index=True)
+
+    result = dashboard(data, {"brand": ["Samsung"], "limit": 40})
+
+    assert result["meta"]["filteredCount"] == 1
+    assert result["records"][0]["recordId"] == "multi-brand"
