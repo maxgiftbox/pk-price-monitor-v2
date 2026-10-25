@@ -10,6 +10,7 @@ import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
 import { ProductIntelligencePage } from './routes/ProductIntelligencePage';
 import { SocialIntelligenceDashboard } from './routes/SocialIntelligenceDashboard';
 import { PricingAccessGate } from './routes/PricingAccessGate';
+import { AvailabilityDashboard } from './routes/AvailabilityDashboard';
 import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
@@ -44,6 +45,14 @@ const router = createBrowserRouter([
       {
         path: '/pricing/gap',
         element: <PricingAccessGate><GapPage /></PricingAccessGate>,
+      },
+      {
+        path: '/availability',
+        element: <PricingAccessGate
+          title="Availability Intelligence"
+          description="此页面包含库存可售状态，请输入访问密码。"
+          buttonLabel="进入 Availability"
+        ><AvailabilityDashboard /></PricingAccessGate>,
       },
       {
         path: '/consumer-voice',

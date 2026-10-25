@@ -22,6 +22,7 @@ from src.data_sources.google_sheets import (
 )
 from src.services.pricing import filters, gap, meta, trend
 from src.data_sources.consumer_voice import ConsumerVoiceRepository
+from src.data_sources.availability import AvailabilityRepository
 from src.data_sources.product_features import ProductFeaturesRepository
 from src.data_sources.social_intelligence import SocialIntelligenceRepository
 from src.services.consumer_voice import dashboard as consumer_voice_dashboard
@@ -32,6 +33,7 @@ from src.services.response_cache import ResponseCache
 from src.services.social_intelligence import dashboard as social_intelligence_dashboard
 from src.services.social_intelligence import filters as social_intelligence_filters
 from src.services.social_intelligence import brand_ratings as social_brand_ratings
+from src.services.availability import dashboard as availability_dashboard
 
 
 app = FastAPI(
@@ -98,7 +100,7 @@ async def protect_pricing_api(request: Request, call_next):
     if (
         request.method != "OPTIONS"
         and
-        request.url.path.startswith("/api/pricing/")
+        (request.url.path.startswith("/api/pricing/") or request.url.path.startswith("/api/availability/"))
         and request.url.path != "/api/pricing/auth"
         and not _has_pricing_access(request)
     ):
@@ -165,6 +167,10 @@ app.state.social_intelligence_repository = SocialIntelligenceRepository(
     ttl_seconds=int(os.getenv("SOCIAL_INTELLIGENCE_CACHE_TTL_SECONDS", "900")),
     initial_load_timeout_seconds=int(os.getenv("SOCIAL_INTELLIGENCE_INITIAL_LOAD_TIMEOUT_SECONDS", "30")),
 )
+app.state.availability_repository = AvailabilityRepository(
+    ttl_seconds=int(os.getenv("AVAILABILITY_CACHE_TTL_SECONDS", "900")),
+    initial_load_timeout_seconds=int(os.getenv("AVAILABILITY_INITIAL_LOAD_TIMEOUT_SECONDS", "12")),
+)
 app.state.response_cache = ResponseCache(
     ttl_seconds=int(os.getenv("PRICING_RESPONSE_CACHE_TTL_SECONDS", "900")),
     max_entries=int(os.getenv("PRICING_RESPONSE_CACHE_MAX_ENTRIES", "256")),
@@ -216,6 +222,36 @@ def unavailable(
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/availability/dashboard")
+def availability_dashboard_data(
+    venture: list[str] = Query([]),
+    brand: list[str] = Query([]),
+    category: list[str] = Query([]),
+    status: list[str] = Query([]),
+    priority: list[str] = Query([]),
+    search: str = "",
+):
+    snapshot = app.state.availability_repository.get()
+    key = _cache_key(
+        "availability-dashboard",
+        snapshot,
+        _values(venture), _values(brand), _values(category),
+        _values(status), _values(priority), search,
+    )
+    params = {
+        "venture": venture,
+        "brand": brand,
+        "category": category,
+        "status": status,
+        "priority": priority,
+        "search": search,
+    }
+    return app.state.response_cache.get_or_compute(
+        key,
+        lambda: availability_dashboard(snapshot, params),
+    )
 
 
 @app.get("/api/pricing/filters")
