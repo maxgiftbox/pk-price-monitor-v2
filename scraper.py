@@ -1507,6 +1507,7 @@ def parse_daraz(
             "stock_status": stock_status,
             "voucher_amount": 0,
             "effective_price": product_price,
+            "final_url": page.url,
         }
     except PlaywrightTimeoutError:
         print(f"[DARAZ PRICE DEBUG] url={product_url} selector_price= parsed_price=")

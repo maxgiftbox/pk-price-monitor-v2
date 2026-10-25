@@ -7,6 +7,7 @@ import type {
 import type { ConsumerVoiceDashboard, ConsumerVoiceFilters } from "../types/consumerVoice";
 import type { ProductComparisonResponse, ProductFiltersResponse } from "../types/product";
 import type { SocialDashboard, SocialFilters, SocialRatings } from "../types/socialIntelligence";
+import type { AvailabilityDashboard } from "../types/availability";
 
 // Production:
 // VITE_API_BASE_URL=https://your-api-service.onrender.com
@@ -157,4 +158,9 @@ export const socialIntelligenceApi = {
   filters: () => request<SocialFilters>("/api/social-intelligence/filters", new URLSearchParams()),
   dashboard: (params: URLSearchParams) => request<SocialDashboard>("/api/social-intelligence/dashboard", params),
   ratings: (params: URLSearchParams) => request<SocialRatings>("/api/social-intelligence/ratings", params),
+};
+
+export const availabilityApi = {
+  dashboard: (params: URLSearchParams) =>
+    request<AvailabilityDashboard>("/api/availability/dashboard", params),
 };

@@ -10,6 +10,7 @@ import { ConsumerVoiceDashboard } from './routes/ConsumerVoiceDashboard';
 import { ProductIntelligencePage } from './routes/ProductIntelligencePage';
 import { SocialIntelligenceDashboard } from './routes/SocialIntelligenceDashboard';
 import { PricingAccessGate } from './routes/PricingAccessGate';
+import { AvailabilityDashboard } from './routes/AvailabilityDashboard';
 import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
@@ -44,6 +45,10 @@ const router = createBrowserRouter([
       {
         path: '/pricing/gap',
         element: <PricingAccessGate><GapPage /></PricingAccessGate>,
+      },
+      {
+        path: '/availability',
+        element: <PricingAccessGate><AvailabilityDashboard /></PricingAccessGate>,
       },
       {
         path: '/consumer-voice',
