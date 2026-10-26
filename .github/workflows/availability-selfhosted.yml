@@ -28,7 +28,7 @@ jobs:
       - name: Crawl all Daraz variant SKUs
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: /opt/homebrew/bin/python3.11 availability_crawler.py
+        run: /usr/bin/caffeinate -dimsu /opt/homebrew/bin/python3.11 availability_crawler.py
 
       - name: Upload availability debug artifacts
         if: always()
