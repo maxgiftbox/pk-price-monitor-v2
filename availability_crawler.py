@@ -11,9 +11,9 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-from daraz_selfhosted import crawl_daraz_with_retries
 from scraper import SHEET_NAME, get_gspread_client, google_sheets_retry
 
 
@@ -23,6 +23,8 @@ STAGING_TAB = "drz_availability_staging"
 RUN_LOG_TAB = "availability_run_log"
 DEBUG_DIR = "debug_availability"
 THROTTLE_SECONDS = float(os.getenv("AVAILABILITY_THROTTLE_SECONDS", "4"))
+NETWORK_MAX_ATTEMPTS = 3
+NETWORK_RETRY_DELAYS = (5, 10)
 
 AVAILABILITY_COLUMNS = [
     "run_id",
@@ -82,6 +84,139 @@ def classify_availability(result: Dict[str, Any]) -> tuple[str, str]:
     if "price not parsed" in folded:
         return "unknown", "parse_failure"
     return "unknown", "unverified"
+
+
+def classify_purchase_signals(signals: Dict[str, Any]) -> tuple[str, str]:
+    """Map PDP purchase controls to Availability without relying on price parsing."""
+    if signals.get("purchase_action_enabled"):
+        return "active", "purchase_action_enabled"
+    if signals.get("out_of_stock_visible"):
+        return "out_of_stock", "out_of_stock_visible"
+    if signals.get("wishlist_visible") and not signals.get("purchase_action_enabled"):
+        return "out_of_stock", "wishlist_only"
+    if signals.get("purchase_action_visible"):
+        return "out_of_stock", "purchase_action_disabled"
+    return "unknown", "purchase_state_not_found"
+
+
+def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
+    """Inspect visible PDP actions and distinguish enabled purchasing from wishlist-only."""
+    return page.evaluate(
+        r"""
+        () => {
+            const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const visible = (element) => {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' &&
+                    Number(style.opacity || 1) > 0 && rect.width > 0 && rect.height > 0;
+            };
+            const enabled = (element) => {
+                const classes = normalize(element.className);
+                const style = window.getComputedStyle(element);
+                return !element.disabled && element.getAttribute('aria-disabled') !== 'true' &&
+                    !/(^|\s)(disabled|is-disabled)(\s|$)/.test(classes) &&
+                    style.pointerEvents !== 'none';
+            };
+            const controls = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'))
+                .filter(visible)
+                .map((element) => ({
+                    text: normalize(element.innerText || element.value || element.getAttribute('aria-label')),
+                    enabled: enabled(element),
+                }));
+            const purchase = controls.filter(({ text }) => /(^|\b)(buy now|add to cart)(\b|$)/.test(text));
+            const wishlist = controls.some(({ text }) => /add to wishlist|wishlist/.test(text));
+            const body = normalize(document.body && document.body.innerText);
+            return {
+                purchase_action_visible: purchase.length > 0,
+                purchase_action_enabled: purchase.some(({ enabled: isEnabled }) => isEnabled),
+                wishlist_visible: wishlist,
+                out_of_stock_visible: /\bout of stock\b|\bsold out\b|this item is no longer available/.test(body),
+                purchase_action_labels: purchase.map(({ text }) => text).slice(0, 5),
+            };
+        }
+        """
+    )
+
+
+def crawl_daraz_availability(
+    context: Any,
+    url: str,
+    row: Dict[str, Any],
+    recover_context: Any = None,
+) -> tuple[Dict[str, Any], Any]:
+    """Crawl one SKU using PDP purchase controls, independently from Pricing parsing."""
+    for attempt in range(1, NETWORK_MAX_ATTEMPTS + 1):
+        page = context.new_page()
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(1500)
+            body_text = page.locator("body").inner_text(timeout=10000)
+            folded = body_text.casefold()
+            final_url = page.url
+
+            if any(marker in folded for marker in ("captcha", "verify you are human", "unusual traffic", "robot check")):
+                return {
+                    "stock_status": "unknown",
+                    "final_url": final_url,
+                    "error_message": "CAPTCHA detected; crawl not bypassed",
+                }, context
+
+            title = page.title().casefold()
+            unavailable_page = (
+                (response is not None and response.status == 404)
+                or "we seem to have lost this page" in folded
+                or "we're sorry, an error has occurred" in folded
+                or "we’re sorry, an error has occurred" in folded
+                or "error" in title
+            )
+            if unavailable_page:
+                return {
+                    "stock_status": "out_of_stock",
+                    "final_url": final_url,
+                    "error_message": "Daraz PDP unavailable / 404",
+                }, context
+
+            signals: Dict[str, Any] = {}
+            for _ in range(8):
+                signals = inspect_purchase_controls(page)
+                if any(
+                    signals.get(key)
+                    for key in (
+                        "purchase_action_visible",
+                        "wishlist_visible",
+                        "out_of_stock_visible",
+                    )
+                ):
+                    break
+                page.wait_for_timeout(1000)
+            stock_status, signal_reason = classify_purchase_signals(signals)
+            return {
+                "stock_status": stock_status,
+                "final_url": final_url,
+                "availability_signal": signal_reason,
+                "purchase_action_labels": signals.get("purchase_action_labels", []),
+            }, context
+        except PlaywrightTimeoutError:
+            error_message = "Timeout while loading availability controls"
+        except Exception as exc:  # noqa: BLE001
+            error_message = f"Navigation failed: {exc}"
+        finally:
+            try:
+                page.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+        if attempt == NETWORK_MAX_ATTEMPTS:
+            return {
+                "stock_status": "unknown",
+                "error_message": f"Network failure after {NETWORK_MAX_ATTEMPTS} attempts: {error_message}",
+            }, context
+        if recover_context is not None:
+            context = recover_context(context)
+        time.sleep(NETWORK_RETRY_DELAYS[attempt - 1])
+
+    raise AssertionError("unreachable")
 
 
 def sku_verified(row: Dict[str, Any], result: Dict[str, Any]) -> bool:
@@ -184,7 +319,7 @@ def main() -> None:
 
             try:
                 for index, source in enumerate(source_rows, start=1):
-                    result, context = crawl_daraz_with_retries(
+                    result, context = crawl_daraz_availability(
                         context,
                         str(source["url_daraz"]).strip(),
                         source,

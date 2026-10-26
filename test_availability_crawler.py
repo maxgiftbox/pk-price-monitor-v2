@@ -1,6 +1,11 @@
 import unittest
 
-from availability_crawler import build_row, classify_availability, extract_memory
+from availability_crawler import (
+    build_row,
+    classify_availability,
+    classify_purchase_signals,
+    extract_memory,
+)
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
@@ -14,6 +19,34 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         self.assertEqual(classify_availability({"stock_status": "out_of_stock"})[0], "unavailable")
         self.assertEqual(classify_availability({"error_message": "Daraz PDP unavailable / 404"})[0], "unavailable")
         self.assertEqual(classify_availability({"error_message": "CAPTCHA detected"})[0], "unknown")
+
+    def test_purchase_controls_define_availability_without_price(self):
+        self.assertEqual(
+            classify_purchase_signals({"purchase_action_enabled": True}),
+            ("active", "purchase_action_enabled"),
+        )
+        self.assertEqual(
+            classify_purchase_signals({
+                "purchase_action_enabled": False,
+                "wishlist_visible": True,
+                "out_of_stock_visible": True,
+            }),
+            ("out_of_stock", "out_of_stock_visible"),
+        )
+        self.assertEqual(
+            classify_purchase_signals({
+                "purchase_action_enabled": False,
+                "wishlist_visible": True,
+            }),
+            ("out_of_stock", "wishlist_only"),
+        )
+        self.assertEqual(
+            classify_purchase_signals({
+                "purchase_action_enabled": False,
+                "purchase_action_visible": True,
+            }),
+            ("out_of_stock", "purchase_action_disabled"),
+        )
 
     def test_available_variant_must_match_final_url(self):
         source = {
