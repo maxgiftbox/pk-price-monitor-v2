@@ -105,6 +105,9 @@ def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
         r"""
         () => {
             const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const scope = document.querySelector(
+                '#module_product_detail, .pdp-product-detail, [data-spm="product_detail"]'
+            ) || document.querySelector('main') || document.body;
             const visible = (element) => {
                 const style = window.getComputedStyle(element);
                 const rect = element.getBoundingClientRect();
@@ -118,7 +121,7 @@ def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
                     !/(^|\s)(disabled|is-disabled)(\s|$)/.test(classes) &&
                     style.pointerEvents !== 'none';
             };
-            const controls = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'))
+            const controls = Array.from(scope.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'))
                 .filter(visible)
                 .map((element) => ({
                     text: normalize(element.innerText || element.value || element.getAttribute('aria-label')),
@@ -126,7 +129,7 @@ def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
                 }));
             const purchase = controls.filter(({ text }) => /(^|\b)(buy now|add to cart)(\b|$)/.test(text));
             const wishlist = controls.some(({ text }) => /add to wishlist|wishlist/.test(text));
-            const body = normalize(document.body && document.body.innerText);
+            const body = normalize(scope.innerText);
             return {
                 purchase_action_visible: purchase.length > 0,
                 purchase_action_enabled: purchase.some(({ enabled: isEnabled }) => isEnabled),
@@ -180,14 +183,7 @@ def crawl_daraz_availability(
             signals: Dict[str, Any] = {}
             for _ in range(8):
                 signals = inspect_purchase_controls(page)
-                if any(
-                    signals.get(key)
-                    for key in (
-                        "purchase_action_visible",
-                        "wishlist_visible",
-                        "out_of_stock_visible",
-                    )
-                ):
+                if signals.get("purchase_action_enabled") or signals.get("out_of_stock_visible"):
                     break
                 page.wait_for_timeout(1000)
             stock_status, signal_reason = classify_purchase_signals(signals)
