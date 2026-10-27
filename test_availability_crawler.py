@@ -83,6 +83,64 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         self.assertEqual(results["10"]["stock_status"], "active")
         self.assertEqual(results["11"]["stock_status"], "out_of_stock")
         self.assertEqual(results["11"]["verified_sku_id"], "11")
+        self.assertTrue(result_requires_fallback(results["11"]))
+
+    def test_loaded_available_sibling_does_not_require_fallback(self):
+        payload = {
+            "primarySkuId": "10",
+            "loadedSkuIds": ["10", "11"],
+            "skuInfos": {
+                "10": {"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}},
+                "11": {"quantity": {"limit": {"max": 2}}, "operation": {"type": "default"}},
+            },
+        }
+        signals = {
+            "purchase_action_enabled": True,
+            "purchase_action_visible": True,
+            "wishlist_visible": False,
+            "out_of_stock_visible": False,
+            "purchase_action_labels": ["buy now", "add to cart"],
+        }
+        results = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")
+        self.assertEqual(results["11"]["stock_status"], "active")
+        self.assertFalse(result_requires_fallback(results["11"]))
+
+    def test_primary_quantity_unavailable_without_dom_confirmation_requires_fallback(self):
+        payload = {
+            "primarySkuId": "10",
+            "loadedSkuIds": ["10"],
+            "skuInfos": {
+                "10": {"quantity": {"limit": {"max": 0}, "text": "Out of stock"}},
+            },
+        }
+        result = product_results_from_payload(
+            payload,
+            {},
+            "https://daraz/i1-s10.html",
+        )["10"]
+        self.assertEqual(result["stock_status"], "out_of_stock")
+        self.assertEqual(result["availability_signal"], "sku_quantity_unavailable")
+        self.assertTrue(result_requires_fallback(result))
+
+    def test_primary_dom_can_confirm_quantity_unavailable(self):
+        payload = {
+            "primarySkuId": "10",
+            "loadedSkuIds": ["10"],
+            "skuInfos": {
+                "10": {"quantity": {"limit": {"max": 0}, "text": "Out of stock"}},
+            },
+        }
+        signals = {
+            "purchase_action_enabled": False,
+            "purchase_action_visible": False,
+            "wishlist_visible": True,
+            "out_of_stock_visible": True,
+            "purchase_action_labels": [],
+        }
+        result = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")["10"]
+        self.assertEqual(result["stock_status"], "out_of_stock")
+        self.assertEqual(result["availability_signal"], "out_of_stock_visible")
+        self.assertFalse(result_requires_fallback(result))
 
     def test_marks_primary_conflict_unknown(self):
         payload = {
