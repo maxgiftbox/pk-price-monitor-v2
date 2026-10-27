@@ -256,10 +256,18 @@ def product_results_from_payload(
             elif sku_id not in loaded_skus:
                 stock_status, signal_reason = "unknown", "sku_not_loaded"
                 requires_fallback = True
+            elif signal_reason == "sku_quantity_unavailable":
+                # Daraz may report max=0 for a SKU that is still purchasable on
+                # its own PDP. Treat the batch quantity as a lead, not proof.
+                requires_fallback = True
             elif stock_status == "unknown":
                 requires_fallback = True
         elif sku_id not in loaded_skus:
             stock_status, signal_reason = "unknown", "sku_not_loaded"
+            requires_fallback = True
+        elif signal_reason == "sku_quantity_unavailable":
+            # A sibling SKU must be opened directly before it can be published
+            # as unavailable; only the target PDP controls are authoritative.
             requires_fallback = True
         elif stock_status == "unknown":
             requires_fallback = True
