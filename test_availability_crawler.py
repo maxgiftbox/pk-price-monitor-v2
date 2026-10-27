@@ -9,6 +9,8 @@ from availability_crawler import (
     group_source_rows,
     inspect_purchase_controls,
     product_results_from_payload,
+    resolve_single_sku_result,
+    result_requires_fallback,
 )
 
 
@@ -64,6 +66,7 @@ class AvailabilityCrawlerTests(unittest.TestCase):
     def test_maps_all_product_variants_and_cross_checks_primary_dom(self):
         payload = {
             "primarySkuId": "10",
+            "loadedSkuIds": ["10", "11"],
             "skuInfos": {
                 "10": {"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}},
                 "11": {"quantity": {"limit": {"max": 0}, "text": "Out of stock"}},
@@ -84,6 +87,7 @@ class AvailabilityCrawlerTests(unittest.TestCase):
     def test_marks_primary_conflict_unknown(self):
         payload = {
             "primarySkuId": "10",
+            "loadedSkuIds": ["10"],
             "skuInfos": {
                 "10": {"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}},
             },
@@ -98,6 +102,61 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         result = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")["10"]
         self.assertEqual(result["stock_status"], "unknown")
         self.assertTrue(result["availability_signal"].startswith("state_conflict:"))
+        self.assertTrue(result_requires_fallback(result))
+
+    def test_unloaded_sibling_requires_single_sku_fallback(self):
+        payload = {
+            "primarySkuId": "10",
+            "loadedSkuIds": ["10"],
+            "skuInfos": {
+                "10": {"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}},
+                "11": {"quantity": {"limit": {"max": 0}, "text": "Out of stock"}},
+            },
+        }
+        signals = {
+            "purchase_action_enabled": True,
+            "purchase_action_visible": True,
+            "wishlist_visible": False,
+            "out_of_stock_visible": False,
+            "purchase_action_labels": ["buy now", "add to cart"],
+        }
+        results = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")
+        self.assertEqual(results["10"]["stock_status"], "active")
+        self.assertFalse(result_requires_fallback(results["10"]))
+        self.assertEqual(results["11"]["stock_status"], "unknown")
+        self.assertEqual(results["11"]["availability_signal"], "sku_not_loaded")
+        self.assertTrue(result_requires_fallback(results["11"]))
+
+    def test_unknown_classification_preserves_specific_signal(self):
+        self.assertEqual(
+            classify_availability({
+                "stock_status": "unknown",
+                "availability_signal": "sku_state_not_found",
+            }),
+            ("unknown", "sku_state_not_found"),
+        )
+
+    def test_single_sku_fallback_uses_visible_purchase_controls_without_payload(self):
+        result = resolve_single_sku_result(None, {
+            "purchase_action_enabled": True,
+            "purchase_action_visible": True,
+            "wishlist_visible": False,
+            "out_of_stock_visible": False,
+            "purchase_action_labels": ["buy now", "add to cart"],
+        }, "https://daraz/i1-s11.html")
+        self.assertEqual(result["stock_status"], "active")
+        self.assertEqual(result["availability_signal"], "purchase_action_enabled")
+        self.assertFalse(result_requires_fallback(result))
+
+    def test_single_sku_fallback_preserves_unknown_reason(self):
+        result = resolve_single_sku_result({
+            "stock_status": "unknown",
+            "availability_signal": "state_conflict:quantity:dom",
+            "requires_fallback": True,
+        }, {}, "https://daraz/i1-s11.html")
+        self.assertEqual(result["stock_status"], "unknown")
+        self.assertEqual(result["availability_signal"], "state_conflict:quantity:dom")
+        self.assertFalse(result_requires_fallback(result))
 
     def test_sibling_variant_is_verified_by_payload_sku(self):
         source = {

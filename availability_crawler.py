@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -86,7 +86,7 @@ def classify_availability(result: Dict[str, Any]) -> tuple[str, str]:
         return "unknown", "network_failure"
     if "price not parsed" in folded:
         return "unknown", "parse_failure"
-    return "unknown", "unverified"
+    return "unknown", signal_reason or "unverified"
 
 
 def classify_purchase_signals(signals: Dict[str, Any]) -> tuple[str, str]:
@@ -235,23 +235,74 @@ def product_results_from_payload(
     final_url: str,
 ) -> Dict[str, Dict[str, Any]]:
     primary_sku = str(payload.get("primarySkuId", ""))
+    loaded_skus = {str(sku_id) for sku_id in (payload.get("loadedSkuIds") or [])}
     results: Dict[str, Dict[str, Any]] = {}
     for sku_id, info in (payload.get("skuInfos") or {}).items():
+        sku_id = str(sku_id)
         stock_status, signal_reason = classify_sku_info(info)
-        if str(sku_id) == primary_sku:
+        requires_fallback = False
+        if sku_id == primary_sku:
             dom_status, dom_reason = classify_purchase_signals(signals)
-            if dom_status != "unknown" and stock_status != "unknown" and dom_status != stock_status:
+            if (
+                sku_id in loaded_skus
+                and dom_status != "unknown"
+                and stock_status != "unknown"
+                and dom_status != stock_status
+            ):
                 stock_status, signal_reason = "unknown", f"state_conflict:{signal_reason}:{dom_reason}"
-            elif stock_status == "unknown" and dom_status != "unknown":
+                requires_fallback = True
+            elif dom_status != "unknown":
                 stock_status, signal_reason = dom_status, dom_reason
-        results[str(sku_id)] = {
+            elif sku_id not in loaded_skus:
+                stock_status, signal_reason = "unknown", "sku_not_loaded"
+                requires_fallback = True
+            elif stock_status == "unknown":
+                requires_fallback = True
+        elif sku_id not in loaded_skus:
+            stock_status, signal_reason = "unknown", "sku_not_loaded"
+            requires_fallback = True
+        elif stock_status == "unknown":
+            requires_fallback = True
+
+        results[sku_id] = {
             "stock_status": stock_status,
             "final_url": final_url,
             "availability_signal": signal_reason,
-            "verified_sku_id": str(sku_id),
-            "purchase_action_labels": signals.get("purchase_action_labels", []) if str(sku_id) == primary_sku else [],
+            "verified_sku_id": sku_id,
+            "purchase_action_labels": signals.get("purchase_action_labels", []) if sku_id == primary_sku else [],
+            "requires_fallback": requires_fallback,
         }
     return results
+
+
+def result_requires_fallback(result: Optional[Dict[str, Any]]) -> bool:
+    return result is None or bool(result.get("requires_fallback"))
+
+
+def resolve_single_sku_result(
+    result: Optional[Dict[str, Any]],
+    signals: Dict[str, Any],
+    final_url: str,
+) -> Dict[str, Any]:
+    """Resolve a SKU-specific PDP from its visible controls when batch data is incomplete."""
+    dom_status, dom_reason = classify_purchase_signals(signals)
+    if dom_status != "unknown":
+        return {
+            "stock_status": dom_status,
+            "final_url": final_url,
+            "availability_signal": dom_reason,
+            "purchase_action_labels": signals.get("purchase_action_labels", []),
+            "requires_fallback": False,
+        }
+    unresolved = dict(result or {})
+    unresolved.update({
+        "stock_status": "unknown",
+        "final_url": final_url,
+        "availability_signal": unresolved.get("availability_signal") or "sku_state_not_found",
+        "error_message": "Single-SKU PDP did not expose a decisive purchase state",
+        "requires_fallback": False,
+    })
+    return unresolved
 
 
 def _unknown_results(rows: Iterable[Dict[str, Any]], error_message: str, final_url: str = "") -> Dict[str, Dict[str, Any]]:
@@ -311,6 +362,12 @@ def crawl_daraz_product(
             payload = inspect_product_sku_data(page)
             results = product_results_from_payload(payload, signals, final_url)
             matched = {sku: result for sku, result in results.items() if sku in source_skus}
+            if len(rows) == 1:
+                sku_id = seller_sku_id(rows[0])
+                single_result = matched.get(sku_id)
+                if result_requires_fallback(single_result):
+                    single_result = resolve_single_sku_result(single_result, signals, final_url)
+                return {sku_id: single_result}, context
             if matched:
                 return matched, context
             error_message = "Rendered PDP did not expose any requested seller SKU"
@@ -476,7 +533,7 @@ def main() -> None:
                     for source in source_group:
                         sku_id = seller_sku_id(source)
                         result = product_results.get(sku_id)
-                        if result is None:
+                        if result_requires_fallback(result):
                             time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
                             result, context = crawl_daraz_availability(
                                 context,
