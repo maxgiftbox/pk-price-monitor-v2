@@ -4,9 +4,11 @@ from availability_crawler import (
     build_row,
     classify_availability,
     classify_purchase_signals,
-    crawl_daraz_availability,
+    classify_sku_info,
     extract_memory,
+    group_source_rows,
     inspect_purchase_controls,
+    product_results_from_payload,
 )
 
 
@@ -35,86 +37,86 @@ class AvailabilityCrawlerTests(unittest.TestCase):
             }),
             ("out_of_stock", "out_of_stock_visible"),
         )
+
+    def test_groups_source_rows_by_country_and_product(self):
+        rows = [
+            {"venture": "PK", "product_id": "1", "daraz_sku": "1_PK-10"},
+            {"venture": "PK", "product_id": "1", "daraz_sku": "1_PK-11"},
+            {"venture": "BD", "product_id": "1", "daraz_sku": "1_BD-20"},
+        ]
+        groups = group_source_rows(rows)
+        self.assertEqual([len(group) for group in groups], [2, 1])
+
+    def test_classifies_quantity_and_wishlist_states(self):
         self.assertEqual(
-            classify_purchase_signals({
-                "purchase_action_enabled": False,
-                "wishlist_visible": True,
-            }),
-            ("out_of_stock", "wishlist_only"),
+            classify_sku_info({"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}}),
+            ("active", "sku_quantity_available"),
         )
         self.assertEqual(
-            classify_purchase_signals({
-                "purchase_action_enabled": False,
-                "purchase_action_visible": True,
-            }),
-            ("out_of_stock", "purchase_action_disabled"),
+            classify_sku_info({"quantity": {"limit": {"max": 0}, "text": "Out of stock"}}),
+            ("out_of_stock", "sku_quantity_unavailable"),
+        )
+        self.assertEqual(
+            classify_sku_info({"operation": {"type": "wishlist", "text": "Add to Wishlist"}}),
+            ("out_of_stock", "sku_wishlist_only"),
         )
 
-    def test_wishlist_does_not_stop_waiting_for_late_purchase_actions(self):
-        class FakeResponse:
-            status = 200
+    def test_maps_all_product_variants_and_cross_checks_primary_dom(self):
+        payload = {
+            "primarySkuId": "10",
+            "skuInfos": {
+                "10": {"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}},
+                "11": {"quantity": {"limit": {"max": 0}, "text": "Out of stock"}},
+            },
+        }
+        signals = {
+            "purchase_action_enabled": True,
+            "purchase_action_visible": True,
+            "wishlist_visible": False,
+            "out_of_stock_visible": False,
+            "purchase_action_labels": ["buy now", "add to cart"],
+        }
+        results = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")
+        self.assertEqual(results["10"]["stock_status"], "active")
+        self.assertEqual(results["11"]["stock_status"], "out_of_stock")
+        self.assertEqual(results["11"]["verified_sku_id"], "11")
 
-        class FakeLocator:
-            def inner_text(self, timeout=None):
-                return "Product detail"
+    def test_marks_primary_conflict_unknown(self):
+        payload = {
+            "primarySkuId": "10",
+            "skuInfos": {
+                "10": {"quantity": {"limit": {"max": 5}}, "operation": {"type": "default"}},
+            },
+        }
+        signals = {
+            "purchase_action_enabled": False,
+            "purchase_action_visible": False,
+            "wishlist_visible": True,
+            "out_of_stock_visible": True,
+            "purchase_action_labels": [],
+        }
+        result = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")["10"]
+        self.assertEqual(result["stock_status"], "unknown")
+        self.assertTrue(result["availability_signal"].startswith("state_conflict:"))
 
-        class FakePage:
-            url = "https://daraz.pk/i100-s999.html"
+    def test_sibling_variant_is_verified_by_payload_sku(self):
+        source = {
+            "venture": "PK",
+            "product_id": "1",
+            "daraz_sku": "1_PK-11",
+            "short_item_eng_name": "Phone 256GB",
+            "url_daraz": "https://daraz/i1-s11.html",
+        }
+        result = {
+            "stock_status": "out_of_stock",
+            "final_url": "https://daraz/i1-s10.html",
+            "verified_sku_id": "11",
+        }
+        row = build_row(source, result, "run", "now")
+        self.assertEqual(row["availability_status"], "unavailable")
+        self.assertTrue(row["selected_sku_verified"])
 
-            def __init__(self):
-                self.signals = [
-                    {
-                        "purchase_action_visible": False,
-                        "purchase_action_enabled": False,
-                        "wishlist_visible": True,
-                        "out_of_stock_visible": False,
-                    },
-                    {
-                        "purchase_action_visible": True,
-                        "purchase_action_enabled": True,
-                        "wishlist_visible": True,
-                        "out_of_stock_visible": False,
-                    },
-                ]
-                self.evaluate_calls = 0
-
-            def goto(self, *args, **kwargs):
-                return FakeResponse()
-
-            def wait_for_timeout(self, _milliseconds):
-                return None
-
-            def locator(self, _selector):
-                return FakeLocator()
-
-            def title(self):
-                return "Product"
-
-            def evaluate(self, _script):
-                value = self.signals[min(self.evaluate_calls, len(self.signals) - 1)]
-                self.evaluate_calls += 1
-                return value
-
-            def close(self):
-                return None
-
-        class FakeContext:
-            def __init__(self):
-                self.page = FakePage()
-
-            def new_page(self):
-                return self.page
-
-        context = FakeContext()
-        result, _ = crawl_daraz_availability(
-            context,
-            "https://daraz.pk/i100-s999.html",
-            {},
-        )
-        self.assertEqual(result["stock_status"], "active")
-        self.assertEqual(context.page.evaluate_calls, 2)
-
-    def test_purchase_inspection_is_scoped_to_current_pdp(self):
+    def test_purchase_inspection_is_scoped_to_add_to_cart_module(self):
         class ScriptCapturingPage:
             def __init__(self):
                 self.script = ""
@@ -125,11 +127,11 @@ class AvailabilityCrawlerTests(unittest.TestCase):
 
         page = ScriptCapturingPage()
         inspect_purchase_controls(page)
-        self.assertIn("const scope = document.querySelector", page.script)
+        self.assertIn("document.querySelector('#module_add_to_cart')", page.script)
         self.assertIn("scope.querySelectorAll", page.script)
         self.assertIn("const body = normalize(scope.innerText)", page.script)
 
-    def test_available_variant_must_match_final_url(self):
+    def test_available_variant_must_match_final_url_without_payload_verification(self):
         source = {
             "venture": "PK", "brand_name": "Apple", "product_id": "100",
             "daraz_sku": "100_PK-999", "short_item_eng_name": "Phone 256GB",
