@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Tuple
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -25,6 +25,8 @@ DEBUG_DIR = "debug_availability"
 THROTTLE_SECONDS = float(os.getenv("AVAILABILITY_THROTTLE_SECONDS", "4"))
 NETWORK_MAX_ATTEMPTS = 3
 NETWORK_RETRY_DELAYS = (5, 10)
+PDP_READY_SELECTOR = "#module_add_to_cart"
+BLOCKED_RESOURCE_TYPES = {"image", "font", "media"}
 
 AVAILABILITY_COLUMNS = [
     "run_id",
@@ -69,12 +71,13 @@ def classify_availability(result: Dict[str, Any]) -> tuple[str, str]:
     error = str(result.get("error_message", "")).strip()
     folded = error.casefold()
     stock = str(result.get("stock_status", "")).strip().casefold()
+    signal_reason = str(result.get("availability_signal", "")).strip()
     if "pdp unavailable / 404" in folded:
         return "unavailable", "pdp_unavailable"
     if stock == "out_of_stock":
-        return "unavailable", "out_of_stock"
+        return "unavailable", signal_reason or "out_of_stock"
     if stock == "active":
-        return "available", "purchase_action_available"
+        return "available", signal_reason or "purchase_action_available"
     if "captcha" in folded:
         return "unknown", "captcha"
     if "timeout" in folded:
@@ -99,15 +102,71 @@ def classify_purchase_signals(signals: Dict[str, Any]) -> tuple[str, str]:
     return "unknown", "purchase_state_not_found"
 
 
+def seller_sku_id(row: Dict[str, Any]) -> str:
+    return str(row.get("daraz_sku", "")).strip().rsplit("-", 1)[-1]
+
+
+def product_group_key(row: Dict[str, Any]) -> Tuple[str, str]:
+    venture = str(row.get("venture", "")).strip().upper()
+    product_id = str(row.get("product_id", "")).strip()
+    if not product_id:
+        product_id = str(row.get("daraz_sku", "")).strip().split("_", 1)[0]
+    return venture, product_id
+
+
+def group_source_rows(rows: Iterable[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(product_group_key(row), []).append(row)
+    return list(groups.values())
+
+
+def classify_sku_info(info: Dict[str, Any]) -> tuple[str, str]:
+    """Classify one finalized Daraz skuInfos entry."""
+    quantity = info.get("quantity") or {}
+    limit = quantity.get("limit") or {}
+    maximum = limit.get("max")
+    quantity_text = str(quantity.get("text", "")).casefold()
+    operation = info.get("operation") or {}
+    operations = info.get("operations") or []
+    operation_types = {
+        str(item.get("type", "")).casefold()
+        for item in [operation, *operations]
+        if isinstance(item, dict)
+    }
+    operation_text = " ".join(
+        str(item.get("text", ""))
+        for item in [operation, *operations]
+        if isinstance(item, dict)
+    ).casefold()
+
+    if maximum == 0 or "out of stock" in quantity_text or "sold out" in quantity_text:
+        return "out_of_stock", "sku_quantity_unavailable"
+    if "wishlist" in operation_types or "wishlist" in operation_text:
+        return "out_of_stock", "sku_wishlist_only"
+    if isinstance(maximum, (int, float)) and maximum > 0:
+        return "active", "sku_quantity_available"
+    if operation and not operation.get("disable") and str(operation.get("type", "")).casefold() == "default":
+        return "active", "sku_purchase_operation_available"
+    return "unknown", "sku_state_not_found"
+
+
 def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
     """Inspect visible PDP actions and distinguish enabled purchasing from wishlist-only."""
     return page.evaluate(
         r"""
         () => {
             const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-            const scope = document.querySelector(
-                '#module_product_detail, .pdp-product-detail, [data-spm="product_detail"]'
-            ) || document.querySelector('main') || document.body;
+            const scope = document.querySelector('#module_add_to_cart');
+            if (!scope) {
+                return {
+                    purchase_action_visible: false,
+                    purchase_action_enabled: false,
+                    wishlist_visible: false,
+                    out_of_stock_visible: false,
+                    purchase_action_labels: [],
+                };
+            }
             const visible = (element) => {
                 const style = window.getComputedStyle(element);
                 const rect = element.getBoundingClientRect();
@@ -142,28 +201,89 @@ def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
     )
 
 
-def crawl_daraz_availability(
+def inspect_product_sku_data(page: Any) -> Dict[str, Any]:
+    """Return the finalized, minimal per-SKU state already used by the rendered PDP."""
+    return page.evaluate(
+        r"""
+        () => {
+            const fields = window.__moduleData__?.data?.root?.fields || {};
+            const primary = fields.primaryKey || {};
+            const infos = fields.skuInfos || {};
+            const normalized = {};
+            for (const [key, value] of Object.entries(infos)) {
+                if (key === '0' || !value || typeof value !== 'object') continue;
+                normalized[String(value.skuId || key)] = {
+                    skuId: String(value.skuId || key),
+                    quantity: value.quantity || {},
+                    operation: value.operation || {},
+                    operations: value.operations || [],
+                };
+            }
+            return {
+                primarySkuId: String(primary.skuId || primary.defaultSkuId || ''),
+                loadedSkuIds: (primary.loadedSkuIds || []).map(String),
+                skuInfos: normalized,
+            };
+        }
+        """
+    )
+
+
+def product_results_from_payload(
+    payload: Dict[str, Any],
+    signals: Dict[str, Any],
+    final_url: str,
+) -> Dict[str, Dict[str, Any]]:
+    primary_sku = str(payload.get("primarySkuId", ""))
+    results: Dict[str, Dict[str, Any]] = {}
+    for sku_id, info in (payload.get("skuInfos") or {}).items():
+        stock_status, signal_reason = classify_sku_info(info)
+        if str(sku_id) == primary_sku:
+            dom_status, dom_reason = classify_purchase_signals(signals)
+            if dom_status != "unknown" and stock_status != "unknown" and dom_status != stock_status:
+                stock_status, signal_reason = "unknown", f"state_conflict:{signal_reason}:{dom_reason}"
+            elif stock_status == "unknown" and dom_status != "unknown":
+                stock_status, signal_reason = dom_status, dom_reason
+        results[str(sku_id)] = {
+            "stock_status": stock_status,
+            "final_url": final_url,
+            "availability_signal": signal_reason,
+            "verified_sku_id": str(sku_id),
+            "purchase_action_labels": signals.get("purchase_action_labels", []) if str(sku_id) == primary_sku else [],
+        }
+    return results
+
+
+def _unknown_results(rows: Iterable[Dict[str, Any]], error_message: str, final_url: str = "") -> Dict[str, Dict[str, Any]]:
+    return {
+        seller_sku_id(row): {
+            "stock_status": "unknown",
+            "final_url": final_url,
+            "verified_sku_id": seller_sku_id(row),
+            "error_message": error_message,
+        }
+        for row in rows
+    }
+
+
+def crawl_daraz_product(
     context: Any,
-    url: str,
-    row: Dict[str, Any],
+    rows: List[Dict[str, Any]],
     recover_context: Any = None,
-) -> tuple[Dict[str, Any], Any]:
-    """Crawl one SKU using PDP purchase controls, independently from Pricing parsing."""
+) -> tuple[Dict[str, Dict[str, Any]], Any]:
+    """Open one PDP and return finalized states for all source SKUs in the Product."""
+    representative = rows[0]
+    url = str(representative["url_daraz"]).strip()
+    source_skus = {seller_sku_id(row) for row in rows}
     for attempt in range(1, NETWORK_MAX_ATTEMPTS + 1):
         page = context.new_page()
         try:
             response = page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(1500)
+            final_url = page.url
             body_text = page.locator("body").inner_text(timeout=10000)
             folded = body_text.casefold()
-            final_url = page.url
-
             if any(marker in folded for marker in ("captcha", "verify you are human", "unusual traffic", "robot check")):
-                return {
-                    "stock_status": "unknown",
-                    "final_url": final_url,
-                    "error_message": "CAPTCHA detected; crawl not bypassed",
-                }, context
+                return _unknown_results(rows, "CAPTCHA detected; crawl not bypassed", final_url), context
 
             title = page.title().casefold()
             unavailable_page = (
@@ -174,25 +294,26 @@ def crawl_daraz_availability(
                 or "error" in title
             )
             if unavailable_page:
-                return {
-                    "stock_status": "out_of_stock",
-                    "final_url": final_url,
-                    "error_message": "Daraz PDP unavailable / 404",
-                }, context
+                if len(rows) == 1:
+                    sku_id = seller_sku_id(rows[0])
+                    return {
+                        sku_id: {
+                            "stock_status": "out_of_stock",
+                            "final_url": final_url,
+                            "verified_sku_id": sku_id,
+                            "error_message": "Daraz PDP unavailable / 404",
+                        }
+                    }, context
+                return {}, context
 
-            signals: Dict[str, Any] = {}
-            for _ in range(8):
-                signals = inspect_purchase_controls(page)
-                if signals.get("purchase_action_enabled") or signals.get("out_of_stock_visible"):
-                    break
-                page.wait_for_timeout(1000)
-            stock_status, signal_reason = classify_purchase_signals(signals)
-            return {
-                "stock_status": stock_status,
-                "final_url": final_url,
-                "availability_signal": signal_reason,
-                "purchase_action_labels": signals.get("purchase_action_labels", []),
-            }, context
+            page.locator(PDP_READY_SELECTOR).wait_for(state="visible", timeout=10000)
+            signals = inspect_purchase_controls(page)
+            payload = inspect_product_sku_data(page)
+            results = product_results_from_payload(payload, signals, final_url)
+            matched = {sku: result for sku, result in results.items() if sku in source_skus}
+            if matched:
+                return matched, context
+            error_message = "Rendered PDP did not expose any requested seller SKU"
         except PlaywrightTimeoutError:
             error_message = "Timeout while loading availability controls"
         except Exception as exc:  # noqa: BLE001
@@ -204,10 +325,10 @@ def crawl_daraz_availability(
                 pass
 
         if attempt == NETWORK_MAX_ATTEMPTS:
-            return {
-                "stock_status": "unknown",
-                "error_message": f"Network failure after {NETWORK_MAX_ATTEMPTS} attempts: {error_message}",
-            }, context
+            return _unknown_results(
+                rows,
+                f"Network failure after {NETWORK_MAX_ATTEMPTS} attempts: {error_message}",
+            ), context
         if recover_context is not None:
             context = recover_context(context)
         time.sleep(NETWORK_RETRY_DELAYS[attempt - 1])
@@ -215,11 +336,30 @@ def crawl_daraz_availability(
     raise AssertionError("unreachable")
 
 
+def crawl_daraz_availability(
+    context: Any,
+    url: str,
+    row: Dict[str, Any],
+    recover_context: Any = None,
+) -> tuple[Dict[str, Any], Any]:
+    """Fallback crawl for one SKU when it is absent from its Product payload."""
+    row = dict(row)
+    row["url_daraz"] = url
+    results, context = crawl_daraz_product(context, [row], recover_context)
+    return results.get(seller_sku_id(row), {
+        "stock_status": "unknown",
+        "error_message": "Requested seller SKU was not present in rendered PDP data",
+    }), context
+
+
 def sku_verified(row: Dict[str, Any], result: Dict[str, Any]) -> bool:
     """Verify that the final Daraz URL still identifies the requested seller SKU."""
+    expected_sku = seller_sku_id(row)
+    verified_sku = str(result.get("verified_sku_id", ""))
+    if expected_sku and verified_sku:
+        return expected_sku == verified_sku
     final_url = str(result.get("final_url", ""))
-    seller_sku = str(row.get("daraz_sku", "")).rsplit("-", 1)[-1]
-    return bool(final_url and seller_sku and re.search(rf"(?:-|/)s?{re.escape(seller_sku)}(?:\D|$)", final_url))
+    return bool(final_url and expected_sku and re.search(rf"(?:-|/)s?{re.escape(expected_sku)}(?:\D|$)", final_url))
 
 
 def build_row(source: Dict[str, Any], result: Dict[str, Any], run_id: str, crawled_at: str) -> Dict[str, Any]:
@@ -278,6 +418,17 @@ def append_run_log(worksheet: Any, values: Dict[str, Any]) -> None:
     )
 
 
+def create_browser_context(browser: Any) -> Any:
+    context = browser.new_context()
+    context.route(
+        "**/*",
+        lambda route: route.abort()
+        if route.request.resource_type in BLOCKED_RESOURCE_TYPES
+        else route.continue_(),
+    )
+    return context
+
+
 def main() -> None:
     started = datetime.now(timezone.utc)
     run_id = f"{started:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
@@ -299,7 +450,7 @@ def main() -> None:
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            context = browser.new_context()
+            context = create_browser_context(browser)
 
             def recover_context(current_context: Any) -> Any:
                 try:
@@ -311,22 +462,58 @@ def main() -> None:
                         current_context.close()
                     except Exception:
                         pass
-                    return browser.new_context()
+                    return create_browser_context(browser)
 
             try:
-                for index, source in enumerate(source_rows, start=1):
-                    result, context = crawl_daraz_availability(
+                source_groups = group_source_rows(source_rows)
+                results_by_sku: Dict[str, Dict[str, Any]] = {}
+                for group_index, source_group in enumerate(source_groups, start=1):
+                    product_results, context = crawl_daraz_product(
                         context,
-                        str(source["url_daraz"]).strip(),
-                        source,
+                        source_group,
                         recover_context,
                     )
-                    crawled_at = datetime.now(timezone.utc).isoformat()
-                    row = build_row(source, result, run_id, crawled_at)
-                    results.append(row)
-                    print(f"[{index}/{len(source_rows)}] {row['venture']} {row['daraz_sku']} {row['availability_status']}")
-                    if index < len(source_rows):
+                    for source in source_group:
+                        sku_id = seller_sku_id(source)
+                        result = product_results.get(sku_id)
+                        if result is None:
+                            time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
+                            result, context = crawl_daraz_availability(
+                                context,
+                                str(source["url_daraz"]).strip(),
+                                source,
+                                recover_context,
+                            )
+                        results_by_sku[str(source["daraz_sku"]).strip()] = result
+
+                    statuses = Counter(
+                        classify_availability(
+                            results_by_sku.get(str(source["daraz_sku"]).strip(), {})
+                        )[0]
+                        for source in source_group
+                    )
+                    venture, product_id = product_group_key(source_group[0])
+                    print(
+                        f"[Product {group_index}/{len(source_groups)}] {venture} {product_id} "
+                        f"variants={len(source_group)} available={statuses['available']} "
+                        f"unavailable={statuses['unavailable']} unknown={statuses['unknown']}"
+                    )
+                    if group_index < len(source_groups):
                         time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
+
+                crawled_at = datetime.now(timezone.utc).isoformat()
+                results = [
+                    build_row(
+                        source,
+                        results_by_sku.get(str(source["daraz_sku"]).strip(), {
+                            "stock_status": "unknown",
+                            "error_message": "No crawl result produced for source SKU",
+                        }),
+                        run_id,
+                        crawled_at,
+                    )
+                    for source in source_rows
+                ]
             finally:
                 browser.close()
 
