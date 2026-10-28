@@ -6,6 +6,7 @@ from availability_crawler import (
     classify_purchase_signals,
     classify_sku_info,
     extract_memory,
+    fallback_worker_count,
     group_source_rows,
     inspect_purchase_controls,
     product_results_from_payload,
@@ -15,6 +16,12 @@ from availability_crawler import (
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
+    def test_fallback_worker_count_is_bounded(self):
+        self.assertEqual(fallback_worker_count(0, 3), 0)
+        self.assertEqual(fallback_worker_count(2, 3), 2)
+        self.assertEqual(fallback_worker_count(100, 3), 3)
+        self.assertEqual(fallback_worker_count(100, 20), 4)
+
     def test_extract_memory_uses_last_capacity_token(self):
         self.assertEqual(extract_memory("Phone 12GB + 256GB"), "256GB")
         self.assertEqual(extract_memory("Laptop 1 TB"), "1TB")

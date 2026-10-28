@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import atexit
+import multiprocessing
 import os
 import random
 import re
 import time
 import uuid
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -23,10 +26,15 @@ STAGING_TAB = "drz_availability_staging"
 RUN_LOG_TAB = "availability_run_log"
 DEBUG_DIR = "debug_availability"
 THROTTLE_SECONDS = float(os.getenv("AVAILABILITY_THROTTLE_SECONDS", "4"))
+FALLBACK_MAX_WORKERS = max(1, min(4, int(os.getenv("AVAILABILITY_FALLBACK_WORKERS", "3"))))
 NETWORK_MAX_ATTEMPTS = 3
 NETWORK_RETRY_DELAYS = (5, 10)
 PDP_READY_SELECTOR = "#module_add_to_cart"
 BLOCKED_RESOURCE_TYPES = {"image", "font", "media"}
+
+_fallback_playwright: Any = None
+_fallback_browser: Any = None
+_fallback_context: Any = None
 
 AVAILABILITY_COLUMNS = [
     "run_id",
@@ -494,6 +502,113 @@ def create_browser_context(browser: Any) -> Any:
     return context
 
 
+def fallback_worker_count(total_rows: int, configured_workers: int = FALLBACK_MAX_WORKERS) -> int:
+    """Bound fallback concurrency so a manual run cannot overload Daraz or the runner."""
+    if total_rows <= 0:
+        return 0
+    return min(total_rows, max(1, min(4, configured_workers)))
+
+
+def _close_fallback_worker() -> None:
+    global _fallback_playwright, _fallback_browser, _fallback_context
+    for resource in (_fallback_context, _fallback_browser):
+        try:
+            if resource is not None:
+                resource.close()
+        except Exception:
+            pass
+    try:
+        if _fallback_playwright is not None:
+            _fallback_playwright.stop()
+    except Exception:
+        pass
+    _fallback_context = None
+    _fallback_browser = None
+    _fallback_playwright = None
+
+
+def _init_fallback_worker() -> None:
+    """Give each process its own Playwright driver, Chromium, and browser context."""
+    global _fallback_playwright, _fallback_browser, _fallback_context
+    _fallback_playwright = sync_playwright().start()
+    _fallback_browser = _fallback_playwright.chromium.launch(headless=True)
+    _fallback_context = create_browser_context(_fallback_browser)
+    atexit.register(_close_fallback_worker)
+
+
+def _recover_fallback_context(current_context: Any) -> Any:
+    global _fallback_context
+    try:
+        probe = current_context.new_page()
+        probe.close()
+        return current_context
+    except Exception:
+        try:
+            current_context.close()
+        except Exception:
+            pass
+        _fallback_context = create_browser_context(_fallback_browser)
+        return _fallback_context
+
+
+def _crawl_fallback_worker(source: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """Crawl one target SKU inside an isolated, persistent worker browser."""
+    global _fallback_context
+    sku = str(source["daraz_sku"]).strip()
+    try:
+        time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
+        result, _fallback_context = crawl_daraz_availability(
+            _fallback_context,
+            str(source["url_daraz"]).strip(),
+            source,
+            _recover_fallback_context,
+        )
+        return sku, result
+    except Exception as exc:  # noqa: BLE001
+        return sku, {
+            "stock_status": "unknown",
+            "verified_sku_id": seller_sku_id(source),
+            "error_message": f"Parallel fallback worker failed: {exc}",
+        }
+
+
+def run_parallel_fallbacks(source_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Resolve target-SKU fallbacks with bounded, process-isolated concurrency."""
+    workers = fallback_worker_count(len(source_rows))
+    if workers == 0:
+        return {}
+    print(f"[Fallback] queued={len(source_rows)} workers={workers}")
+    results: Dict[str, Dict[str, Any]] = {}
+    spawn_context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=spawn_context,
+        initializer=_init_fallback_worker,
+    ) as executor:
+        future_to_sku = {
+            executor.submit(_crawl_fallback_worker, source): str(source["daraz_sku"]).strip()
+            for source in source_rows
+        }
+        total = len(future_to_sku)
+        for completed, future in enumerate(as_completed(future_to_sku), start=1):
+            expected_sku = future_to_sku[future]
+            try:
+                sku, result = future.result()
+            except Exception as exc:  # noqa: BLE001
+                sku, result = expected_sku, {
+                    "stock_status": "unknown",
+                    "error_message": f"Parallel fallback process failed: {exc}",
+                }
+            results[sku] = result
+            if completed % 25 == 0 or completed == total:
+                counts = Counter(classify_availability(value)[0] for value in results.values())
+                print(
+                    f"[Fallback {completed}/{total}] available={counts['available']} "
+                    f"unavailable={counts['unavailable']} unknown={counts['unknown']}"
+                )
+    return results
+
+
 def main() -> None:
     started = datetime.now(timezone.utc)
     run_id = f"{started:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
@@ -513,6 +628,8 @@ def main() -> None:
     results: List[Dict[str, Any]] = []
 
     try:
+        results_by_sku: Dict[str, Dict[str, Any]] = {}
+        fallback_sources: List[Dict[str, Any]] = []
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             context = create_browser_context(browser)
@@ -531,7 +648,6 @@ def main() -> None:
 
             try:
                 source_groups = group_source_rows(source_rows)
-                results_by_sku: Dict[str, Dict[str, Any]] = {}
                 for group_index, source_group in enumerate(source_groups, start=1):
                     product_results, context = crawl_daraz_product(
                         context,
@@ -542,14 +658,12 @@ def main() -> None:
                         sku_id = seller_sku_id(source)
                         result = product_results.get(sku_id)
                         if result_requires_fallback(result):
-                            time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
-                            result, context = crawl_daraz_availability(
-                                context,
-                                str(source["url_daraz"]).strip(),
-                                source,
-                                recover_context,
-                            )
-                        results_by_sku[str(source["daraz_sku"]).strip()] = result
+                            fallback_sources.append(source)
+                        results_by_sku[str(source["daraz_sku"]).strip()] = result or {
+                            "stock_status": "unknown",
+                            "availability_signal": "sku_state_not_found",
+                            "requires_fallback": True,
+                        }
 
                     statuses = Counter(
                         classify_availability(
@@ -558,29 +672,38 @@ def main() -> None:
                         for source in source_group
                     )
                     venture, product_id = product_group_key(source_group[0])
+                    pending = sum(
+                        result_requires_fallback(
+                            results_by_sku.get(str(source["daraz_sku"]).strip())
+                        )
+                        for source in source_group
+                    )
                     print(
                         f"[Product {group_index}/{len(source_groups)}] {venture} {product_id} "
                         f"variants={len(source_group)} available={statuses['available']} "
-                        f"unavailable={statuses['unavailable']} unknown={statuses['unknown']}"
+                        f"unavailable={statuses['unavailable']} unknown={statuses['unknown']} "
+                        f"fallback={pending}"
                     )
                     if group_index < len(source_groups):
                         time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
 
-                crawled_at = datetime.now(timezone.utc).isoformat()
-                results = [
-                    build_row(
-                        source,
-                        results_by_sku.get(str(source["daraz_sku"]).strip(), {
-                            "stock_status": "unknown",
-                            "error_message": "No crawl result produced for source SKU",
-                        }),
-                        run_id,
-                        crawled_at,
-                    )
-                    for source in source_rows
-                ]
             finally:
                 browser.close()
+
+        results_by_sku.update(run_parallel_fallbacks(fallback_sources))
+        crawled_at = datetime.now(timezone.utc).isoformat()
+        results = [
+            build_row(
+                source,
+                results_by_sku.get(str(source["daraz_sku"]).strip(), {
+                    "stock_status": "unknown",
+                    "error_message": "No crawl result produced for source SKU",
+                }),
+                run_id,
+                crawled_at,
+            )
+            for source in source_rows
+        ]
 
         if len(results) != len(source_rows):
             raise RuntimeError("Availability crawl did not produce a complete snapshot")
