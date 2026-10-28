@@ -217,6 +217,7 @@ def inspect_product_sku_data(page: Any) -> Dict[str, Any]:
             const fields = window.__moduleData__?.data?.root?.fields || {};
             const primary = fields.primaryKey || {};
             const infos = fields.skuInfos || {};
+            const skuBase = fields.productOption?.skuBase || {};
             const normalized = {};
             for (const [key, value] of Object.entries(infos)) {
                 if (key === '0' || !value || typeof value !== 'object') continue;
@@ -231,10 +232,106 @@ def inspect_product_sku_data(page: Any) -> Dict[str, Any]:
                 primarySkuId: String(primary.skuId || primary.defaultSkuId || ''),
                 loadedSkuIds: (primary.loadedSkuIds || []).map(String),
                 skuInfos: normalized,
+                skuProps: (skuBase.properties || []).map((prop) => ({
+                    pid: String(prop.pid || ''),
+                    values: (prop.values || []).map((value) => ({
+                        vid: String(value.vid || ''),
+                        name: String(value.name || ''),
+                    })),
+                })),
+                skuPropPaths: Object.fromEntries((skuBase.skus || []).map((sku) => [
+                    String(sku.skuId || sku.cartSkuId || ''),
+                    String(sku.propPath || ''),
+                ])),
             };
         }
         """
     )
+
+
+def sku_selection_plan(payload: Dict[str, Any], sku_id: str) -> List[Tuple[int, int]]:
+    """Map a Daraz SKU propPath to the matching visible option indexes."""
+    prop_path = str((payload.get("skuPropPaths") or {}).get(str(sku_id), ""))
+    selected_values: Dict[str, str] = {}
+    for pair in prop_path.split(";"):
+        if ":" not in pair:
+            continue
+        pid, vid = pair.split(":", 1)
+        selected_values[pid] = vid
+
+    plan: List[Tuple[int, int]] = []
+    for prop_index, prop in enumerate(payload.get("skuProps") or []):
+        pid = str(prop.get("pid", ""))
+        desired_vid = selected_values.get(pid)
+        if not desired_vid:
+            continue
+        values = prop.get("values") or []
+        value_index = next(
+            (index for index, value in enumerate(values) if str(value.get("vid", "")) == desired_vid),
+            None,
+        )
+        if value_index is None:
+            return []
+        plan.append((prop_index, value_index))
+    return plan
+
+
+def select_sku_on_page(
+    page: Any,
+    payload: Dict[str, Any],
+    sku_id: str,
+) -> Tuple[Dict[str, Any], Dict[str, Any], bool]:
+    """Select a target variant and verify Daraz actually made it primary."""
+    sku_id = str(sku_id)
+    current = payload
+    if str(current.get("primarySkuId", "")) == sku_id:
+        return current, inspect_purchase_controls(page), True
+
+    plan = sku_selection_plan(current, sku_id)
+    if not plan:
+        return current, {}, False
+
+    option_selector = (
+        ".sku-variable-img-wrap, .sku-variable-img-wrap-selected, "
+        ".sku-variable-name, .sku-variable-name-selected"
+    )
+    try:
+        for prop_index, value_index in plan:
+            options = page.locator("#module_sku-select .sku-prop").nth(prop_index).locator(option_selector)
+            options.nth(value_index).click(timeout=5000)
+            page.wait_for_timeout(350)
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            current = inspect_product_sku_data(page)
+            if str(current.get("primarySkuId", "")) == sku_id:
+                return current, inspect_purchase_controls(page), True
+            page.wait_for_timeout(250)
+    except Exception:  # noqa: BLE001
+        current = inspect_product_sku_data(page)
+    return current, {}, False
+
+
+def selection_mismatch_result(
+    payload: Dict[str, Any],
+    requested_sku: str,
+    actual_sku: str,
+    final_url: str,
+) -> Dict[str, Any]:
+    """Classify a target option that Daraz refuses to make the active SKU."""
+    option_exists = bool(sku_selection_plan(payload, requested_sku))
+    return {
+        "stock_status": "out_of_stock" if option_exists else "unknown",
+        "final_url": final_url,
+        "availability_signal": (
+            "sku_option_not_selectable" if option_exists else "sku_selection_mismatch"
+        ),
+        "verified_sku_id": actual_sku,
+        "error_message": (
+            f"Requested SKU {requested_sku} rendered SKU {actual_sku or 'none'}"
+        ),
+        "requires_fallback": False,
+    }
 
 
 def product_results_from_payload(
@@ -376,14 +473,63 @@ def crawl_daraz_product(
             page.locator(PDP_READY_SELECTOR).wait_for(state="visible", timeout=10000)
             signals = inspect_purchase_controls(page)
             payload = inspect_product_sku_data(page)
-            results = product_results_from_payload(payload, signals, final_url)
-            matched = {sku: result for sku, result in results.items() if sku in source_skus}
             if len(rows) == 1:
                 sku_id = seller_sku_id(rows[0])
+                actual_sku = str(payload.get("primarySkuId", ""))
+                if actual_sku != sku_id:
+                    return {
+                        sku_id: selection_mismatch_result(
+                            payload,
+                            sku_id,
+                            actual_sku,
+                            final_url,
+                        )
+                    }, context
+                results = product_results_from_payload(payload, signals, final_url)
+                matched = {sku: result for sku, result in results.items() if sku in source_skus}
                 single_result = matched.get(sku_id)
                 if result_requires_fallback(single_result):
                     single_result = resolve_single_sku_result(single_result, signals, final_url)
+                if single_result is not None:
+                    single_result["verified_sku_id"] = actual_sku
                 return {sku_id: single_result}, context
+
+            matched: Dict[str, Dict[str, Any]] = {}
+            for row in rows:
+                sku_id = seller_sku_id(row)
+                selected_payload, selected_signals, selected = select_sku_on_page(
+                    page,
+                    payload,
+                    sku_id,
+                )
+                actual_sku = str(selected_payload.get("primarySkuId", ""))
+                if not selected:
+                    matched[sku_id] = selection_mismatch_result(
+                        selected_payload,
+                        sku_id,
+                        actual_sku,
+                        final_url,
+                    )
+                    continue
+
+                selected_results = product_results_from_payload(
+                    selected_payload,
+                    selected_signals,
+                    final_url,
+                )
+                result = selected_results.get(sku_id)
+                if result is None:
+                    matched[sku_id] = {
+                        "stock_status": "unknown",
+                        "final_url": final_url,
+                        "availability_signal": "sku_state_not_found",
+                        "verified_sku_id": actual_sku,
+                        "requires_fallback": True,
+                    }
+                    continue
+                result["verified_sku_id"] = actual_sku
+                matched[sku_id] = result
+                payload = selected_payload
             if matched:
                 return matched, context
             error_message = "Rendered PDP did not expose any requested seller SKU"
@@ -438,7 +584,8 @@ def sku_verified(row: Dict[str, Any], result: Dict[str, Any]) -> bool:
 def build_row(source: Dict[str, Any], result: Dict[str, Any], run_id: str, crawled_at: str) -> Dict[str, Any]:
     status, reason = classify_availability(result)
     verified = sku_verified(source, result) if status != "unknown" else False
-    if status in {"available", "unavailable"} and reason != "pdp_unavailable" and not verified:
+    selection_proves_unavailable = reason in {"pdp_unavailable", "sku_option_not_selectable"}
+    if status in {"available", "unavailable"} and not selection_proves_unavailable and not verified:
         status, reason = "unknown", "variant_not_verified"
     return {
         "run_id": run_id,
