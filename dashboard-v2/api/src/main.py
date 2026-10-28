@@ -140,7 +140,10 @@ def pricing_auth_login(credentials: PricingLogin, request: Request, response: Re
         httponly=True,
         secure=request.url.scheme == "https",
         samesite="none" if request.url.scheme == "https" else "lax",
-        path="/api/pricing",
+        # Pricing and Availability intentionally share the same access gate.
+        # Scope the session cookie to both APIs instead of requiring the
+        # Availability frontend to rely exclusively on the bearer token.
+        path="/api",
     )
     return {"authenticated": True, "token": _pricing_session_token(expires_at)}
 
