@@ -209,6 +209,77 @@ def inspect_purchase_controls(page: Any) -> Dict[str, Any]:
     )
 
 
+def inspect_selected_variant_labels(page: Any) -> Dict[str, str]:
+    """Read the variant values visibly selected in the rendered PDP."""
+    return page.evaluate(
+        r"""
+        () => Object.fromEntries(
+            Array.from(document.querySelectorAll('#module_sku-select .sku-prop'))
+                .map((prop) => {
+                    const title = (prop.querySelector('.section-title')?.textContent || '').trim();
+                    const value = (prop.querySelector('.sku-name')?.textContent || '').trim();
+                    return [title, value];
+                })
+                .filter(([title, value]) => title && value)
+        )
+        """
+    )
+
+
+def _normalized_variant_value(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
+
+def selected_variant_matches_source(source: Dict[str, Any], labels: Dict[str, str]) -> bool:
+    """Verify the target Color/Memory using the PDP's visible selected labels."""
+    normalized_labels = {
+        _normalized_variant_value(key): _normalized_variant_value(value)
+        for key, value in (labels or {}).items()
+    }
+    expected_color = _normalized_variant_value(source.get("color", ""))
+    color_values = [
+        value for key, value in normalized_labels.items()
+        if "color" in key or "colour" in key
+    ]
+    if expected_color and expected_color != "notspecified":
+        if not color_values or expected_color not in color_values:
+            return False
+
+    expected_memory = _normalized_variant_value(
+        source.get("memory", "") or extract_memory(source.get("short_item_eng_name", ""))
+    )
+    memory_values = [
+        value for key, value in normalized_labels.items()
+        if any(token in key for token in ("storage", "capacity", "memory", "size"))
+    ]
+    if expected_memory:
+        if not memory_values or expected_memory not in memory_values:
+            return False
+
+    return bool(expected_color or expected_memory)
+
+
+def wait_for_decisive_variant_state(
+    page: Any,
+    timeout_seconds: float = 4.0,
+) -> Tuple[Dict[str, str], Dict[str, Any]]:
+    """Wait for Daraz hydration to expose stable labels and purchase controls."""
+    deadline = time.monotonic() + timeout_seconds
+    latest_labels: Dict[str, str] = {}
+    latest_signals: Dict[str, Any] = {}
+    previous_snapshot: Optional[Tuple[Tuple[Tuple[str, str], ...], str, str]] = None
+    while time.monotonic() < deadline:
+        latest_labels = inspect_selected_variant_labels(page)
+        latest_signals = inspect_purchase_controls(page)
+        dom_status, dom_reason = classify_purchase_signals(latest_signals)
+        snapshot = (tuple(sorted(latest_labels.items())), dom_status, dom_reason)
+        if latest_labels and dom_status != "unknown" and snapshot == previous_snapshot:
+            return latest_labels, latest_signals
+        previous_snapshot = snapshot
+        page.wait_for_timeout(300)
+    return latest_labels, latest_signals
+
+
 def inspect_product_sku_data(page: Any) -> Dict[str, Any]:
     """Return the finalized, minimal per-SKU state already used by the rendered PDP."""
     return page.evaluate(
@@ -318,7 +389,26 @@ def selection_mismatch_result(
     actual_sku: str,
     final_url: str,
 ) -> Dict[str, Any]:
-    """Classify a target option that Daraz refuses to make the active SKU."""
+    """Queue a direct-SKU fallback when in-page selection cannot be verified."""
+    return {
+        "stock_status": "unknown",
+        "final_url": final_url,
+        "availability_signal": "sku_selection_mismatch",
+        "verified_sku_id": actual_sku,
+        "error_message": (
+            f"Requested SKU {requested_sku} rendered SKU {actual_sku or 'none'}"
+        ),
+        "requires_fallback": True,
+    }
+
+
+def direct_selection_mismatch_result(
+    payload: Dict[str, Any],
+    requested_sku: str,
+    actual_sku: str,
+    final_url: str,
+) -> Dict[str, Any]:
+    """Resolve a direct URL that still renders another known product option."""
     option_exists = bool(sku_selection_plan(payload, requested_sku))
     return {
         "stock_status": "out_of_stock" if option_exists else "unknown",
@@ -328,7 +418,7 @@ def selection_mismatch_result(
         ),
         "verified_sku_id": actual_sku,
         "error_message": (
-            f"Requested SKU {requested_sku} rendered SKU {actual_sku or 'none'}"
+            f"Direct SKU {requested_sku} rendered SKU {actual_sku or 'none'}"
         ),
         "requires_fallback": False,
     }
@@ -475,10 +565,18 @@ def crawl_daraz_product(
             payload = inspect_product_sku_data(page)
             if len(rows) == 1:
                 sku_id = seller_sku_id(rows[0])
+                selected_labels, stable_signals = wait_for_decisive_variant_state(page)
+                if stable_signals:
+                    signals = stable_signals
+                if selected_variant_matches_source(rows[0], selected_labels):
+                    single_result = resolve_single_sku_result(None, signals, final_url)
+                    single_result["variant_identity_verified"] = True
+                    return {sku_id: single_result}, context
+
                 actual_sku = str(payload.get("primarySkuId", ""))
                 if actual_sku != sku_id:
                     return {
-                        sku_id: selection_mismatch_result(
+                        sku_id: direct_selection_mismatch_result(
                             payload,
                             sku_id,
                             actual_sku,
@@ -573,6 +671,8 @@ def crawl_daraz_availability(
 
 def sku_verified(row: Dict[str, Any], result: Dict[str, Any]) -> bool:
     """Verify that the final Daraz URL still identifies the requested seller SKU."""
+    if result.get("variant_identity_verified") is True:
+        return True
     expected_sku = seller_sku_id(row)
     verified_sku = str(result.get("verified_sku_id", ""))
     if expected_sku and verified_sku:
