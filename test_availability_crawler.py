@@ -5,6 +5,7 @@ from availability_crawler import (
     classify_availability,
     classify_purchase_signals,
     classify_sku_info,
+    direct_selection_mismatch_result,
     extract_memory,
     fallback_worker_count,
     group_source_rows,
@@ -12,6 +13,7 @@ from availability_crawler import (
     product_results_from_payload,
     resolve_single_sku_result,
     result_requires_fallback,
+    selected_variant_matches_source,
     selection_mismatch_result,
     sku_selection_plan,
 )
@@ -134,12 +136,21 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         self.assertEqual(sku_selection_plan(payload, "13"), [(0, 1), (1, 0)])
         self.assertEqual(sku_selection_plan(payload, "missing"), [])
 
-    def test_unselectable_known_option_is_unavailable_without_claiming_verification(self):
+    def test_in_page_selection_mismatch_requires_direct_sku_fallback(self):
         payload = {
             "skuProps": [{"pid": "30129", "values": [{"vid": "3731", "name": "Black"}]}],
             "skuPropPaths": {"11": "30129:3731"},
         }
         result = selection_mismatch_result(payload, "11", "14", "https://daraz/i1-s11.html")
+        self.assertEqual(classify_availability(result), ("unknown", "sku_selection_mismatch"))
+        self.assertTrue(result_requires_fallback(result))
+
+    def test_direct_url_mismatch_can_confirm_known_option_is_unavailable(self):
+        payload = {
+            "skuProps": [{"pid": "30129", "values": [{"vid": "3731", "name": "Black"}]}],
+            "skuPropPaths": {"11": "30129:3731"},
+        }
+        result = direct_selection_mismatch_result(payload, "11", "14", "https://daraz/i1-s11.html")
         self.assertEqual(classify_availability(result), ("unavailable", "sku_option_not_selectable"))
         self.assertFalse(result_requires_fallback(result))
 
@@ -152,6 +163,30 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         self.assertEqual(row["availability_status"], "unavailable")
         self.assertEqual(row["status_reason"], "sku_option_not_selectable")
         self.assertFalse(row["selected_sku_verified"])
+
+    def test_visible_color_and_storage_verify_direct_sku_without_primary_key(self):
+        source = {
+            "venture": "PK", "brand_name": "Tecno", "product_id": "1980319204",
+            "daraz_sku": "1980319204_PK-14068774583",
+            "short_item_eng_name": "TECNO POVA Curve 2 5G 8GB/256GB",
+            "color": "Storm Titanium", "Category": "Mobile",
+            "url_daraz": "https://daraz.pk/i1980319204-s14068774583.html",
+        }
+        labels = {"Color Family": "Storm Titanium", "Storage Capacity": "256GB"}
+        self.assertTrue(selected_variant_matches_source(source, labels))
+        self.assertFalse(selected_variant_matches_source(source, {
+            "Color Family": "Mystic Purple", "Storage Capacity": "256GB",
+        }))
+
+        result = {
+            "stock_status": "active",
+            "availability_signal": "purchase_action_enabled",
+            "final_url": source["url_daraz"],
+            "variant_identity_verified": True,
+        }
+        row = build_row(source, result, "run", "now")
+        self.assertEqual(row["availability_status"], "available")
+        self.assertTrue(row["selected_sku_verified"])
 
     def test_primary_quantity_unavailable_without_dom_confirmation_requires_fallback(self):
         payload = {
