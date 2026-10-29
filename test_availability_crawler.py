@@ -12,6 +12,8 @@ from availability_crawler import (
     product_results_from_payload,
     resolve_single_sku_result,
     result_requires_fallback,
+    selection_mismatch_result,
+    sku_selection_plan,
 )
 
 
@@ -111,6 +113,45 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         results = product_results_from_payload(payload, signals, "https://daraz/i1-s10.html")
         self.assertEqual(results["11"]["stock_status"], "active")
         self.assertFalse(result_requires_fallback(results["11"]))
+
+    def test_builds_variant_selection_plan_from_daraz_prop_path(self):
+        payload = {
+            "skuProps": [
+                {"pid": "30129", "values": [
+                    {"vid": "3731", "name": "Black"},
+                    {"vid": "3741", "name": "Silver"},
+                    {"vid": "128114011", "name": "GLACIER"},
+                    {"vid": "128114012", "name": "Burgundy"},
+                ]},
+                {"pid": "31003", "values": [{"vid": "3944", "name": "256GB"}]},
+            ],
+            "skuPropPaths": {
+                "11": "30129:3731;31003:3944",
+                "13": "30129:3741;31003:3944",
+            },
+        }
+        self.assertEqual(sku_selection_plan(payload, "11"), [(0, 0), (1, 0)])
+        self.assertEqual(sku_selection_plan(payload, "13"), [(0, 1), (1, 0)])
+        self.assertEqual(sku_selection_plan(payload, "missing"), [])
+
+    def test_unselectable_known_option_is_unavailable_without_claiming_verification(self):
+        payload = {
+            "skuProps": [{"pid": "30129", "values": [{"vid": "3731", "name": "Black"}]}],
+            "skuPropPaths": {"11": "30129:3731"},
+        }
+        result = selection_mismatch_result(payload, "11", "14", "https://daraz/i1-s11.html")
+        self.assertEqual(classify_availability(result), ("unavailable", "sku_option_not_selectable"))
+        self.assertFalse(result_requires_fallback(result))
+
+        source = {
+            "venture": "PK", "brand_name": "Apple", "product_id": "1",
+            "daraz_sku": "1_PK-11", "short_item_eng_name": "Phone 256GB",
+            "color": "Black", "Category": "Mobile", "url_daraz": "https://daraz/i1-s11.html",
+        }
+        row = build_row(source, result, "run", "now")
+        self.assertEqual(row["availability_status"], "unavailable")
+        self.assertEqual(row["status_reason"], "sku_option_not_selectable")
+        self.assertFalse(row["selected_sku_verified"])
 
     def test_primary_quantity_unavailable_without_dom_confirmation_requires_fallback(self):
         payload = {
