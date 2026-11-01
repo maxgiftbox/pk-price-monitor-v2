@@ -32,6 +32,38 @@ def test_alerts_and_images_are_serialized():
     assert result["reviews"][1]["images"] == ["https://example.com/a.jpg"]
 
 
+def test_action_queue_excludes_seller_replies_and_prioritizes_recent_consumer_issues():
+    data = prepare_reviews(pd.DataFrame([
+        {"venture": "PK", "create_date_short": "2025-05-01", "product_id": 1, "product_name": "Old phone", "rating": 0, "review_content": "Dear Customer, you can always return the item under our return policy", "upvotes": 50},
+        {"venture": "PK", "create_date_short": "2026-06-01", "product_id": 2, "product_name": "Older issue", "rating": 1, "review_content": "Worst phone and warranty issue", "upvotes": 100},
+        {"venture": "PK", "create_date_short": "2026-10-30", "product_id": 3, "product_name": "Recent severe issue", "rating": 1, "review_content": "Phone is overheating and defective", "upvotes": 2},
+        {"venture": "PK", "create_date_short": "2026-11-01", "product_id": 4, "product_name": "Recent warranty issue", "rating": 4, "review_content": "Good phone but warranty is missing", "upvotes": 8},
+    ]))
+
+    alerts = dashboard(data, {"section": "signals"})["alerts"]
+
+    assert [alert["productName"] for alert in alerts] == [
+        "Recent severe issue",
+        "Recent warranty issue",
+    ]
+    assert all(alert["rating"] is not None for alert in alerts)
+
+
+def test_action_queue_honors_explicit_date_filter_for_older_reviews():
+    data = prepare_reviews(pd.DataFrame([
+        {"venture": "PK", "create_date_short": "2026-06-01", "product_id": 1, "product_name": "Older issue", "rating": 1, "review_content": "Worst phone and warranty issue", "upvotes": 1},
+        {"venture": "PK", "create_date_short": "2026-11-01", "product_id": 2, "product_name": "Recent issue", "rating": 1, "review_content": "Defective phone", "upvotes": 1},
+    ]))
+
+    alerts = dashboard(data, {
+        "section": "signals",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-30",
+    })["alerts"]
+
+    assert [alert["productName"] for alert in alerts] == ["Older issue"]
+
+
 def test_consumer_voice_endpoints(monkeypatch):
     snapshot = Snapshot(fixture(), datetime(2026, 9, 25, tzinfo=timezone.utc))
     monkeypatch.setattr(app.state, "consumer_voice_repository", type("Repo", (), {"get": lambda self: snapshot})())

@@ -76,8 +76,30 @@ def dashboard(data: pd.DataFrame, params: dict[str, Any]) -> dict[str, Any]:
         for (label, sentiment), count in tag_counts.most_common(18)
     ]
 
+    alert_frame = frame[
+        frame["rating_valid"]
+        & ~frame["is_seller_reply"]
+        & (
+            (frame["rating"] <= 2)
+            | frame["sensitive_terms"].map(bool)
+            | frame["rating_sentiment_mismatch"]
+        )
+    ].copy()
+    if not params.get("date_from") and not params.get("date_to") and not alert_frame.empty:
+        latest_date = frame["created_at"].max()
+        if pd.notna(latest_date):
+            alert_frame = alert_frame[alert_frame["created_at"] >= latest_date - pd.Timedelta(days=90)]
+
+    alert_frame["alert_severity"] = 1
+    alert_frame.loc[alert_frame["sensitive_terms"].map(bool), "alert_severity"] = 2
+    alert_frame.loc[alert_frame["rating"] == 2, "alert_severity"] = 3
+    alert_frame.loc[alert_frame["rating"] == 1, "alert_severity"] = 4
+
     alerts = []
-    for row in frame.sort_values(["rating", "upvotes"], ascending=[True, False]).itertuples():
+    for row in alert_frame.sort_values(
+        ["alert_severity", "created_at", "upvotes"],
+        ascending=[False, False, False],
+    ).itertuples():
         reasons = list(row.sensitive_terms)
         if row.rating_valid and row.rating <= 2:
             reasons.insert(0, f"{int(row.rating)}-star review")

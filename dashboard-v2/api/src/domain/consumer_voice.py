@@ -131,6 +131,7 @@ def prepare_reviews(raw: pd.DataFrame) -> pd.DataFrame:
     data["product_id"] = data["product_id"].astype(str).str.replace(r"\.0$", "", regex=True)
     data["product_name"] = data["product_name"].map(_clean_text)
     data["review_content"] = data["review_content"].map(_clean_text)
+    data["is_seller_reply"] = data["review_content"].map(_is_seller_reply)
     supplied_brand = data["brand"].map(_clean_text)
     data["brand"] = supplied_brand.where(supplied_brand != "", data["product_name"].map(_brand))
     data["rating_valid"] = data["rating"].between(1, 5)
