@@ -18,6 +18,7 @@ class SocialIntelligenceRepository(GoogleSheetsRepository):
     def __init__(self, path: Path | None = None, ttl_seconds: int = 900, initial_load_timeout_seconds: int = 12):
         super().__init__(ttl_seconds, initial_load_timeout_seconds)
         self.path = path or Path(__file__).resolve().parents[2] / "data" / "social_intelligence_v2_2.csv"
+        self.last_error: str | None = None
 
     @staticmethod
     def _credentials() -> Credentials:
@@ -61,8 +62,11 @@ class SocialIntelligenceRepository(GoogleSheetsRepository):
             client = gspread.authorize(self._credentials())
             sheet = client.open_by_key(spreadsheet_id) if spreadsheet_id else client.open(os.getenv("GOOGLE_SHEET_NAME", "Mob Price Monitor"))
             raw = pd.DataFrame(sheet.worksheet(os.getenv("SOCIAL_INTELLIGENCE_WORKSHEET", "social_intelligence_master")).get_all_records())
+            self.last_error = None
             return Snapshot(data=self._prepare(raw), generated_at=datetime.now(timezone.utc), stale=False)
         except Exception as exc:
+            # Expose only a safe error class to API clients; keep details server-side.
+            self.last_error = type(exc).__name__
             print("===== SOCIAL INTELLIGENCE GOOGLE SHEET ERROR =====")
             print(type(exc), repr(exc))
             print("==================================================")

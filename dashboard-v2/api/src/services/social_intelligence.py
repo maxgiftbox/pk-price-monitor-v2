@@ -41,6 +41,15 @@ BRAND_ALIASES = {
     "jazz": "Jazz", "zong": "Zong", "telenor": "Telenor", "ufone": "Ufone",
     "robi": "Robi", "airtel": "Airtel",
 }
+BRAND_TEXT_PATTERNS = [
+    (re.compile(r"\b(?:zte\s+)?nubia\b", re.IGNORECASE), "Nubia"),
+    *[
+        (re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE), canonical)
+        for alias, canonical in BRAND_ALIASES.items()
+        if alias not in {"nubia", "google"}
+    ],
+    (re.compile(r"\b(?:google\s+)?pixel\b", re.IGNORECASE), "Google"),
+]
 RATING_WEIGHTS = {"activity": 0.25, "reach": 0.20, "engagement": 0.30, "earned": 0.25}
 
 
@@ -87,8 +96,11 @@ def _filter(data: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
             if canonical
         }
         frame = frame[
-            frame["brand"].map(
-                lambda value: bool(wanted_brands.intersection(brand.casefold() for brand in _brands(value)))
+            frame.apply(
+                lambda row: bool(
+                    wanted_brands.intersection(brand.casefold() for brand in _record_brands(row))
+                ),
+                axis=1,
             )
         ]
     if params.get("date_from"):
@@ -119,10 +131,26 @@ def _brands(value: Any) -> list[str]:
     return found
 
 
+def _record_brands(row: Any) -> list[str]:
+    """Use the curated field first, then safely enrich legacy blank-brand records."""
+    explicit = _brands(row.get("brand"))
+    if explicit:
+        return explicit
+    text = " ".join(
+        str(row.get(column) or "")
+        for column in ("title", "content", "content_summary", "account_name")
+    )
+    found: list[str] = []
+    for pattern, canonical in BRAND_TEXT_PATTERNS:
+        if pattern.search(text) and canonical not in found:
+            found.append(canonical)
+    return found
+
+
 def _brand_values(frame: pd.DataFrame) -> list[str]:
     """Return one canonical option per brand, never a raw multi-brand cell."""
     return sorted(
-        {brand for value in frame["brand"].dropna() for brand in _brands(value)},
+        {brand for row in frame.to_dict("records") for brand in _record_brands(row)},
         key=str.casefold,
     )
 
@@ -144,7 +172,7 @@ def _rating_day(frame: pd.DataFrame, day: pd.Timestamp, window_days: int) -> lis
     window = frame[(frame["published_at"] >= start) & (frame["published_at"] < day + pd.Timedelta(days=1))].copy()
     exploded: list[dict[str, Any]] = []
     for row in window.to_dict("records"):
-        for brand in _brands(row.get("brand")):
+        for brand in _record_brands(row):
             exploded.append({**row, "rating_brand": brand})
     if not exploded:
         return []

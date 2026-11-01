@@ -442,7 +442,15 @@ def _consumer_voice_payload(snapshot, params):
 
 def _social_meta(snapshot):
     dates = snapshot.data["published_at"].dropna()
-    return {"dataAsOf": dates.max().isoformat() if not dates.empty else None, "cacheGeneratedAt": snapshot.generated_at.isoformat(), "stale": snapshot.stale}
+    repository = app.state.social_intelligence_repository
+    return {
+        "dataAsOf": dates.max().isoformat() if not dates.empty else None,
+        "cacheGeneratedAt": snapshot.generated_at.isoformat(),
+        "stale": snapshot.stale,
+        "dataSource": "fallback_csv" if snapshot.stale else "live_sheet",
+        "sourceRowCount": int(len(snapshot.data)),
+        "fallbackReason": getattr(repository, "last_error", None) if snapshot.stale else None,
+    }
 
 
 @app.get("/api/social-intelligence/filters")

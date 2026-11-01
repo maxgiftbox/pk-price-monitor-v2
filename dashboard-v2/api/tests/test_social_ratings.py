@@ -41,6 +41,8 @@ def test_social_ratings_endpoint(monkeypatch):
     assert response.status_code == 200
     assert response.json()["leaders"][0]["brand"] == "vivo"
     assert response.json()["meta"]["stale"] is False
+    assert response.json()["meta"]["dataSource"] == "live_sheet"
+    assert response.json()["meta"]["sourceRowCount"] == 4
 
 
 def test_brand_filter_options_are_canonical_individual_entities():
@@ -73,3 +75,25 @@ def test_single_brand_filter_matches_a_multi_brand_record():
 
     assert result["meta"]["filteredCount"] == 1
     assert result["records"][0]["recordId"] == "multi-brand"
+
+
+def test_blank_brand_is_enriched_from_nubia_content_for_filters_and_ratings():
+    frame = fixture().iloc[[0]].copy()
+    frame["record_id"] = "nubia-news"
+    frame["source_url"] = "https://example.com/nubia-news"
+    frame["account_name"] = "PhoneWorld Magazine"
+    frame["account_type"] = "News / Media"
+    frame["monitor_type"] = "trend_discovery"
+    frame["brand"] = ""
+    frame["title"] = "nubia launches three new 5G smartphones in Pakistan"
+    frame["content"] = "ZTE nubia expands its smartphone lineup."
+
+    assert "Nubia" in filters(frame)["options"]["brands"]
+    result = dashboard(frame, {"brand": ["Nubia"], "limit": 40})
+    assert result["meta"]["filteredCount"] == 1
+    ratings = brand_ratings(
+        frame,
+        {"period_days": 7, "country": "BD", "date_to": "2026-10-16", "top_n": 6},
+    )
+    assert ratings["leaders"][0]["brand"] == "Nubia"
+    assert ratings["leaders"][0]["earnedMentions"] == 1
