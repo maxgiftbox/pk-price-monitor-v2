@@ -2,6 +2,7 @@ import unittest
 
 from availability_crawler import (
     build_row,
+    checkpoint_requires_fallback,
     classify_availability,
     classify_purchase_signals,
     classify_sku_info,
@@ -12,6 +13,7 @@ from availability_crawler import (
     inspect_purchase_controls,
     product_results_from_payload,
     resolve_single_sku_result,
+    resumable_run,
     result_requires_fallback,
     selected_variant_matches_source,
     selection_mismatch_result,
@@ -20,6 +22,32 @@ from availability_crawler import (
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
+    def test_resumes_latest_running_run_with_matching_staging_rows(self):
+        logs = [
+            {"run_id": "old", "status": "success", "started_at": "old-time"},
+            {"run_id": "active", "status": "running", "started_at": "start-time"},
+        ]
+        staging = [
+            {"run_id": "old", "daraz_sku": "old-sku"},
+            {"run_id": "active", "daraz_sku": "sku-1"},
+            {"run_id": "active", "daraz_sku": "sku-2"},
+        ]
+        self.assertEqual(
+            resumable_run(logs, staging),
+            ("active", "start-time", staging[1:]),
+        )
+
+    def test_does_not_resume_completed_run(self):
+        self.assertIsNone(resumable_run(
+            [{"run_id": "done", "status": "success", "started_at": "start"}],
+            [{"run_id": "done", "daraz_sku": "sku-1"}],
+        ))
+
+    def test_checkpoint_marks_only_unresolved_product_results_for_fallback(self):
+        self.assertTrue(checkpoint_requires_fallback({"status_reason": "sku_selection_mismatch"}))
+        self.assertTrue(checkpoint_requires_fallback({"status_reason": "state_conflict:a:b"}))
+        self.assertFalse(checkpoint_requires_fallback({"status_reason": "purchase_action_enabled"}))
+
     def test_fallback_worker_count_is_bounded(self):
         self.assertEqual(fallback_worker_count(0, 3), 0)
         self.assertEqual(fallback_worker_count(2, 3), 2)
