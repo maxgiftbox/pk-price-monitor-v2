@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 from availability_crawler import (
     build_row,
+    batch_has_time,
     checkpoint_requires_fallback,
     classify_availability,
     classify_purchase_signals,
@@ -18,10 +20,27 @@ from availability_crawler import (
     selected_variant_matches_source,
     selection_mismatch_result,
     sku_selection_plan,
+    write_github_output,
 )
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
+    @patch("availability_crawler.time.monotonic", return_value=100.0)
+    def test_batch_time_budget_keeps_reserve(self, _monotonic):
+        self.assertTrue(batch_has_time(250.0, 120.0))
+        self.assertFalse(batch_has_time(220.0, 120.0))
+        self.assertTrue(batch_has_time(None, 120.0))
+
+    def test_writes_batch_completion_to_github_output(self):
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="r+", encoding="utf-8") as output:
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": output.name}):
+                write_github_output("complete", "false")
+            output.seek(0)
+            self.assertEqual(output.read(), "complete=false\n")
+
     def test_resumes_latest_running_run_with_matching_staging_rows(self):
         logs = [
             {"run_id": "old", "status": "success", "started_at": "old-time"},
