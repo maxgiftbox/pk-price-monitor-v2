@@ -1,0 +1,52 @@
+name: Stock Availability Hosted Shadow
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: stock-availability-hosted-shadow
+  cancel-in-progress: false
+
+jobs:
+  hosted-shadow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Crawl all products without publishing production data
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          AVAILABILITY_CURRENT_TAB: drz_availability_hosted_shadow
+          AVAILABILITY_STAGING_TAB: drz_availability_hosted_shadow_staging
+          AVAILABILITY_RUN_LOG_TAB: availability_hosted_shadow_run_log
+          AVAILABILITY_PILOT_PRODUCTS_PER_VENTURE: "0"
+          AVAILABILITY_FALLBACK_WORKERS: "4"
+          AVAILABILITY_CHECKPOINT_PRODUCTS: "5"
+          AVAILABILITY_CHECKPOINT_FALLBACKS: "5"
+          AVAILABILITY_BATCH_MINUTES: "0"
+          PYTHONUNBUFFERED: "1"
+        run: python availability_crawler.py
+
+      - name: Upload hosted shadow debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: availability-hosted-shadow-debug-${{ github.run_attempt }}
+          path: debug_availability/**
+          if-no-files-found: warn
+          retention-days: 7

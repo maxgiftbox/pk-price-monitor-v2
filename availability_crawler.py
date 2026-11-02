@@ -1241,6 +1241,12 @@ def main() -> None:
             "unknown": counts["unknown"],
             "notes": "Full snapshot published",
         })
+        print(
+            f"[Complete] run_id={run_id} rows={len(results)} "
+            f"available={counts['available']} unavailable={counts['unavailable']} "
+            f"unknown={counts['unknown']} published_tab={CURRENT_TAB}",
+            flush=True,
+        )
         write_github_output("complete", "true")
     except Exception as exc:
         append_run_log(run_log, {
