@@ -20,10 +20,10 @@ from playwright.sync_api import sync_playwright
 from scraper import SHEET_NAME, get_gspread_client, google_sheets_retry
 
 
-SOURCE_TAB = "drz_sku_virants"
-CURRENT_TAB = "drz_availability_current"
-STAGING_TAB = "drz_availability_staging"
-RUN_LOG_TAB = "availability_run_log"
+SOURCE_TAB = os.getenv("AVAILABILITY_SOURCE_TAB", "drz_sku_virants")
+CURRENT_TAB = os.getenv("AVAILABILITY_CURRENT_TAB", "drz_availability_current")
+STAGING_TAB = os.getenv("AVAILABILITY_STAGING_TAB", "drz_availability_staging")
+RUN_LOG_TAB = os.getenv("AVAILABILITY_RUN_LOG_TAB", "availability_run_log")
 DEBUG_DIR = "debug_availability"
 THROTTLE_SECONDS = float(os.getenv("AVAILABILITY_THROTTLE_SECONDS", "4"))
 FALLBACK_MAX_WORKERS = max(1, min(4, int(os.getenv("AVAILABILITY_FALLBACK_WORKERS", "3"))))
@@ -33,6 +33,10 @@ BATCH_MINUTES = max(0.0, float(os.getenv("AVAILABILITY_BATCH_MINUTES", "0")))
 BATCH_STOP_RESERVE_SECONDS = max(
     0.0,
     float(os.getenv("AVAILABILITY_BATCH_STOP_RESERVE_SECONDS", "120")),
+)
+PILOT_PRODUCTS_PER_VENTURE = max(
+    0,
+    int(os.getenv("AVAILABILITY_PILOT_PRODUCTS_PER_VENTURE", "0")),
 )
 NETWORK_MAX_ATTEMPTS = 3
 NETWORK_RETRY_DELAYS = (5, 10)
@@ -143,6 +147,44 @@ def group_source_rows(rows: Iterable[Dict[str, Any]]) -> List[List[Dict[str, Any
     for row in rows:
         groups.setdefault(product_group_key(row), []).append(row)
     return list(groups.values())
+
+
+def select_pilot_source_rows(
+    rows: Iterable[Dict[str, Any]],
+    products_per_venture: int,
+) -> List[Dict[str, Any]]:
+    """Select deterministic, brand-diverse product groups for a hosted pilot."""
+    all_rows = list(rows)
+    if products_per_venture <= 0:
+        return all_rows
+
+    venture_brands: Dict[str, Dict[str, List[List[Dict[str, Any]]]]] = {}
+    for group in group_source_rows(all_rows):
+        representative = group[0]
+        venture = product_group_key(representative)[0]
+        brand = str(representative.get("brand_name", "")).strip().casefold() or "unknown"
+        venture_brands.setdefault(venture, {}).setdefault(brand, []).append(group)
+
+    selected: List[Dict[str, Any]] = []
+    for venture in sorted(venture_brands):
+        brand_groups = venture_brands[venture]
+        for groups in brand_groups.values():
+            groups.sort(key=lambda group: product_group_key(group[0])[1])
+        chosen = 0
+        while chosen < products_per_venture:
+            added = False
+            for brand in sorted(brand_groups):
+                groups = brand_groups[brand]
+                if not groups:
+                    continue
+                selected.extend(groups.pop(0))
+                chosen += 1
+                added = True
+                if chosen >= products_per_venture:
+                    break
+            if not added:
+                break
+    return selected
 
 
 def classify_sku_info(info: Dict[str, Any]) -> tuple[str, str]:
@@ -954,6 +996,17 @@ def main() -> None:
         raise RuntimeError(f"{SOURCE_TAB} contains no usable SKU rows")
     if len({str(row["daraz_sku"]).strip() for row in source_rows}) != len(source_rows):
         raise RuntimeError(f"{SOURCE_TAB} contains duplicate daraz_sku values")
+    if PILOT_PRODUCTS_PER_VENTURE:
+        source_rows = select_pilot_source_rows(source_rows, PILOT_PRODUCTS_PER_VENTURE)
+        pilot_counts = Counter(
+            product_group_key(group[0])[0]
+            for group in group_source_rows(source_rows)
+        )
+        print(
+            f"[Pilot] products_per_venture={PILOT_PRODUCTS_PER_VENTURE} "
+            f"selected_products={dict(pilot_counts)} selected_variants={len(source_rows)}",
+            flush=True,
+        )
 
     staging = ensure_worksheet(spreadsheet, STAGING_TAB, len(source_rows) + 10, len(AVAILABILITY_COLUMNS))
     current = ensure_worksheet(spreadsheet, CURRENT_TAB, len(source_rows) + 10, len(AVAILABILITY_COLUMNS))
