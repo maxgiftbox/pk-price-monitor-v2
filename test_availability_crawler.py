@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 from availability_crawler import (
     build_row,
+    batch_has_time,
     checkpoint_requires_fallback,
     classify_availability,
     classify_purchase_signals,
@@ -11,17 +13,36 @@ from availability_crawler import (
     fallback_worker_count,
     group_source_rows,
     inspect_purchase_controls,
+    product_group_key,
     product_results_from_payload,
     resolve_single_sku_result,
     resumable_run,
     result_requires_fallback,
     selected_variant_matches_source,
+    select_pilot_source_rows,
     selection_mismatch_result,
     sku_selection_plan,
+    write_github_output,
 )
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
+    @patch("availability_crawler.time.monotonic", return_value=100.0)
+    def test_batch_time_budget_keeps_reserve(self, _monotonic):
+        self.assertTrue(batch_has_time(250.0, 120.0))
+        self.assertFalse(batch_has_time(220.0, 120.0))
+        self.assertTrue(batch_has_time(None, 120.0))
+
+    def test_writes_batch_completion_to_github_output(self):
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="r+", encoding="utf-8") as output:
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": output.name}):
+                write_github_output("complete", "false")
+            output.seek(0)
+            self.assertEqual(output.read(), "complete=false\n")
+
     def test_resumes_latest_running_run_with_matching_staging_rows(self):
         logs = [
             {"run_id": "old", "status": "success", "started_at": "old-time"},
@@ -87,6 +108,20 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         ]
         groups = group_source_rows(rows)
         self.assertEqual([len(group) for group in groups], [2, 1])
+
+    def test_pilot_selection_round_robins_brands_within_each_venture(self):
+        rows = [
+            {"venture": "PK", "brand_name": "Apple", "product_id": "1", "daraz_sku": "1_PK-10"},
+            {"venture": "PK", "brand_name": "Apple", "product_id": "1", "daraz_sku": "1_PK-11"},
+            {"venture": "PK", "brand_name": "Apple", "product_id": "2", "daraz_sku": "2_PK-20"},
+            {"venture": "PK", "brand_name": "Samsung", "product_id": "3", "daraz_sku": "3_PK-30"},
+            {"venture": "BD", "brand_name": "Realme", "product_id": "4", "daraz_sku": "4_BD-40"},
+            {"venture": "BD", "brand_name": "Infinix", "product_id": "5", "daraz_sku": "5_BD-50"},
+        ]
+        selected = select_pilot_source_rows(rows, 2)
+        selected_products = {product_group_key(row) for row in selected}
+        self.assertEqual(selected_products, {("PK", "1"), ("PK", "3"), ("BD", "4"), ("BD", "5")})
+        self.assertEqual(len(selected), 5)
 
     def test_classifies_quantity_and_wishlist_states(self):
         self.assertEqual(

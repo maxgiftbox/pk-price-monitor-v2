@@ -1,0 +1,36 @@
+name: Run availability crawl batch
+description: Run one bounded, resumable Daraz availability crawl batch
+
+outputs:
+  complete:
+    description: Whether the complete snapshot was published
+    value: ${{ steps.crawl.outputs.complete }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check Python
+      shell: bash
+      run: |
+        /opt/homebrew/bin/python3.11 --version
+        /opt/homebrew/bin/python3.11 -m pip --version
+
+    - name: Install dependencies
+      shell: bash
+      run: /opt/homebrew/bin/python3.11 -m pip install -r requirements.txt
+
+    - name: Install Playwright Chromium
+      shell: bash
+      run: /opt/homebrew/bin/python3.11 -m playwright install chromium
+
+    - name: Crawl a bounded Daraz availability batch
+      id: crawl
+      shell: bash
+      env:
+        AVAILABILITY_FALLBACK_WORKERS: "4"
+        AVAILABILITY_CHECKPOINT_PRODUCTS: "5"
+        AVAILABILITY_CHECKPOINT_FALLBACKS: "5"
+        AVAILABILITY_BATCH_MINUTES: "30"
+        AVAILABILITY_BATCH_STOP_RESERVE_SECONDS: "120"
+        PYTHONUNBUFFERED: "1"
+      run: /usr/bin/caffeinate -dimsu /opt/homebrew/bin/python3.11 availability_crawler.py
