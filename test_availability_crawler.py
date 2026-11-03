@@ -18,6 +18,7 @@ from availability_crawler import (
     resolve_single_sku_result,
     resumable_run,
     result_requires_fallback,
+    safe_append_run_log,
     selected_variant_matches_source,
     select_pilot_source_rows,
     selection_mismatch_result,
@@ -27,6 +28,15 @@ from availability_crawler import (
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
+    @patch("availability_crawler.append_run_log", side_effect=RuntimeError("temporary TLS failure"))
+    def test_run_log_failure_is_non_fatal(self, _append_run_log):
+        self.assertFalse(safe_append_run_log(object(), {"status": "success"}))
+
+    @patch("availability_crawler.append_run_log")
+    def test_run_log_success_is_reported(self, append_run_log):
+        self.assertTrue(safe_append_run_log(object(), {"status": "success"}))
+        append_run_log.assert_called_once()
+
     @patch("availability_crawler.time.monotonic", return_value=100.0)
     def test_batch_time_budget_keeps_reserve(self, _monotonic):
         self.assertTrue(batch_has_time(250.0, 120.0))

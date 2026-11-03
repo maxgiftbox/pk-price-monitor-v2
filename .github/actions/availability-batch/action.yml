@@ -32,5 +32,10 @@ runs:
         AVAILABILITY_CHECKPOINT_FALLBACKS: "5"
         AVAILABILITY_BATCH_MINUTES: "30"
         AVAILABILITY_BATCH_STOP_RESERVE_SECONDS: "120"
+        # Git's proxy configuration does not apply to Python requests/gspread.
+        # Route Google Sheets API traffic through the verified FlClash port.
+        HTTP_PROXY: "http://127.0.0.1:7890"
+        HTTPS_PROXY: "http://127.0.0.1:7890"
+        NO_PROXY: "localhost,127.0.0.1"
         PYTHONUNBUFFERED: "1"
       run: /usr/bin/caffeinate -dimsu /opt/homebrew/bin/python3.11 availability_crawler.py
