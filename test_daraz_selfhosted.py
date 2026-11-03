@@ -12,7 +12,12 @@ from daraz_selfhosted import (
     normalized_key,
     upsert_daraz_rows,
 )
-from scraper import GOOGLE_SHEETS_MAX_ATTEMPTS, google_sheets_retry, parse_daraz
+from scraper import (
+    GOOGLE_SHEETS_MAX_ATTEMPTS,
+    google_sheets_retry,
+    parse_daraz,
+    reset_google_sheets_connection_pool,
+)
 
 
 class FakeWorksheet:
@@ -95,6 +100,20 @@ class DarazUpsertTests(unittest.TestCase):
 
 
 class GoogleSheetsRetryTests(unittest.TestCase):
+    def test_resets_bound_worksheet_connection_pool(self):
+        adapter = MagicMock()
+
+        class Worksheet:
+            client = MagicMock()
+
+            def operation(self):
+                return None
+
+        worksheet = Worksheet()
+        worksheet.client.session.adapters = {"https://": adapter}
+        reset_google_sheets_connection_pool(worksheet.operation)
+        adapter.close.assert_called_once_with()
+
     @patch("scraper.time.sleep")
     def test_transport_errors_retry_and_recover(self, sleep):
         for error in (

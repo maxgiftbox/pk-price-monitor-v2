@@ -778,11 +778,28 @@ def ensure_worksheet(spreadsheet: Any, title: str, rows: int, cols: int) -> Any:
         return google_sheets_retry(spreadsheet.add_worksheet, title=title, rows=rows, cols=cols)
 
 
-def replace_snapshot(worksheet: Any, rows: Iterable[Dict[str, Any]]) -> None:
+def replace_snapshot(
+    worksheet: Any,
+    rows: Iterable[Dict[str, Any]],
+    *,
+    trim_stale_rows: bool = True,
+) -> None:
+    """Write a snapshot before removing any stale tail rows.
+
+    Checkpoints are monotonically growing and deliberately skip tail cleanup,
+    avoiding a destructive clear on every checkpoint. Published snapshots trim
+    only the obsolete tail *after* the new data is safely written.
+    """
     values = [AVAILABILITY_COLUMNS]
     values.extend([[row.get(column, "") for column in AVAILABILITY_COLUMNS] for row in rows])
-    google_sheets_retry(worksheet.clear)
+    previous_row_count = 0
+    if trim_stale_rows:
+        previous_row_count = len(google_sheets_retry(worksheet.get_all_values))
     google_sheets_retry(worksheet.update, values=values, range_name="A1", value_input_option="RAW")
+    if previous_row_count > len(values):
+        last_column = "Q"
+        stale_range = f"A{len(values) + 1}:{last_column}{previous_row_count}"
+        google_sheets_retry(worksheet.batch_clear, [stale_range])
 
 
 def append_run_log(worksheet: Any, values: Dict[str, Any]) -> None:
@@ -1045,7 +1062,6 @@ def main() -> None:
     else:
         run_id = f"{started:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
         resumed_rows = []
-        replace_snapshot(staging, [])
 
     source_by_sku = {
         str(row["daraz_sku"]).strip(): row
@@ -1063,7 +1079,7 @@ def main() -> None:
             for sku in source_by_sku
             if sku in checkpoint_rows_by_sku
         ]
-        replace_snapshot(staging, ordered_rows)
+        replace_snapshot(staging, ordered_rows, trim_stale_rows=False)
         print(
             f"[Checkpoint] run_id={run_id} rows={len(ordered_rows)}/{len(source_rows)}",
             flush=True,

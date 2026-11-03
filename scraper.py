@@ -12,6 +12,7 @@ import gspread
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from google.auth.exceptions import TransportError as GoogleAuthTransportError
 from google.oauth2.service_account import Credentials
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -45,6 +46,7 @@ GOOGLE_SHEETS_MAX_ATTEMPTS = 5
 GOOGLE_SHEETS_MAX_BACKOFF_SECONDS = 32.0
 GOOGLE_SHEETS_NETWORK_DELAYS = (5.0, 10.0, 20.0, 30.0)
 TRANSIENT_GOOGLE_SHEETS_NETWORK_ERRORS = (
+    GoogleAuthTransportError,
     requests.exceptions.ProxyError,
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
@@ -55,6 +57,23 @@ TRANSIENT_GOOGLE_SHEETS_NETWORK_ERRORS = (
     socket.gaierror,
 )
 T = TypeVar("T")
+
+
+def reset_google_sheets_connection_pool(operation: Callable[..., Any]) -> None:
+    """Discard pooled sockets after a proxy/TLS transport failure.
+
+    Reusing the same requests adapter after an unexpected TLS EOF can keep a
+    poisoned proxy connection alive across every outer retry. Closing the
+    adapters is safe: requests lazily creates fresh pools on the next call.
+    """
+    owner = getattr(operation, "__self__", None)
+    client = getattr(owner, "client", None)
+    session = getattr(client, "session", None) or getattr(owner, "session", None)
+    for adapter in getattr(session, "adapters", {}).values():
+        try:
+            adapter.close()
+        except Exception:
+            pass
 
 
 def google_sheets_retry(operation: Callable[..., T], *args: Any, **kwargs: Any) -> T:
@@ -87,6 +106,7 @@ def google_sheets_retry(operation: Callable[..., T], *args: Any, **kwargs: Any) 
             api_retried = True
             time.sleep(delay)
         except TRANSIENT_GOOGLE_SHEETS_NETWORK_ERRORS as exc:
+            reset_google_sheets_connection_pool(operation)
             if attempt == GOOGLE_SHEETS_MAX_ATTEMPTS:
                 print(
                     "[GSHEET NETWORK ERROR] Google Sheets unavailable after "
