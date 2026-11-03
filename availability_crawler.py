@@ -796,6 +796,25 @@ def append_run_log(worksheet: Any, values: Dict[str, Any]) -> None:
     )
 
 
+def safe_append_run_log(worksheet: Any, values: Dict[str, Any]) -> bool:
+    """Best-effort audit logging that never changes the crawl outcome.
+
+    Snapshot writes remain strict, but a transient failure of the auxiliary
+    run-log sheet must not fail an otherwise successful batch or hide the
+    exception that originally caused a failed batch.
+    """
+    try:
+        append_run_log(worksheet, values)
+    except Exception as exc:
+        print(
+            f"[RUN LOG WARNING] Could not append availability_run_log: "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        return False
+    return True
+
+
 def write_github_output(name: str, value: str) -> None:
     """Expose batch state to later workflow jobs without affecting local runs."""
     output_path = os.getenv("GITHUB_OUTPUT", "").strip()
@@ -1050,7 +1069,7 @@ def main() -> None:
             flush=True,
         )
 
-    append_run_log(run_log, {
+    safe_append_run_log(run_log, {
         "run_id": run_id,
         "started_at": started.isoformat(),
         "completed_at": "",
@@ -1069,7 +1088,7 @@ def main() -> None:
             str(row.get("availability_status", "")).strip()
             for row in checkpoint_rows_by_sku.values()
         )
-        append_run_log(run_log, {
+        safe_append_run_log(run_log, {
             "run_id": run_id,
             "started_at": started.isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -1230,7 +1249,7 @@ def main() -> None:
         replace_snapshot(staging, results)
         replace_snapshot(current, results)
         counts = Counter(row["availability_status"] for row in results)
-        append_run_log(run_log, {
+        safe_append_run_log(run_log, {
             "run_id": run_id,
             "started_at": started.isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -1249,7 +1268,8 @@ def main() -> None:
         )
         write_github_output("complete", "true")
     except Exception as exc:
-        append_run_log(run_log, {
+        print(f"[CRAWL ERROR] {type(exc).__name__}: {exc}", flush=True)
+        safe_append_run_log(run_log, {
             "run_id": run_id,
             "started_at": started.isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),
