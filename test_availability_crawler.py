@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 from availability_crawler import (
     build_row,
@@ -15,6 +15,7 @@ from availability_crawler import (
     inspect_purchase_controls,
     product_group_key,
     product_results_from_payload,
+    replace_snapshot,
     resolve_single_sku_result,
     resumable_run,
     result_requires_fallback,
@@ -28,6 +29,35 @@ from availability_crawler import (
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
+    @patch("availability_crawler.google_sheets_retry", side_effect=lambda operation, *args, **kwargs: operation(*args, **kwargs))
+    def test_checkpoint_updates_without_destructive_clear(self, _retry):
+        worksheet = MagicMock()
+        replace_snapshot(
+            worksheet,
+            [{"run_id": "run-1", "daraz_sku": "sku-1"}],
+            trim_stale_rows=False,
+        )
+        worksheet.update.assert_called_once()
+        worksheet.clear.assert_not_called()
+        worksheet.get_all_values.assert_not_called()
+        worksheet.batch_clear.assert_not_called()
+
+    @patch("availability_crawler.google_sheets_retry", side_effect=lambda operation, *args, **kwargs: operation(*args, **kwargs))
+    def test_published_snapshot_writes_before_trimming_stale_tail(self, _retry):
+        worksheet = MagicMock()
+        worksheet.get_all_values.return_value = [["old"]] * 5
+        replace_snapshot(worksheet, [{"run_id": "run-1"}])
+        worksheet.update.assert_called_once()
+        worksheet.batch_clear.assert_called_once_with(["A3:Q5"])
+        self.assertLess(
+            worksheet.method_calls.index(call.update(
+                values=unittest.mock.ANY,
+                range_name="A1",
+                value_input_option="RAW",
+            )),
+            worksheet.method_calls.index(call.batch_clear(["A3:Q5"])),
+        )
+
     @patch("availability_crawler.append_run_log", side_effect=RuntimeError("temporary TLS failure"))
     def test_run_log_failure_is_non_fatal(self, _append_run_log):
         self.assertFalse(safe_append_run_log(object(), {"status": "success"}))
