@@ -10,9 +10,9 @@ import re
 import time
 import uuid
 from collections import Counter
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -20,24 +20,13 @@ from playwright.sync_api import sync_playwright
 from scraper import SHEET_NAME, get_gspread_client, google_sheets_retry
 
 
-SOURCE_TAB = os.getenv("AVAILABILITY_SOURCE_TAB", "drz_sku_virants")
-CURRENT_TAB = os.getenv("AVAILABILITY_CURRENT_TAB", "drz_availability_current")
-STAGING_TAB = os.getenv("AVAILABILITY_STAGING_TAB", "drz_availability_staging")
-RUN_LOG_TAB = os.getenv("AVAILABILITY_RUN_LOG_TAB", "availability_run_log")
+SOURCE_TAB = "drz_sku_virants"
+CURRENT_TAB = "drz_availability_current"
+STAGING_TAB = "drz_availability_staging"
+RUN_LOG_TAB = "availability_run_log"
 DEBUG_DIR = "debug_availability"
 THROTTLE_SECONDS = float(os.getenv("AVAILABILITY_THROTTLE_SECONDS", "4"))
 FALLBACK_MAX_WORKERS = max(1, min(4, int(os.getenv("AVAILABILITY_FALLBACK_WORKERS", "3"))))
-CHECKPOINT_PRODUCT_INTERVAL = max(1, int(os.getenv("AVAILABILITY_CHECKPOINT_PRODUCTS", "5")))
-CHECKPOINT_FALLBACK_INTERVAL = max(1, int(os.getenv("AVAILABILITY_CHECKPOINT_FALLBACKS", "5")))
-BATCH_MINUTES = max(0.0, float(os.getenv("AVAILABILITY_BATCH_MINUTES", "0")))
-BATCH_STOP_RESERVE_SECONDS = max(
-    0.0,
-    float(os.getenv("AVAILABILITY_BATCH_STOP_RESERVE_SECONDS", "120")),
-)
-PILOT_PRODUCTS_PER_VENTURE = max(
-    0,
-    int(os.getenv("AVAILABILITY_PILOT_PRODUCTS_PER_VENTURE", "0")),
-)
 NETWORK_MAX_ATTEMPTS = 3
 NETWORK_RETRY_DELAYS = (5, 10)
 PDP_READY_SELECTOR = "#module_add_to_cart"
@@ -78,15 +67,6 @@ RUN_LOG_COLUMNS = [
     "unknown",
     "notes",
 ]
-
-FALLBACK_CHECKPOINT_REASONS = {
-    "sku_selection_mismatch",
-    "sku_state_not_found",
-    "sku_not_loaded",
-    "sku_quantity_unavailable",
-    "variant_not_verified",
-    "unverified",
-}
 
 
 def extract_memory(product_name: Any) -> str:
@@ -147,44 +127,6 @@ def group_source_rows(rows: Iterable[Dict[str, Any]]) -> List[List[Dict[str, Any
     for row in rows:
         groups.setdefault(product_group_key(row), []).append(row)
     return list(groups.values())
-
-
-def select_pilot_source_rows(
-    rows: Iterable[Dict[str, Any]],
-    products_per_venture: int,
-) -> List[Dict[str, Any]]:
-    """Select deterministic, brand-diverse product groups for a hosted pilot."""
-    all_rows = list(rows)
-    if products_per_venture <= 0:
-        return all_rows
-
-    venture_brands: Dict[str, Dict[str, List[List[Dict[str, Any]]]]] = {}
-    for group in group_source_rows(all_rows):
-        representative = group[0]
-        venture = product_group_key(representative)[0]
-        brand = str(representative.get("brand_name", "")).strip().casefold() or "unknown"
-        venture_brands.setdefault(venture, {}).setdefault(brand, []).append(group)
-
-    selected: List[Dict[str, Any]] = []
-    for venture in sorted(venture_brands):
-        brand_groups = venture_brands[venture]
-        for groups in brand_groups.values():
-            groups.sort(key=lambda group: product_group_key(group[0])[1])
-        chosen = 0
-        while chosen < products_per_venture:
-            added = False
-            for brand in sorted(brand_groups):
-                groups = brand_groups[brand]
-                if not groups:
-                    continue
-                selected.extend(groups.pop(0))
-                chosen += 1
-                added = True
-                if chosen >= products_per_venture:
-                    break
-            if not added:
-                break
-    return selected
 
 
 def classify_sku_info(info: Dict[str, Any]) -> tuple[str, str]:
@@ -778,28 +720,11 @@ def ensure_worksheet(spreadsheet: Any, title: str, rows: int, cols: int) -> Any:
         return google_sheets_retry(spreadsheet.add_worksheet, title=title, rows=rows, cols=cols)
 
 
-def replace_snapshot(
-    worksheet: Any,
-    rows: Iterable[Dict[str, Any]],
-    *,
-    trim_stale_rows: bool = True,
-) -> None:
-    """Write a snapshot before removing any stale tail rows.
-
-    Checkpoints are monotonically growing and deliberately skip tail cleanup,
-    avoiding a destructive clear on every checkpoint. Published snapshots trim
-    only the obsolete tail *after* the new data is safely written.
-    """
+def replace_snapshot(worksheet: Any, rows: Iterable[Dict[str, Any]]) -> None:
     values = [AVAILABILITY_COLUMNS]
     values.extend([[row.get(column, "") for column in AVAILABILITY_COLUMNS] for row in rows])
-    previous_row_count = 0
-    if trim_stale_rows:
-        previous_row_count = len(google_sheets_retry(worksheet.get_all_values))
+    google_sheets_retry(worksheet.clear)
     google_sheets_retry(worksheet.update, values=values, range_name="A1", value_input_option="RAW")
-    if previous_row_count > len(values):
-        last_column = "Q"
-        stale_range = f"A{len(values) + 1}:{last_column}{previous_row_count}"
-        google_sheets_retry(worksheet.batch_clear, [stale_range])
 
 
 def append_run_log(worksheet: Any, values: Dict[str, Any]) -> None:
@@ -811,68 +736,6 @@ def append_run_log(worksheet: Any, values: Dict[str, Any]) -> None:
         [values.get(column, "") for column in RUN_LOG_COLUMNS],
         value_input_option="RAW",
     )
-
-
-def safe_append_run_log(worksheet: Any, values: Dict[str, Any]) -> bool:
-    """Best-effort audit logging that never changes the crawl outcome.
-
-    Snapshot writes remain strict, but a transient failure of the auxiliary
-    run-log sheet must not fail an otherwise successful batch or hide the
-    exception that originally caused a failed batch.
-    """
-    try:
-        append_run_log(worksheet, values)
-    except Exception as exc:
-        print(
-            f"[RUN LOG WARNING] Could not append availability_run_log: "
-            f"{type(exc).__name__}: {exc}",
-            flush=True,
-        )
-        return False
-    return True
-
-
-def write_github_output(name: str, value: str) -> None:
-    """Expose batch state to later workflow jobs without affecting local runs."""
-    output_path = os.getenv("GITHUB_OUTPUT", "").strip()
-    if not output_path:
-        return
-    with open(output_path, "a", encoding="utf-8") as output:
-        output.write(f"{name}={value}\n")
-
-
-def batch_has_time(deadline: Optional[float], reserve_seconds: float = 0.0) -> bool:
-    """Return whether another indivisible crawl unit may safely be started."""
-    return deadline is None or time.monotonic() + reserve_seconds < deadline
-
-
-def checkpoint_requires_fallback(row: Dict[str, Any]) -> bool:
-    """Return whether a product-phase checkpoint still needs direct-SKU verification."""
-    reason = str(row.get("status_reason", "")).strip()
-    return reason in FALLBACK_CHECKPOINT_REASONS or reason.startswith("state_conflict:")
-
-
-def resumable_run(
-    run_log_rows: Iterable[Dict[str, Any]],
-    staging_rows: Iterable[Dict[str, Any]],
-) -> Optional[Tuple[str, str, List[Dict[str, Any]]]]:
-    """Find the latest interrupted run and its matching staging checkpoint."""
-    logs = list(run_log_rows)
-    if not logs:
-        return None
-    latest = logs[-1]
-    if str(latest.get("status", "")).strip().casefold() not in {"running", "resuming"}:
-        return None
-    run_id = str(latest.get("run_id", "")).strip()
-    if not run_id:
-        return None
-    matching_rows = [
-        dict(row)
-        for row in staging_rows
-        if str(row.get("run_id", "")).strip() == run_id
-        and str(row.get("daraz_sku", "")).strip()
-    ]
-    return run_id, str(latest.get("started_at", "")).strip(), matching_rows
 
 
 def create_browser_context(browser: Any) -> Any:
@@ -956,11 +819,7 @@ def _crawl_fallback_worker(source: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]
         }
 
 
-def run_parallel_fallbacks(
-    source_rows: List[Dict[str, Any]],
-    on_result: Optional[Callable[[str, Dict[str, Any], int, int], None]] = None,
-    deadline: Optional[float] = None,
-) -> Dict[str, Dict[str, Any]]:
+def run_parallel_fallbacks(source_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Resolve target-SKU fallbacks with bounded, process-isolated concurrency."""
     workers = fallback_worker_count(len(source_rows))
     if workers == 0:
@@ -973,56 +832,33 @@ def run_parallel_fallbacks(
         mp_context=spawn_context,
         initializer=_init_fallback_worker,
     ) as executor:
-        pending: Dict[Any, str] = {}
-        source_iter = iter(source_rows)
-
-        def submit_next() -> bool:
-            if not batch_has_time(deadline, BATCH_STOP_RESERVE_SECONDS):
-                return False
+        future_to_sku = {
+            executor.submit(_crawl_fallback_worker, source): str(source["daraz_sku"]).strip()
+            for source in source_rows
+        }
+        total = len(future_to_sku)
+        for completed, future in enumerate(as_completed(future_to_sku), start=1):
+            expected_sku = future_to_sku[future]
             try:
-                source = next(source_iter)
-            except StopIteration:
-                return False
-            future = executor.submit(_crawl_fallback_worker, source)
-            pending[future] = str(source["daraz_sku"]).strip()
-            return True
-
-        for _ in range(workers):
-            if not submit_next():
-                break
-
-        total = len(source_rows)
-        completed = 0
-        while pending:
-            done, _ = wait(tuple(pending), return_when=FIRST_COMPLETED)
-            for future in done:
-                expected_sku = pending.pop(future)
-                try:
-                    sku, result = future.result()
-                except Exception as exc:  # noqa: BLE001
-                    sku, result = expected_sku, {
-                        "stock_status": "unknown",
-                        "error_message": f"Parallel fallback process failed: {exc}",
-                    }
-                completed += 1
-                results[sku] = result
-                if on_result is not None:
-                    on_result(sku, result, completed, total)
-                if completed % 25 == 0 or completed == total:
-                    counts = Counter(classify_availability(value)[0] for value in results.values())
-                    print(
-                        f"[Fallback {completed}/{total}] available={counts['available']} "
-                        f"unavailable={counts['unavailable']} unknown={counts['unknown']}"
-                    )
-                submit_next()
-        if completed < total:
-            print(f"[Fallback] batch time budget reached; deferred={total - completed}", flush=True)
+                sku, result = future.result()
+            except Exception as exc:  # noqa: BLE001
+                sku, result = expected_sku, {
+                    "stock_status": "unknown",
+                    "error_message": f"Parallel fallback process failed: {exc}",
+                }
+            results[sku] = result
+            if completed % 25 == 0 or completed == total:
+                counts = Counter(classify_availability(value)[0] for value in results.values())
+                print(
+                    f"[Fallback {completed}/{total}] available={counts['available']} "
+                    f"unavailable={counts['unavailable']} unknown={counts['unknown']}"
+                )
     return results
 
 
 def main() -> None:
-    batch_deadline = time.monotonic() + BATCH_MINUTES * 60 if BATCH_MINUTES else None
     started = datetime.now(timezone.utc)
+    run_id = f"{started:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
     client = get_gspread_client()
     spreadsheet = google_sheets_retry(client.open, SHEET_NAME)
     source_ws = google_sheets_retry(spreadsheet.worksheet, SOURCE_TAB)
@@ -1032,91 +868,11 @@ def main() -> None:
         raise RuntimeError(f"{SOURCE_TAB} contains no usable SKU rows")
     if len({str(row["daraz_sku"]).strip() for row in source_rows}) != len(source_rows):
         raise RuntimeError(f"{SOURCE_TAB} contains duplicate daraz_sku values")
-    if PILOT_PRODUCTS_PER_VENTURE:
-        source_rows = select_pilot_source_rows(source_rows, PILOT_PRODUCTS_PER_VENTURE)
-        pilot_counts = Counter(
-            product_group_key(group[0])[0]
-            for group in group_source_rows(source_rows)
-        )
-        print(
-            f"[Pilot] products_per_venture={PILOT_PRODUCTS_PER_VENTURE} "
-            f"selected_products={dict(pilot_counts)} selected_variants={len(source_rows)}",
-            flush=True,
-        )
 
     staging = ensure_worksheet(spreadsheet, STAGING_TAB, len(source_rows) + 10, len(AVAILABILITY_COLUMNS))
     current = ensure_worksheet(spreadsheet, CURRENT_TAB, len(source_rows) + 10, len(AVAILABILITY_COLUMNS))
     run_log = ensure_worksheet(spreadsheet, RUN_LOG_TAB, 1000, len(RUN_LOG_COLUMNS))
-    resume = resumable_run(
-        google_sheets_retry(run_log.get_all_records),
-        google_sheets_retry(staging.get_all_records),
-    )
-    if resume:
-        run_id, original_started_at, resumed_rows = resume
-        if original_started_at:
-            try:
-                started = datetime.fromisoformat(original_started_at.replace("Z", "+00:00"))
-            except ValueError:
-                pass
-        print(f"[Resume] run_id={run_id} checkpoint_rows={len(resumed_rows)}", flush=True)
-    else:
-        run_id = f"{started:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
-        resumed_rows = []
-
-    source_by_sku = {
-        str(row["daraz_sku"]).strip(): row
-        for row in source_rows
-    }
-    checkpoint_rows_by_sku = {
-        str(row["daraz_sku"]).strip(): row
-        for row in resumed_rows
-        if str(row.get("daraz_sku", "")).strip() in source_by_sku
-    }
-
-    def persist_checkpoint() -> None:
-        ordered_rows = [
-            checkpoint_rows_by_sku[sku]
-            for sku in source_by_sku
-            if sku in checkpoint_rows_by_sku
-        ]
-        replace_snapshot(staging, ordered_rows, trim_stale_rows=False)
-        print(
-            f"[Checkpoint] run_id={run_id} rows={len(ordered_rows)}/{len(source_rows)}",
-            flush=True,
-        )
-
-    safe_append_run_log(run_log, {
-        "run_id": run_id,
-        "started_at": started.isoformat(),
-        "completed_at": "",
-        "status": "resuming" if resume else "running",
-        "total_variants": len(source_rows),
-        "available": "",
-        "unavailable": "",
-        "unknown": "",
-        "notes": f"Checkpoint rows loaded: {len(checkpoint_rows_by_sku)}",
-    })
     results: List[Dict[str, Any]] = []
-
-    def finish_partial(reason: str) -> None:
-        persist_checkpoint()
-        counts = Counter(
-            str(row.get("availability_status", "")).strip()
-            for row in checkpoint_rows_by_sku.values()
-        )
-        safe_append_run_log(run_log, {
-            "run_id": run_id,
-            "started_at": started.isoformat(),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "status": "resuming",
-            "total_variants": len(source_rows),
-            "available": counts["available"],
-            "unavailable": counts["unavailable"],
-            "unknown": counts["unknown"],
-            "notes": f"Batch completed: {reason}; checkpoint rows: {len(checkpoint_rows_by_sku)}",
-        })
-        write_github_output("complete", "false")
-        print(f"[Batch] partial success: {reason}", flush=True)
 
     try:
         results_by_sku: Dict[str, Dict[str, Any]] = {}
@@ -1140,25 +896,6 @@ def main() -> None:
             try:
                 source_groups = group_source_rows(source_rows)
                 for group_index, source_group in enumerate(source_groups, start=1):
-                    group_skus = [str(source["daraz_sku"]).strip() for source in source_group]
-                    if all(sku in checkpoint_rows_by_sku for sku in group_skus):
-                        fallback_sources.extend(
-                            source
-                            for source in source_group
-                            if checkpoint_requires_fallback(
-                                checkpoint_rows_by_sku[str(source["daraz_sku"]).strip()]
-                            )
-                        )
-                        venture, product_id = product_group_key(source_group[0])
-                        print(
-                            f"[Product {group_index}/{len(source_groups)}] resumed "
-                            f"{venture} {product_id} variants={len(source_group)}",
-                            flush=True,
-                        )
-                        continue
-                    if not batch_has_time(batch_deadline, BATCH_STOP_RESERVE_SECONDS):
-                        finish_partial("product time budget reached")
-                        return
                     product_results, context = crawl_daraz_product(
                         context,
                         source_group,
@@ -1174,12 +911,6 @@ def main() -> None:
                             "availability_signal": "sku_state_not_found",
                             "requires_fallback": True,
                         }
-                        checkpoint_rows_by_sku[str(source["daraz_sku"]).strip()] = build_row(
-                            source,
-                            results_by_sku[str(source["daraz_sku"]).strip()],
-                            run_id,
-                            datetime.now(timezone.utc).isoformat(),
-                        )
 
                     statuses = Counter(
                         classify_availability(
@@ -1198,65 +929,26 @@ def main() -> None:
                         f"[Product {group_index}/{len(source_groups)}] {venture} {product_id} "
                         f"variants={len(source_group)} available={statuses['available']} "
                         f"unavailable={statuses['unavailable']} unknown={statuses['unknown']} "
-                        f"fallback={pending}",
-                        flush=True,
+                        f"fallback={pending}"
                     )
-                    if group_index % CHECKPOINT_PRODUCT_INTERVAL == 0:
-                        persist_checkpoint()
                     if group_index < len(source_groups):
                         time.sleep(THROTTLE_SECONDS + random.uniform(0, 1.5))
 
             finally:
                 browser.close()
 
-        persist_checkpoint()
-
-        def checkpoint_fallback(
-            sku: str,
-            result: Dict[str, Any],
-            completed: int,
-            total: int,
-        ) -> None:
-            source = source_by_sku[sku]
-            results_by_sku[sku] = result
-            checkpoint_rows_by_sku[sku] = build_row(
-                source,
-                result,
-                run_id,
-                datetime.now(timezone.utc).isoformat(),
-            )
-            if completed % CHECKPOINT_FALLBACK_INTERVAL == 0 or completed == total:
-                persist_checkpoint()
-
-        results_by_sku.update(
-            run_parallel_fallbacks(
-                fallback_sources,
-                on_result=checkpoint_fallback,
-                deadline=batch_deadline,
-            )
-        )
-        unresolved_fallbacks = [
-            source
-            for source in fallback_sources
-            if checkpoint_requires_fallback(
-                checkpoint_rows_by_sku.get(str(source["daraz_sku"]).strip(), {})
-            )
-        ]
-        if unresolved_fallbacks:
-            finish_partial(f"fallback time budget reached; deferred={len(unresolved_fallbacks)}")
-            return
+        results_by_sku.update(run_parallel_fallbacks(fallback_sources))
         crawled_at = datetime.now(timezone.utc).isoformat()
         results = [
-            checkpoint_rows_by_sku.get(str(source["daraz_sku"]).strip())
-            or build_row(
-                    source,
-                    results_by_sku.get(str(source["daraz_sku"]).strip(), {
-                        "stock_status": "unknown",
-                        "error_message": "No crawl result produced for source SKU",
-                    }),
-                    run_id,
-                    crawled_at,
-                )
+            build_row(
+                source,
+                results_by_sku.get(str(source["daraz_sku"]).strip(), {
+                    "stock_status": "unknown",
+                    "error_message": "No crawl result produced for source SKU",
+                }),
+                run_id,
+                crawled_at,
+            )
             for source in source_rows
         ]
 
@@ -1265,7 +957,7 @@ def main() -> None:
         replace_snapshot(staging, results)
         replace_snapshot(current, results)
         counts = Counter(row["availability_status"] for row in results)
-        safe_append_run_log(run_log, {
+        append_run_log(run_log, {
             "run_id": run_id,
             "started_at": started.isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -1276,16 +968,8 @@ def main() -> None:
             "unknown": counts["unknown"],
             "notes": "Full snapshot published",
         })
-        print(
-            f"[Complete] run_id={run_id} rows={len(results)} "
-            f"available={counts['available']} unavailable={counts['unavailable']} "
-            f"unknown={counts['unknown']} published_tab={CURRENT_TAB}",
-            flush=True,
-        )
-        write_github_output("complete", "true")
     except Exception as exc:
-        print(f"[CRAWL ERROR] {type(exc).__name__}: {exc}", flush=True)
-        safe_append_run_log(run_log, {
+        append_run_log(run_log, {
             "run_id": run_id,
             "started_at": started.isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),

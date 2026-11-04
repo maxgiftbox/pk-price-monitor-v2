@@ -1,10 +1,7 @@
 import unittest
-from unittest.mock import MagicMock, call, patch
 
 from availability_crawler import (
     build_row,
-    batch_has_time,
-    checkpoint_requires_fallback,
     classify_availability,
     classify_purchase_signals,
     classify_sku_info,
@@ -13,102 +10,16 @@ from availability_crawler import (
     fallback_worker_count,
     group_source_rows,
     inspect_purchase_controls,
-    product_group_key,
     product_results_from_payload,
-    replace_snapshot,
     resolve_single_sku_result,
-    resumable_run,
     result_requires_fallback,
-    safe_append_run_log,
     selected_variant_matches_source,
-    select_pilot_source_rows,
     selection_mismatch_result,
     sku_selection_plan,
-    write_github_output,
 )
 
 
 class AvailabilityCrawlerTests(unittest.TestCase):
-    @patch("availability_crawler.google_sheets_retry", side_effect=lambda operation, *args, **kwargs: operation(*args, **kwargs))
-    def test_checkpoint_updates_without_destructive_clear(self, _retry):
-        worksheet = MagicMock()
-        replace_snapshot(
-            worksheet,
-            [{"run_id": "run-1", "daraz_sku": "sku-1"}],
-            trim_stale_rows=False,
-        )
-        worksheet.update.assert_called_once()
-        worksheet.clear.assert_not_called()
-        worksheet.get_all_values.assert_not_called()
-        worksheet.batch_clear.assert_not_called()
-
-    @patch("availability_crawler.google_sheets_retry", side_effect=lambda operation, *args, **kwargs: operation(*args, **kwargs))
-    def test_published_snapshot_writes_before_trimming_stale_tail(self, _retry):
-        worksheet = MagicMock()
-        worksheet.get_all_values.return_value = [["old"]] * 5
-        replace_snapshot(worksheet, [{"run_id": "run-1"}])
-        worksheet.update.assert_called_once()
-        worksheet.batch_clear.assert_called_once_with(["A3:Q5"])
-        self.assertLess(
-            worksheet.method_calls.index(call.update(
-                values=unittest.mock.ANY,
-                range_name="A1",
-                value_input_option="RAW",
-            )),
-            worksheet.method_calls.index(call.batch_clear(["A3:Q5"])),
-        )
-
-    @patch("availability_crawler.append_run_log", side_effect=RuntimeError("temporary TLS failure"))
-    def test_run_log_failure_is_non_fatal(self, _append_run_log):
-        self.assertFalse(safe_append_run_log(object(), {"status": "success"}))
-
-    @patch("availability_crawler.append_run_log")
-    def test_run_log_success_is_reported(self, append_run_log):
-        self.assertTrue(safe_append_run_log(object(), {"status": "success"}))
-        append_run_log.assert_called_once()
-
-    @patch("availability_crawler.time.monotonic", return_value=100.0)
-    def test_batch_time_budget_keeps_reserve(self, _monotonic):
-        self.assertTrue(batch_has_time(250.0, 120.0))
-        self.assertFalse(batch_has_time(220.0, 120.0))
-        self.assertTrue(batch_has_time(None, 120.0))
-
-    def test_writes_batch_completion_to_github_output(self):
-        import os
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(mode="r+", encoding="utf-8") as output:
-            with patch.dict(os.environ, {"GITHUB_OUTPUT": output.name}):
-                write_github_output("complete", "false")
-            output.seek(0)
-            self.assertEqual(output.read(), "complete=false\n")
-
-    def test_resumes_latest_running_run_with_matching_staging_rows(self):
-        logs = [
-            {"run_id": "old", "status": "success", "started_at": "old-time"},
-            {"run_id": "active", "status": "running", "started_at": "start-time"},
-        ]
-        staging = [
-            {"run_id": "old", "daraz_sku": "old-sku"},
-            {"run_id": "active", "daraz_sku": "sku-1"},
-            {"run_id": "active", "daraz_sku": "sku-2"},
-        ]
-        self.assertEqual(
-            resumable_run(logs, staging),
-            ("active", "start-time", staging[1:]),
-        )
-
-    def test_does_not_resume_completed_run(self):
-        self.assertIsNone(resumable_run(
-            [{"run_id": "done", "status": "success", "started_at": "start"}],
-            [{"run_id": "done", "daraz_sku": "sku-1"}],
-        ))
-
-    def test_checkpoint_marks_only_unresolved_product_results_for_fallback(self):
-        self.assertTrue(checkpoint_requires_fallback({"status_reason": "sku_selection_mismatch"}))
-        self.assertTrue(checkpoint_requires_fallback({"status_reason": "state_conflict:a:b"}))
-        self.assertFalse(checkpoint_requires_fallback({"status_reason": "purchase_action_enabled"}))
-
     def test_fallback_worker_count_is_bounded(self):
         self.assertEqual(fallback_worker_count(0, 3), 0)
         self.assertEqual(fallback_worker_count(2, 3), 2)
@@ -148,20 +59,6 @@ class AvailabilityCrawlerTests(unittest.TestCase):
         ]
         groups = group_source_rows(rows)
         self.assertEqual([len(group) for group in groups], [2, 1])
-
-    def test_pilot_selection_round_robins_brands_within_each_venture(self):
-        rows = [
-            {"venture": "PK", "brand_name": "Apple", "product_id": "1", "daraz_sku": "1_PK-10"},
-            {"venture": "PK", "brand_name": "Apple", "product_id": "1", "daraz_sku": "1_PK-11"},
-            {"venture": "PK", "brand_name": "Apple", "product_id": "2", "daraz_sku": "2_PK-20"},
-            {"venture": "PK", "brand_name": "Samsung", "product_id": "3", "daraz_sku": "3_PK-30"},
-            {"venture": "BD", "brand_name": "Realme", "product_id": "4", "daraz_sku": "4_BD-40"},
-            {"venture": "BD", "brand_name": "Infinix", "product_id": "5", "daraz_sku": "5_BD-50"},
-        ]
-        selected = select_pilot_source_rows(rows, 2)
-        selected_products = {product_group_key(row) for row in selected}
-        self.assertEqual(selected_products, {("PK", "1"), ("PK", "3"), ("BD", "4"), ("BD", "5")})
-        self.assertEqual(len(selected), 5)
 
     def test_classifies_quantity_and_wishlist_states(self):
         self.assertEqual(
