@@ -4,23 +4,32 @@ on:
   workflow_dispatch:
 
 jobs:
-  batch-1:
+  crawl-availability:
     runs-on:
       - self-hosted
       - daraz-local
-    timeout-minutes: 45
-    outputs:
-      complete: ${{ steps.batch.outputs.complete }}
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run batch 1
-        id: batch
-        uses: ./.github/actions/availability-batch
+      - name: Check Python
+        run: |
+          /opt/homebrew/bin/python3.11 --version
+          /opt/homebrew/bin/python3.11 -m pip --version
+
+      - name: Install dependencies
+        run: /opt/homebrew/bin/python3.11 -m pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: /opt/homebrew/bin/python3.11 -m playwright install chromium
+
+      - name: Crawl all Daraz variant SKUs
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          AVAILABILITY_FALLBACK_WORKERS: "3"
+        run: /usr/bin/caffeinate -dimsu /opt/homebrew/bin/python3.11 availability_crawler.py
 
       - name: Upload availability debug artifacts
         if: always()
@@ -30,27 +39,3 @@ jobs:
           path: debug_availability/**
           if-no-files-found: warn
           retention-days: 7
-
-  batch-2:
-    needs: batch-1
-    if: needs.batch-1.result == 'success' && needs.batch-1.outputs.complete != 'true'
-    uses: ./.github/workflows/availability-batch-reusable.yml
-    with:
-      batch_number: "2"
-    secrets: inherit
-
-  batch-3:
-    needs: batch-2
-    if: ${{ !cancelled() && needs.batch-2.result == 'success' && needs.batch-2.outputs.complete != 'true' }}
-    uses: ./.github/workflows/availability-batch-reusable.yml
-    with:
-      batch_number: "3"
-    secrets: inherit
-
-  batch-4:
-    needs: batch-3
-    if: ${{ !cancelled() && needs.batch-3.result == 'success' && needs.batch-3.outputs.complete != 'true' }}
-    uses: ./.github/workflows/availability-batch-reusable.yml
-    with:
-      batch_number: "4"
-    secrets: inherit
