@@ -93,25 +93,25 @@ def test_gap_defaults_to_latest_seven_calendar_days_and_action_can_request_one()
     assert {row["date"] for row in latest_rows} == {"2026-09-09"}
 
 
-def test_trend_defaults_to_latest_seven_days_and_includes_meta():
-    snap = Snapshot(dated_history(), datetime.now(timezone.utc))
+def test_trend_defaults_to_latest_fourteen_days_and_includes_meta():
+    snap = Snapshot(dated_history(days=16), datetime.now(timezone.utc))
     app.state.repository = type("Repo", (), {"get": lambda self: snap})()
     payload = authenticated_client().get("/api/pricing/trend").json()
 
     assert {row["date"] for row in payload["rows"]} == {
-        f"2026-09-{day:02d}" for day in range(3, 10)
+        f"2026-09-{day:02d}" for day in range(3, 17)
     }
     assert payload["total"] == len(payload["rows"])
-    assert payload["meta"]["dataAsOf"] == "2026-09-09"
+    assert payload["meta"]["dataAsOf"] == "2026-09-16"
 
 
 def test_dashboard_endpoint_combines_default_pricing_payloads():
-    snap = Snapshot(dated_history(), datetime.now(timezone.utc))
+    snap = Snapshot(dated_history(days=16), datetime.now(timezone.utc))
     app.state.repository = type("Repo", (), {"get": lambda self: snap})()
     app.state.response_cache.clear()
     payload = authenticated_client().get("/api/pricing/dashboard").json()
 
     assert set(payload) == {"filters", "todayAction", "gap", "trend", "meta"}
-    assert {row["date"] for row in payload["todayAction"]["rows"]} == {"2026-09-09"}
+    assert {row["date"] for row in payload["todayAction"]["rows"]} == {"2026-09-16"}
     assert payload["gap"]["pagination"]["pageSize"] == 50
-    assert len({row["date"] for row in payload["trend"]["rows"]}) == 7
+    assert len({row["date"] for row in payload["trend"]["rows"]}) == 14
