@@ -41,14 +41,14 @@ _gap_cache_key = None
 _gap_cache_frame = None
 _gap_cache_lock = threading.Lock()
 
-DEFAULT_PRICING_WINDOW_DAYS = 7
-MAX_TREND_WINDOW_DAYS = 31
+GAP_WINDOW_DAYS = 7
+TREND_WINDOW_DAYS = 14
 
 
 def _apply_date_window(
     df,
     params,
-    default_days=DEFAULT_PRICING_WINDOW_DAYS,
+    default_days=GAP_WINDOW_DAYS,
     max_days=None,
 ):
     """Apply an explicit date range or a bounded window ending at latest data."""
@@ -82,7 +82,13 @@ def _get_gap_frame(snapshot):
     if _gap_cache_frame is None or _gap_cache_key != cache_key:
         with _gap_cache_lock:
             if _gap_cache_frame is None or _gap_cache_key != cache_key:
-                _gap_cache_frame = calculate_gap_table(snapshot.data)
+                recent_data = _apply_date_window(
+                    snapshot.data,
+                    {},
+                    default_days=GAP_WINDOW_DAYS,
+                    max_days=GAP_WINDOW_DAYS,
+                )
+                _gap_cache_frame = calculate_gap_table(recent_data)
                 _gap_cache_key = cache_key
 
     # Return a shallow copy so filtering/pagination in gap()
@@ -229,7 +235,8 @@ def gap(snapshot, params):
     frame = _apply_date_window(
         frame,
         params,
-        default_days=params.get("window_days", DEFAULT_PRICING_WINDOW_DAYS),
+        default_days=params.get("window_days", GAP_WINDOW_DAYS),
+        max_days=GAP_WINDOW_DAYS,
     )
 
     sort_column = SORTS.get(params.get("sort"))
@@ -381,7 +388,12 @@ def trend(snapshot, params):
             )
         ]
 
-    df = _apply_date_window(df, params, max_days=MAX_TREND_WINDOW_DAYS)
+    df = _apply_date_window(
+        df,
+        params,
+        default_days=TREND_WINDOW_DAYS,
+        max_days=TREND_WINDOW_DAYS,
+    )
 
     # Multiple crawls can exist for the same product/platform/day. The chart
     # needs only the latest observation, not every raw crawl.
