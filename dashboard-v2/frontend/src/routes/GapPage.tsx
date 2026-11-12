@@ -74,7 +74,6 @@ export function GapPage({ initialFilters, initialGap }: { initialFilters?: Filte
 
     initialData: params.toString() ? undefined : initialGap,
 
-    placeholderData: (p) => p,
   });
 
 
