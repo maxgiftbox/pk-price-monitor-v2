@@ -44,6 +44,32 @@ test('supports multiple values for a filter', () => {
   expect(screen.getByLabelText('Brand: 2 selected')).toBeInTheDocument();
 });
 
+test('closes the dropdown after selecting a value', () => {
+  render(<FilterHarness />);
+
+  const brandSummary = screen.getByLabelText('Brand: All');
+  fireEvent.click(brandSummary);
+  expect(brandSummary).toHaveAttribute('aria-expanded', 'true');
+
+  fireEvent.click(screen.getByRole('checkbox', { name: 'infinix' }));
+  expect(brandSummary).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('only keeps one dropdown open and closes it with Escape', () => {
+  render(<FilterHarness />);
+
+  const countrySummary = screen.getByLabelText('Country: All');
+  const brandSummary = screen.getByLabelText('Brand: All');
+
+  fireEvent.click(countrySummary);
+  fireEvent.click(brandSummary);
+  expect(countrySummary).toHaveAttribute('aria-expanded', 'false');
+  expect(brandSummary).toHaveAttribute('aria-expanded', 'true');
+
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(brandSummary).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('changing a parent filter clears dependent selections and the page', () => {
   render(<FilterHarness initial="country=pk&brand=samsung&sku=Galaxy+S26%2B&memory=8%2F256&page=3" />);
 
