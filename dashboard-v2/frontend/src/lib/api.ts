@@ -8,6 +8,7 @@ import type { ConsumerVoiceDashboard, ConsumerVoiceFilters } from "../types/cons
 import type { ProductComparisonResponse, ProductFiltersResponse } from "../types/product";
 import type { SocialDashboard, SocialFilters, SocialRatings } from "../types/socialIntelligence";
 import type { AvailabilityDashboard } from "../types/availability";
+import type { WeeklyBrief } from "../types/weeklyBrief";
 
 // Production:
 // VITE_API_BASE_URL=https://your-api-service.onrender.com
@@ -142,6 +143,10 @@ export const consumerVoiceApi = {
   filters: () => request<ConsumerVoiceFilters>("/api/consumer-voice/filters", new URLSearchParams()),
   dashboard: (params: URLSearchParams) =>
     request<ConsumerVoiceDashboard>("/api/consumer-voice/dashboard", params),
+};
+
+export const weeklyBriefApi = {
+  get: (params: URLSearchParams) => request<WeeklyBrief>("/api/weekly-brief", params),
 };
 
 export const productApi = {
