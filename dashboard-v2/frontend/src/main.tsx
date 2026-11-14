@@ -11,6 +11,7 @@ import { ProductIntelligencePage } from './routes/ProductIntelligencePage';
 import { SocialIntelligenceDashboard } from './routes/SocialIntelligenceDashboard';
 import { PricingAccessGate } from './routes/PricingAccessGate';
 import { AvailabilityDashboard } from './routes/AvailabilityDashboard';
+import { WeeklyBriefDashboard } from './routes/WeeklyBriefDashboard';
 import { isRetryableApiError } from './lib/api';
 
 import './styles.css';
@@ -53,6 +54,10 @@ const router = createBrowserRouter([
           description="此页面包含库存可售状态，请输入访问密码。"
           buttonLabel="进入 Availability"
         ><AvailabilityDashboard /></PricingAccessGate>,
+      },
+      {
+        path: '/weekly-brief',
+        element: <WeeklyBriefDashboard />,
       },
       {
         path: '/consumer-voice',

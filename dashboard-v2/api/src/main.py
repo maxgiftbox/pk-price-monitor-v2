@@ -34,6 +34,7 @@ from src.services.social_intelligence import dashboard as social_intelligence_da
 from src.services.social_intelligence import filters as social_intelligence_filters
 from src.services.social_intelligence import brand_ratings as social_brand_ratings
 from src.services.availability import dashboard as availability_dashboard
+from src.services.weekly_brief import build_weekly_brief
 
 
 app = FastAPI(
@@ -225,6 +226,41 @@ def unavailable(
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/weekly-brief")
+def weekly_brief_data(
+    country: str = "",
+    weekEnd: str = None,
+):
+    consumer_snapshot = app.state.consumer_voice_repository.get()
+    social_snapshot = app.state.social_intelligence_repository.get()
+    key = (
+        "weekly-brief",
+        consumer_snapshot.generated_at.isoformat(),
+        social_snapshot.generated_at.isoformat(),
+        country,
+        weekEnd,
+    )
+
+    def build():
+        payload = build_weekly_brief(
+            consumer_snapshot.data,
+            social_snapshot.data,
+            country=country,
+            week_end=weekEnd,
+        )
+        payload["meta"].update({
+            "consumerStale": consumer_snapshot.stale,
+            "socialStale": social_snapshot.stale,
+            "cacheGeneratedAt": max(
+                consumer_snapshot.generated_at,
+                social_snapshot.generated_at,
+            ).isoformat(),
+        })
+        return payload
+
+    return app.state.response_cache.get_or_compute(key, build)
 
 
 @app.get("/api/availability/dashboard")

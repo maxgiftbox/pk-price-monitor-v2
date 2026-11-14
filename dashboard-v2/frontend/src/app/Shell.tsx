@@ -11,6 +11,7 @@ export function Shell() {
           <NavLink className={navClass} to="/pricing">Pricing</NavLink>
           <NavLink className={navClass} to="/availability">Availability</NavLink>
           <NavLink className={navClass} to="/products">Product</NavLink>
+          <NavLink className={navClass} to="/weekly-brief">Weekly Brief</NavLink>
           <NavLink className={navClass} to="/consumer-voice">Consumer Voice</NavLink>
           <NavLink className={navClass} to="/social-intelligence">Social Voice</NavLink>
         </nav>
