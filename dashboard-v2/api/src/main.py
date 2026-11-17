@@ -230,8 +230,8 @@ def health():
 
 @app.get("/api/weekly-brief")
 def weekly_brief_data(
-    country: str = "",
-    weekEnd: str = None,
+    country: str = "PK",
+    week: str = None,
 ):
     consumer_snapshot = app.state.consumer_voice_repository.get()
     social_snapshot = app.state.social_intelligence_repository.get()
@@ -240,7 +240,7 @@ def weekly_brief_data(
         consumer_snapshot.generated_at.isoformat(),
         social_snapshot.generated_at.isoformat(),
         country,
-        weekEnd,
+        week,
     )
 
     def build():
@@ -248,16 +248,16 @@ def weekly_brief_data(
             consumer_snapshot.data,
             social_snapshot.data,
             country=country,
-            week_end=weekEnd,
+            week=week,
         )
-        payload["meta"].update({
+        payload["meta"] = {
             "consumerStale": consumer_snapshot.stale,
             "socialStale": social_snapshot.stale,
             "cacheGeneratedAt": max(
                 consumer_snapshot.generated_at,
                 social_snapshot.generated_at,
             ).isoformat(),
-        })
+        }
         return payload
 
     return app.state.response_cache.get_or_compute(key, build)

@@ -1,46 +1,23 @@
-export type BriefStatus = 'leading' | 'social_momentum' | 'consumer_momentum' | 'watch_closely' | 'stable';
-export type Confidence = 'High' | 'Medium' | 'Low';
-
-export type ConsumerBrief = {
-  averageRating: number | null;
-  positiveRate: number | null;
-  negativeRate: number | null;
-  reviewCount: number;
-  ratingChange: number | null;
-  reviewCountChange: number;
-  negativeRateChange: number | null;
-  topPositiveTopics: string[];
-  topRiskTopics: string[];
-};
-
-export type SocialBrief = {
-  socialRating: number;
-  ratingChange: number | null;
-  rank: number;
-  signalCount: number;
-  totalLikes: number;
-  totalViews: number;
-  confidence: Confidence;
-  topTopics: string[];
-};
-
+export type BriefSource = 'on_daraz' | 'off_platform' | 'market';
+export type BriefPost = { summary: string; platform: string; date: string; likes: number; url: string };
+export type BriefNegativeReview = { rating: number; sku: string; text: string };
 export type WeeklyBrandBrief = {
-  brand: string;
-  status: BriefStatus;
-  statusLabel: string;
-  confidence: Confidence;
-  keySignal: string;
-  consumerVoice: ConsumerBrief | null;
-  socialVoice: SocialBrief | null;
+  key: string; name: string; reviews: number; reviews_prev: number; review_share: number;
+  avg_rating: number | null; negative: number; posts: number; posts_prev: number;
+  post_share: number; likes: number; top_post_likes: number; viral_flag: boolean;
+  highlight: string; top_posts: BriefPost[]; negative_reviews: BriefNegativeReview[]; shown: boolean;
 };
-
 export type WeeklyBrief = {
-  country: { code: string; name: string };
-  countries: { code: string; name: string }[];
-  week: { start: string; end: string; comparisonStart: string; comparisonEnd: string };
-  marketSummary: string;
-  callouts: { strongest: string | null; momentum: string | null; watch: string | null };
-  highlights: { brand: string; status: BriefStatus; statusLabel: string; text: string; confidence: Confidence }[];
+  country: string; country_name: string;
+  week: { iso: string; start: string; end: string };
+  prev_week: { start: string; end: string };
+  available_weeks: { iso: string }[];
+  totals: { reviews: number; reviews_prev: number; avg_rating: number | null; negative: number; posts: number; posts_prev: number };
+  topline: { source: BriefSource; headline: string; detail: string }[];
+  daily_reviews: { date: string; count: number; peak: boolean }[];
+  topics: { label: string; cur: number; prev: number; emphasis: boolean }[];
   brands: WeeklyBrandBrief[];
-  meta: { consumerRows: number; socialSignals: number; consumerStale?: boolean; socialStale?: boolean; cacheGeneratedAt?: string };
+  market: { category: string; account: string; date: string; summary: string; url: string }[];
+  display_mode: 'share' | 'count';
+  meta: { consumerStale: boolean; socialStale: boolean; cacheGeneratedAt: string };
 };
