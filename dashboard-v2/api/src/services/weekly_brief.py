@@ -1,164 +1,231 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import date, timedelta
+import html
+import re
 from typing import Any
 
 import pandas as pd
 
-from src.services.social_intelligence import _rating_day, _record_brands
+COUNTRY_NAMES = {"PK": "Pakistan", "BD": "Bangladesh"}
+BRAND_PARENT = {"redmi": "xiaomi", "poco": "xiaomi"}
+BRAND_NAMES = {"samsung": "Samsung", "xiaomi": "Xiaomi", "oppo": "OPPO", "tecno": "TECNO", "vivo": "vivo", "realme": "realme", "honor": "HONOR", "infinix": "Infinix", "nubia": "Nubia", "itel": "itel", "apple": "Apple", "oneplus": "OnePlus", "motorola": "Motorola"}
+TOPIC_PATTERNS = [
+    ("Original / genuine", r"original|genuine|authentic|sealed|pin pack|intact"),
+    ("Delivery", r"deliver|fast|late|on time"), ("Packaging", r"pack"),
+    ("Price / value", r"price|value|cheap|discount|voucher"), ("Warranty", r"warrant"),
+    ("Gifts", r"gift|free"), ("Battery / charging", r"battery|charg"),
+    ("Repeated \"good product\" text", r"(?:good products?\s*){2,}"),
+]
+EXCLUDED_MARKET_CATEGORIES = {"mobile", "electronics", "brand / marketing"}
 
 
-COUNTRY_NAMES = {"PK": "Pakistan", "BD": "Bangladesh", "LK": "Sri Lanka", "MM": "Myanmar", "NP": "Nepal"}
-BRAND_ALIASES = {"honor": "HONOR", "xiaomi": "XIAOMI", "redmi": "XIAOMI", "oppo": "OPPO", "tecno": "TECNO"}
-
-
-def _brand(value: Any) -> str:
-    text = str(value or "").strip()
-    return BRAND_ALIASES.get(text.casefold(), text)
-
-
-def _window(frame: pd.DataFrame, column: str, end: pd.Timestamp, offset: int = 0) -> pd.DataFrame:
-    finish = end - pd.Timedelta(days=offset)
-    start = finish - pd.Timedelta(days=6)
-    dates = pd.to_datetime(frame[column], errors="coerce", utc=True).dt.tz_localize(None)
-    return frame[(dates >= start) & (dates < finish + pd.Timedelta(days=1))]
-
-
-def _consumer_metrics(frame: pd.DataFrame) -> dict[str, Any]:
-    rated = frame[frame["rating_valid"]]
-    topics: Counter[tuple[str, str]] = Counter(signal for signals in frame["topic_signals"] for signal in signals)
-    positive = [item for (item, sentiment), count in topics.most_common() if sentiment == "positive" for _ in range(count)]
-    negative = [item for (item, sentiment), count in topics.most_common() if sentiment == "negative" for _ in range(count)]
-    return {
-        "averageRating": round(float(rated["rating"].mean()), 2) if not rated.empty else None,
-        "reviewCount": int(len(frame)),
-        "positiveRate": round(float((rated["rating"] >= 4).mean()), 4) if not rated.empty else None,
-        "negativeRate": round(float((rated["rating"] <= 2).mean()), 4) if not rated.empty else None,
-        "topPositiveTopics": list(dict.fromkeys(positive))[:2],
-        "topRiskTopics": list(dict.fromkeys(negative))[:2],
-    }
-
-
-def _change(current: float | None, previous: float | None) -> float | None:
-    return round(current - previous, 2) if current is not None and previous is not None else None
-
-
-def _consumer_by_brand(data: pd.DataFrame, country: str, end: pd.Timestamp) -> dict[str, dict[str, Any]]:
-    country_data = data[data["venture"].astype(str).str.casefold() == country.casefold()]
-    result: dict[str, dict[str, Any]] = {}
-    brands = {_brand(value) for value in country_data["brand"].dropna().unique() if _brand(value) and _brand(value) != "Other"}
-    for brand in brands:
-        rows = country_data[country_data["brand"].map(_brand) == brand]
-        current = _consumer_metrics(_window(rows, "created_at", end))
-        previous = _consumer_metrics(_window(rows, "created_at", end, 7))
-        result[brand] = {
-            **current,
-            "ratingChange": _change(current["averageRating"], previous["averageRating"]),
-            "reviewCountChange": current["reviewCount"] - previous["reviewCount"],
-            "negativeRateChange": _change(current["negativeRate"], previous["negativeRate"]),
-        }
+def normalize_brands(value: Any) -> list[str]:
+    result: list[str] = []
+    for part in str(value or "").split(";"):
+        key = BRAND_PARENT.get(part.strip().casefold(), part.strip().casefold())
+        if key and key not in {"nan", "none", "other", "all brand", "all brands"} and key not in result:
+            result.append(key)
     return result
 
 
-def _social_by_brand(data: pd.DataFrame, country: str, end: pd.Timestamp) -> dict[str, dict[str, Any]]:
-    rows = data[data["country"].astype(str).str.casefold() == country.casefold()].copy()
-    if rows.empty:
-        return {}
-    rows["published_at"] = pd.to_datetime(rows["published_at"], errors="coerce", utc=True)
-    current = {item["brand"]: item for item in _rating_day(rows, end.tz_localize("UTC"), 7)}
-    previous = {item["brand"]: item for item in _rating_day(rows, (end - pd.Timedelta(days=7)).tz_localize("UTC"), 7)}
-    result = {}
-    for brand, item in current.items():
-        prior = previous.get(brand)
-        brand_rows = _window(rows, "published_at", end)
-        brand_rows = brand_rows[brand_rows.apply(lambda row: brand in _record_brands(row), axis=1)]
-        topics = Counter(
-            tag.strip() for value in brand_rows["topic_tags"] for tag in str(value).split(";") if tag.strip()
-        )
-        result[brand] = {
-            "socialRating": item["socialRating"],
-            "ratingChange": _change(item["socialRating"], prior["socialRating"] if prior else None),
-            "rank": item["rank"],
-            "signalCount": item["signalCount"],
-            "totalLikes": item["totalLikes"],
-            "totalViews": item["totalViews"],
-            "confidence": item["confidenceLevel"],
-            "topTopics": [label for label, _count in topics.most_common(2)],
-        }
-    return result
+def brand_name(key: str) -> str:
+    return BRAND_NAMES.get(key, key[:1].upper() + key[1:])
 
 
-def _status(consumer: dict[str, Any] | None, social: dict[str, Any] | None) -> tuple[str, str]:
-    consumer_change = (consumer or {}).get("ratingChange")
-    negative_change = (consumer or {}).get("negativeRateChange")
-    social_change = (social or {}).get("ratingChange")
-    if (consumer_change is not None and consumer_change <= -0.25) or (negative_change is not None and negative_change >= 0.1):
-        return "watch_closely", "Watch closely"
-    if social_change is not None and social_change >= 8:
-        return "social_momentum", "Social-led momentum"
-    if consumer_change is not None and consumer_change >= 0.25:
-        return "consumer_momentum", "Consumer-led momentum"
-    if consumer and social and (consumer.get("averageRating") or 0) >= 4.2 and (social.get("rank") or 99) <= 2:
-        return "leading", "Leading"
-    return "stable", "Stable"
+def _first_sentence(value: Any, limit: int = 180) -> str:
+    text = html.unescape(re.sub(r"\s+", " ", str(value or "")).strip())
+    if not text:
+        return ""
+    protected = text
+    for abbreviation in ("Rs.", "No.", "vs.", "Mr.", "Dr."):
+        protected = protected.replace(abbreviation, abbreviation.replace(".", "<DOT>"))
+    match = re.search(r"[.!?](?:\s|$)", protected)
+    sentence = protected[:match.end()].replace("<DOT>", ".") if match else text
+    return sentence if len(sentence) <= limit else sentence[:limit - 1].rstrip() + "…"
 
 
-def _confidence(consumer: dict[str, Any] | None, social: dict[str, Any] | None) -> str:
-    consumer_ok = bool(consumer and consumer["reviewCount"] >= 10)
-    social_ok = bool(social and social["signalCount"] >= 5)
-    return "High" if consumer_ok and social_ok else "Medium" if consumer_ok or social_ok else "Low"
+def _week(iso: str | None, available_dates: pd.Series) -> tuple[str, date, date]:
+    if iso:
+        match = re.fullmatch(r"(\d{4})-W(\d{2})", iso)
+        if not match:
+            raise ValueError("week must use YYYY-Www format")
+        start = date.fromisocalendar(int(match.group(1)), int(match.group(2)), 1)
+        return iso, start, start + timedelta(days=6)
+    today = date.today()
+    last_sunday = today - timedelta(days=today.weekday() + 1)
+    valid = pd.to_datetime(available_dates, errors="coerce", utc=True).dropna()
+    if not valid.empty:
+        latest = valid.max().date()
+        last_sunday = min(last_sunday, latest + timedelta(days=6 - latest.weekday()))
+    start = last_sunday - timedelta(days=6)
+    year, number, _ = start.isocalendar()
+    return f"{year}-W{number:02d}", start, last_sunday
 
 
-def _signal(brand: str, status: str, consumer: dict[str, Any] | None, social: dict[str, Any] | None) -> str:
-    if status == "watch_closely":
-        topic = ((consumer or {}).get("topRiskTopics") or ["negative feedback"])[0]
-        return f"{topic} is the main consumer risk to review."
-    if status == "social_momentum":
-        return f"Social rating increased by {social['ratingChange']:+.1f} points."
-    if status == "consumer_momentum":
-        return f"Consumer rating increased by {consumer['ratingChange']:+.2f}."
-    if status == "leading":
-        return "Strong performance across both consumer and social voice."
-    if consumer or social:
-        return "No material week-on-week shift detected."
-    return f"Insufficient verified data for {brand} this week."
+def _range(frame: pd.DataFrame, column: str, start: date, end: date) -> pd.DataFrame:
+    values = pd.to_datetime(frame[column], errors="coerce", utc=True).dt.date
+    return frame[(values >= start) & (values <= end)].copy()
 
 
-def build_weekly_brief(consumer_data: pd.DataFrame, social_data: pd.DataFrame, country: str = "", week_end: str | None = None) -> dict[str, Any]:
-    countries = sorted(set(consumer_data["venture"].dropna().astype(str)) | set(social_data["country"].dropna().astype(str)))
-    selected = country if country in countries else ("PK" if "PK" in countries else countries[0] if countries else "")
-    all_dates = pd.concat([
-        pd.to_datetime(consumer_data["created_at"], errors="coerce").dropna(),
-        pd.to_datetime(social_data["published_at"], errors="coerce", utc=True).dt.tz_localize(None).dropna(),
-    ])
-    end = pd.Timestamp(week_end).normalize() if week_end else all_dates.max().normalize()
-    consumer = _consumer_by_brand(consumer_data, selected, end)
-    social = _social_by_brand(social_data, selected, end)
-    brands = []
-    for brand in sorted(set(consumer) | set(social), key=str.casefold):
-        cv, sv = consumer.get(brand), social.get(brand)
-        status, status_label = _status(cv, sv)
-        brands.append({
-            "brand": brand, "status": status, "statusLabel": status_label,
-            "confidence": _confidence(cv, sv), "keySignal": _signal(brand, status, cv, sv),
-            "consumerVoice": cv, "socialVoice": sv,
-        })
-    priority = {"watch_closely": 0, "social_momentum": 1, "consumer_momentum": 1, "leading": 2, "stable": 3}
-    brands.sort(key=lambda item: (priority[item["status"]], item["brand"].casefold()))
-    material = [item for item in brands if item["status"] not in {"stable"} and item["confidence"] != "Low"]
-    strongest = max(brands, key=lambda item: ((item["consumerVoice"] or {}).get("averageRating") or 0) * 20 + ((item["socialVoice"] or {}).get("socialRating") or 0), default=None)
-    momentum = max(brands, key=lambda item: ((item["socialVoice"] or {}).get("ratingChange") or 0) + ((item["consumerVoice"] or {}).get("ratingChange") or 0) * 20, default=None)
-    watch = next((item for item in brands if item["status"] == "watch_closely"), None)
-    summary = "No material market shifts were detected this week."
-    if material:
-        summary = " ".join(f"{item['brand']}: {item['keySignal']}" for item in material[:2])
-    return {
-        "week": {"start": (end - pd.Timedelta(days=6)).date().isoformat(), "end": end.date().isoformat(), "comparisonStart": (end - pd.Timedelta(days=13)).date().isoformat(), "comparisonEnd": (end - pd.Timedelta(days=7)).date().isoformat()},
-        "country": {"code": selected, "name": COUNTRY_NAMES.get(selected, selected)},
-        "countries": [{"code": code, "name": COUNTRY_NAMES.get(code, code)} for code in countries],
-        "marketSummary": summary,
-        "callouts": {"strongest": strongest["brand"] if strongest else None, "momentum": momentum["brand"] if momentum else None, "watch": watch["brand"] if watch else None},
-        "highlights": [{"brand": item["brand"], "status": item["status"], "statusLabel": item["statusLabel"], "text": item["keySignal"], "confidence": item["confidence"]} for item in material[:5]],
-        "brands": brands,
-        "meta": {"consumerRows": int(sum((item["consumerVoice"] or {}).get("reviewCount", 0) for item in brands)), "socialSignals": int(sum((item["socialVoice"] or {}).get("signalCount", 0) for item in brands))},
-    }
+def _variation(cur: int, prev: int) -> str:
+    if prev == 0:
+        return "from none last week" if cur else "held at 0"
+    ratio = cur / prev
+    if ratio >= 2.5: return "tripled"
+    if ratio >= 1.8: return "doubled"
+    if ratio <= .55: return "halved"
+    if abs(cur - prev) < 3 and abs(ratio - 1) < .2: return ""
+    return f"up from {prev}" if cur > prev else f"down from {prev}"
+
+
+def _family(sku: str, brand: str) -> str:
+    value = re.sub(r"\s+(?:\d+/\d+|\d+GB)$", "", sku, flags=re.IGNORECASE).strip()
+    return re.sub(rf"^{re.escape(brand_name(brand))}\s+", "", value, flags=re.IGNORECASE)
+
+
+def _consumer_rows(data: pd.DataFrame, country: str) -> pd.DataFrame:
+    frame = data[data["venture"].astype(str).str.upper() == country].copy()
+    if "review_status" in frame:
+        frame = frame[frame["review_status"].astype(str).str.casefold() == "approved"]
+    frame["brief_brand"] = frame["brand"].map(normalize_brands)
+    frame = frame.explode("brief_brand")
+    return frame[frame["brief_brand"].notna() & frame["brief_brand"].ne("")]
+
+
+def _social_rows(data: pd.DataFrame, country: str) -> pd.DataFrame:
+    frame = data[data["country"].astype(str).str.upper() == country].copy()
+    if "quality_status" in frame:
+        frame = frame[frame["quality_status"].astype(str).str.casefold() == "dashboard_ready"]
+    frame["brief_brands"] = frame["brand"].map(normalize_brands)
+    return frame
+
+
+def _topic_counts(frame: pd.DataFrame) -> dict[str, int]:
+    text = frame["review_content"].fillna("").astype(str)
+    return {label: int(text.str.contains(pattern, case=False, regex=True).sum()) for label, pattern in TOPIC_PATTERNS}
+
+
+def _daily(frame: pd.DataFrame, start: date) -> list[dict[str, Any]]:
+    counts = Counter(pd.to_datetime(frame["created_at"], errors="coerce").dt.date.dropna())
+    average = len(frame) / 7
+    return [{"date": (start + timedelta(days=i)).isoformat(), "count": counts[start + timedelta(days=i)], "peak": bool(counts[start + timedelta(days=i)] >= average * 1.5 and counts[start + timedelta(days=i)] > 0)} for i in range(7)]
+
+
+def _peak_text(daily: list[dict[str, Any]]) -> str:
+    peaks = [item for item in daily if item["peak"]]
+    if len(peaks) == 1:
+        return f"Peak on {pd.Timestamp(peaks[0]['date']).strftime('%-d %b')} ({peaks[0]['count']})"
+    if len(peaks) == 2:
+        first, second = peaks
+        a, b = pd.Timestamp(first["date"]), pd.Timestamp(second["date"])
+        if (b - a).days == 1:
+            return f"Peak on {a.strftime('%-d')}–{b.strftime('%-d %b')} ({first['count']} and {second['count']} a day)"
+        return f"Two peaks: {a.strftime('%-d %b')} ({first['count']}) and {b.strftime('%-d %b')} ({second['count']})"
+    return ""
+
+
+def _brand_payloads(consumer: pd.DataFrame, cur_reviews: pd.DataFrame, prev_reviews: pd.DataFrame, cur_social: pd.DataFrame, prev_social: pd.DataFrame, start: date, country: str, total_reviews: int, total_posts: int) -> list[dict[str, Any]]:
+    cur_expanded = cur_social.explode("brief_brands").rename(columns={"brief_brands": "brief_brand"})
+    prev_expanded = prev_social.explode("brief_brands").rename(columns={"brief_brands": "brief_brand"})
+    keys = set(cur_reviews["brief_brand"].dropna()) | set(prev_reviews["brief_brand"].dropna()) | set(cur_expanded["brief_brand"].dropna()) | set(prev_expanded["brief_brand"].dropna())
+    payloads: list[dict[str, Any]] = []
+    for key in keys:
+        cr, pr = cur_reviews[cur_reviews["brief_brand"] == key], prev_reviews[prev_reviews["brief_brand"] == key]
+        cs, ps = cur_expanded[cur_expanded["brief_brand"] == key], prev_expanded[prev_expanded["brief_brand"] == key]
+        rated = cr[cr["rating_valid"]]
+        negative = rated[rated["rating"].isin([1, 2, 3])].sort_values(["rating", "created_at"])
+        likes = pd.to_numeric(cs["likes"], errors="coerce").fillna(0)
+        total_likes, top_likes = int(likes.sum()), int(likes.max()) if not likes.empty else 0
+        top_posts = [{"summary": _first_sentence(row.content_summary or row.title), "platform": row.platform, "date": pd.Timestamp(row.published_at).date().isoformat(), "likes": int(row.brief_likes), "url": row.source_url} for row in cs.assign(brief_likes=likes).sort_values(["brief_likes", "published_at"], ascending=[False, False]).head(3).itertuples()]
+        negatives = [{"rating": int(row.rating), "sku": row.product_name, "text": row.review_content} for row in negative.itertuples()]
+        sku_cur, sku_prev = Counter(cr["product_name"].fillna("").astype(str)), Counter(pr["product_name"].fillna("").astype(str))
+        earlier = consumer[(consumer["brief_brand"] == key) & (pd.to_datetime(consumer["created_at"], errors="coerce").dt.date < start)]
+        history = Counter(earlier["product_name"].fillna("").astype(str))
+        sku_stats = [{"sku": sku, "cur": count, "prev": sku_prev[sku], "history": history[sku]} for sku, count in sku_cur.most_common() if sku]
+        families: Counter[str] = Counter()
+        for sku, count in sku_cur.items(): families[_family(sku, key)] += count
+        family, family_count = families.most_common(1)[0] if families else ("", 0)
+        payloads.append({"key": key, "name": brand_name(key), "reviews": len(cr), "reviews_prev": len(pr), "review_share": round(len(cr) / total_reviews, 4) if total_reviews else 0, "avg_rating": round(float(rated["rating"].mean()), 2) if not rated.empty else None, "negative": len(negative), "posts": len(cs), "posts_prev": len(ps), "post_share": round(len(cs) / total_posts, 4) if total_posts else 0, "likes": total_likes, "top_post_likes": top_likes, "viral_flag": bool(top_likes >= 10000 and total_likes and top_likes / total_likes >= .5), "own_posts": int(cs["account_type"].astype(str).str.casefold().eq("brand").sum()), "non_phone_reviews": int(cr["type"].astype(str).str.casefold().ne("phone").sum()) if "type" in cr else 0, "top_posts": top_posts, "negative_reviews": negatives, "sku_stats": sku_stats, "family": family, "family_count": family_count, "highlight": "", "shown": bool(len(cr) >= 2 or len(cs) >= 8)})
+    payloads.sort(key=lambda item: (-item["reviews"], -item["posts"], item["name"].casefold()))
+    eligible = [item for item in payloads if item["reviews"] >= 3 and item["avg_rating"] is not None]
+    lowest = min((item["avg_rating"] for item in eligible), default=None)
+    for item in payloads:
+        sentences: list[str] = []
+        first = [sku for sku in item["sku_stats"] if sku["history"] == 0]
+        returned = [sku for sku in item["sku_stats"] if sku["prev"] == 0 and sku["cur"] >= 5 and sku["history"] > 0]
+        if first: sentences.append(f"{first[0]['sku']} got its first reviews ({first[0]['cur']}).")
+        if returned: sentences.append(f"{returned[0]['sku']} has {returned[0]['cur']} reviews, from none last week.")
+        if not sentences and item["family_count"] >= 5 and item["reviews"] and item["family_count"] / item["reviews"] >= .4: sentences.append(f"{item['family']} has {item['family_count']} of the {item['reviews']} reviews.")
+        if len(sentences) < 2 and item["reviews"] and item["non_phone_reviews"] / item["reviews"] >= .5:
+            sentences.append("Accessories drive reviews: " + ", ".join(f"{sku['sku']} ({sku['cur']})" for sku in item["sku_stats"][:2]) + ".")
+        if len(sentences) < 2 and item["negative_reviews"]:
+            review = item["negative_reviews"][0]; quote = re.sub(r"\s+", " ", review["text"]).strip()[:60]
+            sentences.append(f"{item['negative']} negative review{'s' if item['negative'] != 1 else ''}: {review['sku']} {review['rating']}★, \"{quote}\".")
+        if len(sentences) < 2 and lowest is not None and item["avg_rating"] == lowest and lowest < 4.5: sentences.append("Lowest rating this week.")
+        if len(sentences) < 2 and item["viral_flag"] and item["top_posts"]:
+            post = item["top_posts"][0]; sentences.append(f"One {post['platform']} post on {pd.Timestamp(post['date']).strftime('%-d %b')} shows {item['top_post_likes']:,} likes.")
+        variation = _variation(item["posts"], item["posts_prev"])
+        if len(sentences) < 2 and variation in {"tripled", "doubled", "halved"}: sentences.append(f"Posting {variation} ({item['posts']}, from {item['posts_prev']}).")
+        elif len(sentences) < 2 and item["posts"] and item["posts_prev"] == 0: sentences.append("Back on social after no posts last week.")
+        if len(sentences) < 2 and item["reviews"] >= 10 and item["own_posts"] == 0: sentences.append(f"No posts of its own captured in {COUNTRY_NAMES[country]}.")
+        if len(sentences) < 2 and item["posts"] >= 8 and item["reviews"] == 0: sentences.append("No Daraz reviews this week.")
+        item["highlight"] = " ".join(sentences[:2]) or "No notable change this week."
+    return payloads
+
+
+def _market(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    filtered = frame[~frame["category"].astype(str).str.casefold().isin(EXCLUDED_MARKET_CATEGORIES) & ~frame["account_type"].astype(str).str.casefold().eq("brand")].copy()
+    filtered["dedupe"] = filtered["title"].fillna("").astype(str).str[:30].str.casefold()
+    filtered = filtered.sort_values("published_at").drop_duplicates("dedupe").head(6)
+    return [{"category": row.category, "account": row.account_name, "date": pd.Timestamp(row.published_at).date().isoformat(), "summary": _first_sentence(row.content_summary or row.title), "url": row.source_url} for row in filtered.itertuples()]
+
+
+def _topline(totals: dict[str, Any], daily: list[dict[str, Any]], brands: list[dict[str, Any]], market: list[dict[str, Any]], display_mode: str) -> list[dict[str, str]]:
+    cur, prev = totals["reviews"], totals["reviews_prev"]; variation = _variation(cur, prev)
+    if variation == "doubled": headline = f"Review volume doubled: {cur} reviews, up from {prev}."
+    else:
+        verb = "rose to" if cur > prev else "fell to" if cur < prev else "held at"
+        headline = f"Reviews {verb} {cur}" + (f", {variation}." if variation else ".")
+    rating = "–" if totals["avg_rating"] is None else f"{totals['avg_rating']:.2f}"
+    peak = _peak_text(daily)
+    result = [{"source": "on_daraz", "headline": headline, "detail": f"{peak + '. ' if peak else ''}Average rating {rating}, {totals['negative']} negative review{'s' if totals['negative'] != 1 else ''}."}]
+    leader = next((item for item in brands if item["reviews"] >= 10), None)
+    if leader:
+        lead = f"{round(leader['review_share'] * 100)}% of reviews" if display_mode == "share" else f"{leader['reviews']} reviews"
+        family = f", led by the {leader['family']} with {leader['family_count']}" if leader["family_count"] >= 5 and leader["family_count"] / leader["reviews"] >= .4 else ""
+        result.append({"source": "on_daraz", "headline": f"{leader['name']} leads with {lead}{family}.", "detail": ""})
+    returned = [(item, sku) for item in brands for sku in item["sku_stats"] if sku["prev"] == 0 and sku["cur"] >= 5]
+    if returned:
+        selected = sorted(returned, key=lambda pair: (pair[1]["history"] > 0, -pair[1]["cur"]))[:4]
+        result.append({"source": "on_daraz", "headline": f"{len(selected)} models had no reviews last week and now have: " + ", ".join(f"{sku['sku']} ({sku['cur']})" for _item, sku in selected) + ".", "detail": ""})
+    social_leader = max(brands, key=lambda item: item["posts"], default=None)
+    if totals["posts"] >= 10 and social_leader and social_leader["posts"]:
+        detail = ""
+        if social_leader["viral_flag"] and social_leader["top_posts"]:
+            post = social_leader["top_posts"][0]; detail = f"One {post['platform']} post on {pd.Timestamp(post['date']).strftime('%-d %b')} shows {social_leader['top_post_likes']:,} likes."
+        comparison = _variation(social_leader["posts"], social_leader["posts_prev"])
+        result.append({"source": "off_platform", "headline": f"{social_leader['name']} was the most active brand: {social_leader['posts']} posts" + (f", {comparison}." if comparison else "."), "detail": detail})
+    if market: result.append({"source": "market", "headline": market[0]["summary"], "detail": f"{len(market)} market and policy items this week."})
+    return result[:5]
+
+
+def build_weekly_brief(consumer_data: pd.DataFrame, social_data: pd.DataFrame, country: str = "PK", week: str | None = None) -> dict[str, Any]:
+    selected = country.upper() if country.upper() in COUNTRY_NAMES else "PK"
+    consumer, social = _consumer_rows(consumer_data, selected), _social_rows(social_data, selected)
+    iso, start, end = _week(week, pd.concat([consumer["created_at"], social["published_at"]]))
+    prev_start, prev_end = start - timedelta(days=7), end - timedelta(days=7)
+    cur_reviews, prev_reviews = _range(consumer, "created_at", start, end), _range(consumer, "created_at", prev_start, prev_end)
+    cur_social, prev_social = _range(social, "published_at", start, end), _range(social, "published_at", prev_start, prev_end)
+    rated = cur_reviews[cur_reviews["rating_valid"]]
+    totals = {"reviews": len(cur_reviews), "reviews_prev": len(prev_reviews), "avg_rating": round(float(rated["rating"].mean()), 2) if not rated.empty else None, "negative": int(rated["rating"].isin([1, 2, 3]).sum()), "posts": len(cur_social), "posts_prev": len(prev_social)}
+    daily = _daily(cur_reviews, start)
+    brands = _brand_payloads(consumer, cur_reviews, prev_reviews, cur_social, prev_social, start, selected, totals["reviews"], totals["posts"])
+    market = _market(cur_social)
+    cur_topics, prev_topics = _topic_counts(cur_reviews), _topic_counts(prev_reviews)
+    topics = [{"label": label, "cur": cur_topics[label], "prev": prev_topics[label], "emphasis": bool(cur_topics[label] >= 3 and cur_topics[label] >= prev_topics[label] * 2)} for label, _ in TOPIC_PATTERNS if cur_topics[label] or prev_topics[label]]
+    repeated = [item for item in topics if item["label"].startswith("Repeated")]
+    topics = sorted([item for item in topics if not item["label"].startswith("Repeated")], key=lambda item: (-item["cur"], item["label"]))[:6] + repeated
+    display_mode = "share" if totals["reviews"] >= 100 else "count"
+    return {"country": selected, "country_name": COUNTRY_NAMES[selected], "week": {"iso": iso, "start": start.isoformat(), "end": end.isoformat()}, "prev_week": {"start": prev_start.isoformat(), "end": prev_end.isoformat()}, "available_weeks": [{"iso": f"{(start - timedelta(days=7 * i)).isocalendar().year}-W{(start - timedelta(days=7 * i)).isocalendar().week:02d}"} for i in range(8)], "totals": totals, "topline": _topline(totals, daily, brands, market, display_mode), "daily_reviews": daily, "topics": topics, "brands": brands, "market": market, "display_mode": display_mode}

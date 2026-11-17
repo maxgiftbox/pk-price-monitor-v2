@@ -1,20 +1,50 @@
 import pandas as pd
 
-from src.services.weekly_brief import build_weekly_brief
+from src.services.weekly_brief import build_weekly_brief, normalize_brands
 
 
-def test_weekly_brief_surfaces_material_consumer_momentum():
+def review(date, brand="Samsung", product="Samsung A16", rating=5, text="Original product", country="PK"):
+    return {"venture": country, "brand": brand, "created_at": date, "rating_valid": True, "rating": rating, "review_content": text, "product_name": product, "review_status": "approved", "type": "phone"}
+
+
+def post(date, brand="Samsung", likes=100, country="PK", **overrides):
+    value = {"country": country, "published_at": date, "brand": brand, "quality_status": "dashboard_ready", "account_type": "brand", "category": "Mobile", "platform": "Facebook", "title": "New launch.", "content_summary": "New launch announced. More detail follows.", "account_name": brand, "source_url": f"https://example.com/{brand}/{date}", "likes": likes}
+    value.update(overrides)
+    return value
+
+
+def test_weekly_brief_uses_complete_iso_week_and_rules_only_outputs():
     consumer = pd.DataFrame([
-        {"venture": "PK", "brand": "Samsung", "created_at": "2026-11-10", "rating_valid": True, "rating": 5, "topic_signals": [("Camera quality", "positive")]},
-        {"venture": "PK", "brand": "Samsung", "created_at": "2026-11-03", "rating_valid": True, "rating": 3, "topic_signals": []},
+        review("2026-11-09", rating=5), review("2026-11-10", rating=2, text="Late delivery and bad packaging"),
+        review("2026-11-11", brand="Redmi", product="Redmi Note 14"), review("2026-11-02"),
+        review("2026-11-12", brand="OPPO", country="BD"), {**review("2026-11-13"), "review_status": "rejected"},
     ])
     social = pd.DataFrame([
-        {"country": "PK", "published_at": "2026-11-10T00:00:00Z", "brand": "Samsung", "account_type": "brand", "monitor_type": "watchlist", "source_url": "signal-1", "likes": 100, "views": 1000, "topic_tags": "launch", "title": "Launch", "content": "", "content_summary": "", "account_name": "Samsung"},
+        post("2026-11-10T00:00:00Z", brand="Samsung; Xiaomi", likes=12000),
+        post("2026-11-11T00:00:00Z", brand="Samsung", likes=50), post("2026-11-04T00:00:00Z", brand="Samsung", likes=10),
+        {**post("2026-11-12T00:00:00Z"), "quality_status": "needs_review"},
     ])
+    result = build_weekly_brief(consumer, social, country="PK", week="2026-W46")
+    assert result["country"] == "PK"
+    assert result["week"] == {"iso": "2026-W46", "start": "2026-11-09", "end": "2026-11-15"}
+    assert result["totals"]["reviews"] == 3
+    assert result["totals"]["reviews_prev"] == 1
+    assert result["totals"]["posts"] == 2
+    assert sum(item["count"] for item in result["daily_reviews"]) == 3
+    assert result["display_mode"] == "count"
+    assert result["brands"][0]["name"] == "Samsung"
+    assert result["brands"][0]["top_posts"][0]["likes"] == 12000
+    assert any(item["name"] == "Xiaomi" and item["reviews"] == 1 for item in result["brands"])
+    assert all("status" not in item for item in result["brands"])
 
-    result = build_weekly_brief(consumer, social, "PK", "2026-11-10")
 
-    assert result["country"] == {"code": "PK", "name": "Pakistan"}
-    assert result["brands"][0]["status"] == "consumer_momentum"
-    assert result["brands"][0]["consumerVoice"]["ratingChange"] == 2.0
-    assert result["meta"] == {"consumerRows": 1, "socialSignals": 1}
+def test_market_news_excludes_brand_and_product_posts():
+    consumer = pd.DataFrame([review("2026-11-09")])
+    social = pd.DataFrame([post("2026-11-10T00:00:00Z"), post("2026-11-11T00:00:00Z", brand="", account_type="media", category="Policy", title="New tax policy.", content_summary="New tax policy was announced.")])
+    result = build_weekly_brief(consumer, social, week="2026-W46")
+    assert len(result["market"]) == 1
+    assert result["market"][0]["category"] == "Policy"
+
+
+def test_brand_normalization_expands_multibrand_and_parent_brands():
+    assert normalize_brands("Samsung; Redmi; POCO; Samsung") == ["samsung", "xiaomi"]
