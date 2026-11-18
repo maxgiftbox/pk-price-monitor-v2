@@ -149,6 +149,7 @@ export function Filters({ data, params, set }: Props) {
             min={data?.options.dateRange.min ?? undefined}
             onChange={(event) => changeDate(key, event.target.value)}
             type="date"
+            lang="en"
             value={params.get(key) ?? ''}
           />
         </label>

@@ -51,8 +51,8 @@ const router = createBrowserRouter([
         path: '/availability',
         element: <PricingAccessGate
           title="Availability Intelligence"
-          description="此页面包含库存可售状态，请输入访问密码。"
-          buttonLabel="进入 Availability"
+          description="This page contains sensitive inventory availability information. Enter the access password to continue."
+          buttonLabel="Enter Availability"
         ><AvailabilityDashboard /></PricingAccessGate>,
       },
       {

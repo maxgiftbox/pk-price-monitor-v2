@@ -12,8 +12,8 @@ type PricingAccessGateProps = {
 export function PricingAccessGate({
   children,
   title = "Pricing Intelligence",
-  description = "此页面包含敏感价格信息，请输入访问密码。",
-  buttonLabel = "进入 Pricing",
+  description = "This page contains sensitive pricing information. Enter the access password to continue.",
+  buttonLabel = "Enter Pricing",
 }: PricingAccessGateProps) {
   const [status, setStatus] = useState<"checking" | "locked" | "open">("checking");
   const [password, setPassword] = useState("");
@@ -34,7 +34,7 @@ export function PricingAccessGate({
       await pricingAuthApi.login(password);
       setStatus("open");
     } catch {
-      setError("密码不正确，请重试。");
+      setError("Incorrect password. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -50,7 +50,7 @@ export function PricingAccessGate({
       {status === "checking" ? <p>Checking access…</p> : <>
         <p>{description}</p>
         <form onSubmit={unlock}>
-          <label htmlFor="pricing-password">访问密码</label>
+          <label htmlFor="pricing-password">Access password</label>
           <input
             id="pricing-password"
             type="password"
@@ -61,7 +61,7 @@ export function PricingAccessGate({
             required
           />
           {error && <div className="pricing-gate-error" role="alert">{error}</div>}
-          <button type="submit" disabled={submitting}>{submitting ? "验证中…" : buttonLabel}</button>
+          <button type="submit" disabled={submitting}>{submitting ? "Verifying…" : buttonLabel}</button>
         </form>
       </>}
     </section>
