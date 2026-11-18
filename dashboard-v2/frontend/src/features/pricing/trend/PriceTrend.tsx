@@ -1020,6 +1020,7 @@ gap-2
 <input
 
 type="date"
+lang="en"
 
 className="
 mt-1
@@ -1045,6 +1046,7 @@ e.target.value
 <input
 
 type="date"
+lang="en"
 
 className="
 mt-1

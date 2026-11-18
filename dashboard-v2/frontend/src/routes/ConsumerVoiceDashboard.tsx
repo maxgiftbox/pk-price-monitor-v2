@@ -47,8 +47,8 @@ function LocalFilters({ label, value, onChange, options }: {
       <label>Venture<select value={value.venture} onChange={(event) => onChange({ ...value, venture: event.target.value, brand: "", productIds: "" })}><option value="">All ventures</option>{options?.ventures.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label>Brand<select value={value.brand} onChange={(event) => onChange({ ...value, brand: event.target.value, productIds: "" })}><option value="">All brands</option>{brands.map((item) => <option key={item}>{item}</option>)}</select></label>
       <label className="product-filter">Product<select value={value.productIds} onChange={(event) => onChange({ ...value, productIds: event.target.value })}><option value="">All products</option>{products.map((item) => <option key={`${item.venture}-${item.id}`} value={item.ids.join(",")}>{item.name}</option>)}</select></label>
-      <label>From<input type="date" min={options?.dateRange.min ?? undefined} max={options?.dateRange.max ?? undefined} value={value.dateFrom} onChange={(event) => onChange({ ...value, dateFrom: event.target.value })} /></label>
-      <label>To<input type="date" min={options?.dateRange.min ?? undefined} max={options?.dateRange.max ?? undefined} value={value.dateTo} onChange={(event) => onChange({ ...value, dateTo: event.target.value })} /></label>
+      <label>From<input type="date" lang="en" min={options?.dateRange.min ?? undefined} max={options?.dateRange.max ?? undefined} value={value.dateFrom} onChange={(event) => onChange({ ...value, dateFrom: event.target.value })} /></label>
+      <label>To<input type="date" lang="en" min={options?.dateRange.min ?? undefined} max={options?.dateRange.max ?? undefined} value={value.dateTo} onChange={(event) => onChange({ ...value, dateTo: event.target.value })} /></label>
       <button onClick={() => onChange(emptyFilter())}>Reset</button>
     </div>
   </details>;
