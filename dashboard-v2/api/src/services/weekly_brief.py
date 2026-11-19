@@ -211,6 +211,98 @@ def _topline(totals: dict[str, Any], daily: list[dict[str, Any]], brands: list[d
     return result[:5]
 
 
+def _coverage(label: str, frame: pd.DataFrame, column: str, end: date) -> dict[str, Any]:
+    dates = pd.to_datetime(frame[column], errors="coerce", utc=True).dropna()
+    latest = dates.max().date() if not dates.empty else None
+    lag = max((end - latest).days, 0) if latest else None
+    return {
+        "label": label,
+        "through": min(latest, end).isoformat() if latest else None,
+        "count": len(frame),
+        "status": "Current" if lag == 0 else f"{lag} days behind" if lag is not None else "No data",
+        "current": lag == 0,
+    }
+
+
+def _movers(brands: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "key": item["key"],
+            "name": item["name"],
+            "current": item["posts"],
+            "previous": item["posts_prev"],
+            "delta": item["posts"] - item["posts_prev"],
+            "material": abs(item["posts"] - item["posts_prev"]) >= 8,
+        }
+        for item in brands
+        if item["posts"] or item["posts_prev"]
+    ]
+    return sorted(rows, key=lambda item: (-abs(item["delta"]), item["name"].casefold()))[:10]
+
+
+def _executive_items(brands: list[dict[str, Any]], country_name: str) -> list[dict[str, str]]:
+    used: set[str] = set()
+    result: list[dict[str, str]] = []
+
+    risk_candidates = [item for item in brands if item["negative_reviews"]]
+    if risk_candidates:
+        brand = sorted(risk_candidates, key=lambda item: (-item["negative"], item["avg_rating"] or 9))[0]
+        review = brand["negative_reviews"][0]
+        quote = re.sub(r"\s+", " ", str(review["text"] or "")).strip()[:90]
+        result.append({
+            "key": brand["key"], "label": "RISK", "source": "Reviews",
+            "title": f"{brand['name']} recorded {brand['negative']} negative review{'s' if brand['negative'] != 1 else ''} this week.",
+            "detail": f"Lowest evidence: {review['sku']} · {review['rating']}★" + (f" · “{quote}”" if quote else ""),
+            "what_changed": f"{brand['reviews']} reviews this week versus {brand['reviews_prev']} last week; average rating {brand['avg_rating']:.2f}.",
+            "evidence": f"{brand['negative']} negative review{'s' if brand['negative'] != 1 else ''}; lowest cited item is {review['sku']} at {review['rating']}★.",
+            "next_step": "Review the cited buyer feedback and confirm whether the issue repeats by SKU.",
+        })
+        used.add(brand["key"])
+
+    growth = sorted(
+        brands,
+        key=lambda item: -((item["reviews"] - item["reviews_prev"]) + (item["posts"] - item["posts_prev"])),
+    )
+    opportunity = next((item for item in growth if item["key"] not in used and (item["reviews"] > item["reviews_prev"] or item["posts"] > item["posts_prev"])), growth[0] if growth else None)
+    if opportunity:
+        result.append({
+            "key": opportunity["key"], "label": "OPPORTUNITY", "source": "Social + Reviews",
+            "title": f"{opportunity['name']} showed the strongest cross-channel activity gain.",
+            "detail": f"Reviews {opportunity['reviews_prev']} → {opportunity['reviews']}; social posts {opportunity['posts_prev']} → {opportunity['posts']}.",
+            "what_changed": f"Review activity changed by {opportunity['reviews'] - opportunity['reviews_prev']:+d} and social activity by {opportunity['posts'] - opportunity['posts_prev']:+d} week on week.",
+            "evidence": opportunity["highlight"],
+            "next_step": "Check the highlighted model or campaign against its Daraz listing, price and stock.",
+        })
+        used.add(opportunity["key"])
+
+    watch_candidates = sorted(
+        [item for item in brands if item["key"] not in used and item["posts"] >= 8 and item["reviews"] == 0],
+        key=lambda item: -item["posts"],
+    )
+    if not watch_candidates:
+        watch_candidates = sorted(
+            [item for item in brands if item["key"] not in used],
+            key=lambda item: (item["posts"] - item["posts_prev"], -item["top_post_likes"]),
+        )
+    if watch_candidates:
+        brand = watch_candidates[0]
+        if brand["posts"] >= 8 and brand["reviews"] == 0:
+            title = f"{brand['name']} generated {brand['posts']} social posts but no Daraz reviews."
+            next_step = "Compare the active campaign with Daraz assortment and listing readiness."
+        else:
+            title = f"{brand['name']} social activity moved from {brand['posts_prev']} to {brand['posts']} posts."
+            next_step = "Keep this brand on the next weekly check and confirm whether the direction repeats."
+        result.append({
+            "key": brand["key"], "label": "WATCH", "source": "Social",
+            "title": title,
+            "detail": f"{brand['likes']:,} likes captured across {brand['posts']} posts in {country_name}.",
+            "what_changed": f"Social posts changed by {brand['posts'] - brand['posts_prev']:+d} versus last week.",
+            "evidence": brand["highlight"],
+            "next_step": next_step,
+        })
+    return result[:3]
+
+
 def build_weekly_brief(consumer_data: pd.DataFrame, social_data: pd.DataFrame, country: str = "PK", week: str | None = None) -> dict[str, Any]:
     selected = country.upper() if country.upper() in COUNTRY_NAMES else "PK"
     consumer, social = _consumer_rows(consumer_data, selected), _social_rows(social_data, selected)
@@ -228,4 +320,5 @@ def build_weekly_brief(consumer_data: pd.DataFrame, social_data: pd.DataFrame, c
     repeated = [item for item in topics if item["label"].startswith("Repeated")]
     topics = sorted([item for item in topics if not item["label"].startswith("Repeated")], key=lambda item: (-item["cur"], item["label"]))[:6] + repeated
     display_mode = "share" if totals["reviews"] >= 100 else "count"
-    return {"country": selected, "country_name": COUNTRY_NAMES[selected], "week": {"iso": iso, "start": start.isoformat(), "end": end.isoformat()}, "prev_week": {"start": prev_start.isoformat(), "end": prev_end.isoformat()}, "available_weeks": [{"iso": f"{(start - timedelta(days=7 * i)).isocalendar().year}-W{(start - timedelta(days=7 * i)).isocalendar().week:02d}"} for i in range(8)], "totals": totals, "topline": _topline(totals, daily, brands, market, display_mode), "daily_reviews": daily, "topics": topics, "brands": brands, "market": market, "display_mode": display_mode}
+    executive = _executive_items(brands, COUNTRY_NAMES[selected])
+    return {"country": selected, "country_name": COUNTRY_NAMES[selected], "week": {"iso": iso, "start": start.isoformat(), "end": end.isoformat()}, "prev_week": {"start": prev_start.isoformat(), "end": prev_end.isoformat()}, "available_weeks": [{"iso": f"{(start - timedelta(days=7 * i)).isocalendar().year}-W{(start - timedelta(days=7 * i)).isocalendar().week:02d}"} for i in range(8)], "totals": totals, "coverage": [_coverage("Social", cur_social, "published_at", end), _coverage("Reviews", cur_reviews, "created_at", end)], "executive": executive, "priorities": executive, "movers": _movers(brands), "topline": _topline(totals, daily, brands, market, display_mode), "daily_reviews": daily, "topics": topics, "brands": brands, "market": market, "display_mode": display_mode}
