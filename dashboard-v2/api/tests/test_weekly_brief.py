@@ -36,6 +36,9 @@ def test_weekly_brief_uses_complete_iso_week_and_rules_only_outputs():
     assert result["brands"][0]["top_posts"][0]["likes"] == 12000
     assert any(item["name"] == "Xiaomi" and item["reviews"] == 1 for item in result["brands"])
     assert all("status" not in item for item in result["brands"])
+    assert result["coverage"][0]["count"] == 2
+    assert [item["label"] for item in result["executive"]] == ["RISK", "OPPORTUNITY"]
+    assert result["movers"][0]["name"] == "Samsung"
 
 
 def test_market_news_excludes_brand_and_product_posts():
