@@ -13,7 +13,7 @@ const countryOrder = ['PK', 'BD', 'NP'];
 
 function formatDate(value: string | null) {
   if (!value) return 'Not available';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 function numeric(value: number | string | null) { const parsed = Number(String(value ?? '').replace(/,/g, '')); return Number.isFinite(parsed) ? parsed : 0; }
 function formatGmv(value: number | string | null) { const parsed = numeric(value); return parsed > 0 ? parsed.toLocaleString() : '—'; }

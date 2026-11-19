@@ -83,7 +83,7 @@ export function ConsumerVoiceDashboard() {
   const hasRefreshError = filters.isError || allQueries.some((query) => query.isError && query.data);
   const sourceMeta = overviewData?.meta ?? filters.data?.meta;
   const refreshedAt = sourceMeta?.cacheGeneratedAt
-    ? new Date(sourceMeta.cacheGeneratedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    ? new Date(sourceMeta.cacheGeneratedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })
     : null;
 
   if (hasFatalError) return <div className="error-panel"><p>Consumer Voice data is temporarily unavailable.</p><button onClick={() => { filters.refetch(); overview.refetch(); signals.refetch(); reviews.refetch(); }}>Retry</button></div>;
