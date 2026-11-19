@@ -28,6 +28,7 @@ test('keeps brand overview global while monitor defaults to PK issues and suppor
   vi.spyOn(availabilityApi, 'dashboard').mockResolvedValue(data);
   render(<QueryClientProvider client={new QueryClient()}><AvailabilityDashboard /></QueryClientProvider>);
   await waitFor(() => expect(screen.getByText('Today by country and brand')).toBeInTheDocument());
+  expect(screen.getByText(/25 Oct 2026/)).toBeInTheDocument();
   expect(screen.getAllByText('1 Brands')).toHaveLength(3);
   expect(screen.getByText('Galaxy S26 Ultra 12GB 256GB')).toBeInTheDocument();
   expect(screen.queryByText('Galaxy A57 8GB 128GB')).not.toBeInTheDocument();

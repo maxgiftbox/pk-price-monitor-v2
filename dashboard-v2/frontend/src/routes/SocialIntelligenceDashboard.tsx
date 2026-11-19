@@ -24,6 +24,14 @@ function formatChartDate(value: string) {
   return `${date.getUTCDate()} ${date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}`;
 }
 
+function formatDateOnly(value: string) {
+  return new Date(value).toLocaleDateString("en-GB", { dateStyle: "medium" });
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+}
+
 function spreadBrandLabels(items: { brand: string; score: number; color: string }[]) {
   const sorted = [...items].sort((a, b) => b.score - a.score);
   const minimumGap = sorted.length > 7 ? 9 : 11;
@@ -59,7 +67,7 @@ function BrandRatingChart({ points, brands, dates }: { points: SocialRatingPoint
 }
 
 function SignalCard({ record, onOpen }: { record: SocialRecord; onOpen: () => void }) {
-  return <article className="social-signal-card" onClick={onOpen}>{record.mediaUrl && <div className="social-card-media"><img src={resolveApiAssetUrl(record.mediaUrl)} alt="" loading="lazy" onError={(event) => { event.currentTarget.parentElement!.style.display = "none"; }} /></div>}<div className="social-card-body"><div className="social-badges"><span>{record.country}</span><span className={`platform-${record.platform.toLowerCase()}`}>{record.platform}</span><span className={`monitor-${record.monitorType}`}>{record.monitorType === "trend_discovery" ? "Trend" : "Watchlist"}</span>{record.accountType && <span>{record.accountType}</span>}</div><h3>{record.title}</h3><p>{record.contentSummary || record.content}</p>{record.whyItMatters && <div className="social-why"><b>Why it matters</b>{record.whyItMatters}</div>}<footer><span>{record.accountName || record.brand} · {record.publishedAt ? new Date(record.publishedAt).toLocaleDateString() : "Date unavailable"}</span><span>Views {engagement(record, "views")} · Likes {engagement(record, "likes")}</span></footer></div></article>;
+  return <article className="social-signal-card" onClick={onOpen}>{record.mediaUrl && <div className="social-card-media"><img src={resolveApiAssetUrl(record.mediaUrl)} alt="" loading="lazy" onError={(event) => { event.currentTarget.parentElement!.style.display = "none"; }} /></div>}<div className="social-card-body"><div className="social-badges"><span>{record.country}</span><span className={`platform-${record.platform.toLowerCase()}`}>{record.platform}</span><span className={`monitor-${record.monitorType}`}>{record.monitorType === "trend_discovery" ? "Trend" : "Watchlist"}</span>{record.accountType && <span>{record.accountType}</span>}</div><h3>{record.title}</h3><p>{record.contentSummary || record.content}</p>{record.whyItMatters && <div className="social-why"><b>Why it matters</b>{record.whyItMatters}</div>}<footer><span>{record.accountName || record.brand} · {record.publishedAt ? formatDateOnly(record.publishedAt) : "Date unavailable"}</span><span>Views {engagement(record, "views")} · Likes {engagement(record, "likes")}</span></footer></div></article>;
 }
 
 export function SocialIntelligenceDashboard() {
@@ -80,8 +88,8 @@ export function SocialIntelligenceDashboard() {
   const options = filters.data?.options;
   const countries = [{ value: "", label: "All countries" }, ...(options?.countries ?? []).map((value) => ({ value, label: value }))];
   const periods = [{ value: "1", label: "Past 1 day" }, { value: "7", label: "Past 7 days" }, { value: "14", label: "Past 14 days" }, { value: "30", label: "Past 30 days" }];
-  const refreshed = feed.data?.meta.cacheGeneratedAt ? new Date(feed.data.meta.cacheGeneratedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
-  const dataAsOf = feed.data?.meta.dataAsOf ? new Date(feed.data.meta.dataAsOf).toLocaleDateString(undefined, { dateStyle: "medium" }) : null;
+  const refreshed = feed.data?.meta.cacheGeneratedAt ? formatDateTime(feed.data.meta.cacheGeneratedAt) : null;
+  const dataAsOf = feed.data?.meta.dataAsOf ? formatDateOnly(feed.data.meta.dataAsOf) : null;
   const fatal = [ratings, ranking, cloud, feed].some((query) => query.isError && !query.data);
   if (fatal) return <div className="error-panel"><p>Social Voice data is temporarily unavailable.</p><button onClick={() => { ratings.refetch(); ranking.refetch(); cloud.refetch(); feed.refetch(); }}>Retry</button></div>;
   const updateFeed = (key: keyof FeedFilter, value: string) => setFeedFilter((current) => ({ ...current, [key]: value }));
