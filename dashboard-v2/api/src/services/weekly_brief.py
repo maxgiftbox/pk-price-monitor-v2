@@ -46,22 +46,22 @@ def _first_sentence(value: Any, limit: int = 180) -> str:
     return sentence if len(sentence) <= limit else sentence[:limit - 1].rstrip() + "…"
 
 
-def _week(iso: str | None, available_dates: pd.Series) -> tuple[str, date, date]:
+def latest_completed_saturday(today: date) -> date:
+    days_since_saturday = (today.weekday() - 5) % 7
+    return today - timedelta(days=days_since_saturday or 7)
+
+
+def _week(iso: str | None, _available_dates: pd.Series) -> tuple[str, date, date]:
     if iso:
         match = re.fullmatch(r"(\d{4})-W(\d{2})", iso)
         if not match:
             raise ValueError("week must use YYYY-Www format")
-        start = date.fromisocalendar(int(match.group(1)), int(match.group(2)), 1)
-        return iso, start, start + timedelta(days=6)
-    today = date.today()
-    last_sunday = today - timedelta(days=today.weekday() + 1)
-    valid = pd.to_datetime(available_dates, errors="coerce", utc=True).dropna()
-    if not valid.empty:
-        latest = valid.max().date()
-        last_sunday = min(last_sunday, latest + timedelta(days=6 - latest.weekday()))
-    start = last_sunday - timedelta(days=6)
-    year, number, _ = start.isocalendar()
-    return f"{year}-W{number:02d}", start, last_sunday
+        end = date.fromisocalendar(int(match.group(1)), int(match.group(2)), 6)
+        return iso, end - timedelta(days=7), end
+    end = latest_completed_saturday(date.today())
+    start = end - timedelta(days=7)
+    year, number, _ = end.isocalendar()
+    return f"{year}-W{number:02d}", start, end
 
 
 def _range(frame: pd.DataFrame, column: str, start: date, end: date) -> pd.DataFrame:
@@ -109,8 +109,8 @@ def _topic_counts(frame: pd.DataFrame) -> dict[str, int]:
 
 def _daily(frame: pd.DataFrame, start: date) -> list[dict[str, Any]]:
     counts = Counter(pd.to_datetime(frame["created_at"], errors="coerce").dt.date.dropna())
-    average = len(frame) / 7
-    return [{"date": (start + timedelta(days=i)).isoformat(), "count": counts[start + timedelta(days=i)], "peak": bool(counts[start + timedelta(days=i)] >= average * 1.5 and counts[start + timedelta(days=i)] > 0)} for i in range(7)]
+    average = len(frame) / 8
+    return [{"date": (start + timedelta(days=i)).isoformat(), "count": counts[start + timedelta(days=i)], "peak": bool(counts[start + timedelta(days=i)] >= average * 1.5 and counts[start + timedelta(days=i)] > 0)} for i in range(8)]
 
 
 def _peak_text(daily: list[dict[str, Any]]) -> str:
@@ -321,4 +321,4 @@ def build_weekly_brief(consumer_data: pd.DataFrame, social_data: pd.DataFrame, c
     topics = sorted([item for item in topics if not item["label"].startswith("Repeated")], key=lambda item: (-item["cur"], item["label"]))[:6] + repeated
     display_mode = "share" if totals["reviews"] >= 100 else "count"
     executive = _executive_items(brands, COUNTRY_NAMES[selected])
-    return {"country": selected, "country_name": COUNTRY_NAMES[selected], "week": {"iso": iso, "start": start.isoformat(), "end": end.isoformat()}, "prev_week": {"start": prev_start.isoformat(), "end": prev_end.isoformat()}, "available_weeks": [{"iso": f"{(start - timedelta(days=7 * i)).isocalendar().year}-W{(start - timedelta(days=7 * i)).isocalendar().week:02d}"} for i in range(8)], "totals": totals, "coverage": [_coverage("Social", cur_social, "published_at", end), _coverage("Reviews", cur_reviews, "created_at", end)], "executive": executive, "priorities": executive, "movers": _movers(brands), "topline": _topline(totals, daily, brands, market, display_mode), "daily_reviews": daily, "topics": topics, "brands": brands, "market": market, "display_mode": display_mode}
+    return {"country": selected, "country_name": COUNTRY_NAMES[selected], "week": {"iso": iso, "start": start.isoformat(), "end": end.isoformat()}, "prev_week": {"start": prev_start.isoformat(), "end": prev_end.isoformat()}, "available_weeks": [{"iso": f"{(end - timedelta(days=7 * i)).isocalendar().year}-W{(end - timedelta(days=7 * i)).isocalendar().week:02d}"} for i in range(8)], "totals": totals, "coverage": [_coverage("Social", cur_social, "published_at", end), _coverage("Reviews", cur_reviews, "created_at", end)], "executive": executive, "priorities": executive, "movers": _movers(brands), "topline": _topline(totals, daily, brands, market, display_mode), "daily_reviews": daily, "topics": topics, "brands": brands, "market": market, "display_mode": display_mode}
