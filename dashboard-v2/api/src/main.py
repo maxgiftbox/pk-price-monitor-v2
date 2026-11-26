@@ -2,15 +2,20 @@ import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
+import logging
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
+from uuid import UUID
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +25,7 @@ from src.data_sources.google_sheets import (
     DataSourceUnavailable,
     GoogleSheetsRepository,
 )
+from src.data_sources.access_analytics import AccessAnalyticsWriter, AccessEvent
 from src.services.pricing import filters, gap, meta, trend
 from src.data_sources.consumer_voice import ConsumerVoiceRepository
 from src.data_sources.availability import AvailabilityRepository
@@ -43,6 +49,8 @@ app = FastAPI(
     redoc_url=None,
 )
 
+logger = logging.getLogger(__name__)
+
 
 origins = [
     x.strip()
@@ -65,6 +73,15 @@ app.add_middleware(
 PRICING_ACCESS_PASSWORD = os.getenv("PRICING_ACCESS_PASSWORD", "")
 PRICING_SESSION_SECONDS = int(os.getenv("PRICING_SESSION_SECONDS", "28800"))
 PRICING_COOKIE_NAME = "el_pricing_session"
+TRACKED_DASHBOARD_PATHS = {
+    "/pricing",
+    "/pricing/gap",
+    "/availability",
+    "/products",
+    "/weekly-brief",
+    "/consumer-voice",
+    "/social-intelligence",
+}
 
 
 def _pricing_signature(expires_at: str) -> str:
@@ -116,6 +133,61 @@ class PricingLogin(BaseModel):
     password: str
 
 
+class DashboardAccessEvent(BaseModel):
+    sessionId: UUID
+    eventType: Literal["session_start", "page_view"]
+    path: str
+
+
+def _client_ip(request: Request) -> str:
+    candidates = [
+        part.strip()
+        for part in request.headers.get("x-forwarded-for", "").split(",")
+        if part.strip()
+    ]
+    if request.client:
+        candidates.append(request.client.host)
+    for candidate in candidates:
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            continue
+    return "unknown"
+
+
+def _record_access_event(writer: AccessAnalyticsWriter, event: AccessEvent) -> None:
+    try:
+        writer.record(event)
+    except Exception:
+        logger.exception("Could not record dashboard access event")
+
+
+@app.post("/api/analytics/access", status_code=202)
+def record_dashboard_access(
+    event: DashboardAccessEvent,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    path = event.path.strip()
+    if path not in TRACKED_DASHBOARD_PATHS:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"code": "INVALID_PATH", "message": "Invalid dashboard path."}},
+        )
+    background_tasks.add_task(
+        _record_access_event,
+        app.state.access_analytics_writer,
+        AccessEvent(
+            session_id=str(event.sessionId),
+            event_type=event.eventType,
+            path=path,
+            ip_address=_client_ip(request),
+            occurred_at=datetime.now(timezone.utc),
+        ),
+    )
+    return {"accepted": True}
+
+
 @app.get("/api/pricing/auth")
 def pricing_auth_status(request: Request):
     return {"authenticated": _has_pricing_access(request)}
@@ -155,6 +227,7 @@ app.state.repository = GoogleSheetsRepository(
         os.getenv("PRICING_INITIAL_LOAD_TIMEOUT_SECONDS", "12")
     ),
 )
+app.state.access_analytics_writer = AccessAnalyticsWriter()
 app.state.consumer_voice_repository = ConsumerVoiceRepository(
     ttl_seconds=int(os.getenv("CONSUMER_VOICE_CACHE_TTL_SECONDS", "21600")),
     initial_load_timeout_seconds=int(

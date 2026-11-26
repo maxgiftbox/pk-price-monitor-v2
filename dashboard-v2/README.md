@@ -33,6 +33,26 @@ Set these Render environment variables before the first deployment:
 The spreadsheet must be shared with the service account's `client_email` as a
 viewer. The API already reads credentials exclusively from the environment.
 
+## Dashboard access analytics
+
+Every dashboard session and module navigation is appended to a Google Sheets
+worksheet named `dashboard_access_log`. This tracking is global and does not
+depend on the Pricing password, so visits to Social Voice, Consumer Voice and
+the other public modules are included. Each row contains UTC and local event
+times, `session_start` or `page_view`, an anonymous per-tab session ID, the
+module path and the server-observed IP address. Count `session_start` rows for
+visits; use `page_view` rows for module usage. A new anonymous session starts
+after 30 minutes without dashboard navigation.
+
+Set `ACCESS_ANALYTICS_GOOGLE_SHEET_ID` to write into a dedicated spreadsheet,
+or leave it empty to use `ACCESS_ANALYTICS_GOOGLE_SHEET_NAME` (which defaults
+to `GOOGLE_SHEET_NAME`). The worksheet is created automatically when missing.
+The destination spreadsheet must be shared with the service account as an
+editor because analytics is append-only. Configure the worksheet name and
+display timezone with `ACCESS_ANALYTICS_WORKSHEET` and
+`ACCESS_ANALYTICS_TIMEZONE`. Analytics failures are logged but never block the
+dashboard.
+
 Consumer Voice reads `Consumer_voice_dump` from
 `CONSUMER_VOICE_GOOGLE_SHEET_ID`. Its in-process snapshot refreshes every six
 hours by default. If Google Sheets is temporarily unavailable, the API serves
