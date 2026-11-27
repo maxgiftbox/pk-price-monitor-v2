@@ -1,8 +1,32 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+
+import { trackDashboardAccess } from '../lib/accessAnalytics';
 
 const navClass = ({ isActive }: { isActive: boolean }) => `nav-link ${isActive ? 'active' : ''}`;
 
 export function Shell() {
+  const location = useLocation();
+
+  useEffect(() => {
+    trackDashboardAccess(location.pathname);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const trackWhenActive = () => {
+      if (document.visibilityState === 'visible') {
+        trackDashboardAccess(location.pathname);
+      }
+    };
+
+    window.addEventListener('focus', trackWhenActive);
+    document.addEventListener('visibilitychange', trackWhenActive);
+    return () => {
+      window.removeEventListener('focus', trackWhenActive);
+      document.removeEventListener('visibilitychange', trackWhenActive);
+    };
+  }, [location.pathname]);
+
   return <div className="app-shell">
     <header className="topbar">
       <div className="topbar-inner">

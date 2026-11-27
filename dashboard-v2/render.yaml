@@ -51,3 +51,11 @@ services:
         sync: false
       - key: PRICING_SESSION_SECONDS
         value: 28800
+      - key: ACCESS_ANALYTICS_GOOGLE_SHEET_ID
+        sync: false
+      - key: ACCESS_ANALYTICS_GOOGLE_SHEET_NAME
+        value: Mob Price Monitor
+      - key: ACCESS_ANALYTICS_WORKSHEET
+        value: dashboard_access_log
+      - key: ACCESS_ANALYTICS_TIMEZONE
+        value: Asia/Dhaka
